@@ -75,10 +75,11 @@ jobs:
         - name: Sync backend to EC2
           run: |
             rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" backend/ ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/backend/
+            scp -o StrictHostKeyChecking=no backend/.env ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/backend/.env
 
         - name: Deploy on EC2
           run: |
-            ssh -v -A -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
+            ssh -A -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
               cd /home/ubuntu/backend &&
               docker-compose down &&
               docker-compose up --build -d
