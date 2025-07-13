@@ -95,11 +95,11 @@ Testing
 -------
 
 -   Backend:\
-    Each microservice contains a `tests/` folder with integration and unit tests using `pytest`.
+    Each microservice contains a `tests/` folder with integration and unit tests using `pytest`. To run these tests the folowing commands can be used to run the test locally, ensure that the docker containers are running before doing so
 
     bash
 
-    `cd backend/company-service pytest -v `
+    ` pytest -s ./tests/e2e/test_e2e.py `
 
 -   Frontend:\
     Run frontend tests with:
