@@ -101,12 +101,6 @@ Testing
 
     ` pytest -s ./tests/e2e/test_e2e.py `
 
--   Frontend:\
-    Run frontend tests with:
-
-    bash
-
-    `npm  test  `
 
 CI/CD
 -----
