@@ -17,6 +17,7 @@ jobs:
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> backend/.env
           echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" >> backend/.env
 
+      #! START BACKEND
       # Start backend services with Docker Compose v2 syntax
       - name: Start backend services
         run: |
@@ -24,20 +25,36 @@ jobs:
           docker compose up -d
           sleep 10  # Wait for services to initialize
 
-      # Run company-service tests
+      #! INTEGRATION TESTS
+      # Run company-service integration tests
       - name: Run company-service tests
         working-directory: backend/company-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
-      # Run categories-service tests
+      # Run categories-service integration tests
       - name: Run categories-service tests
         working-directory: backend/categories-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
+      #! E2E TESTS
+      # Run company-service E2E tests
+      - name: Run company-service E2E tests
+        working-directory: backend/company-service
+        run: |
+          pip install -r requirements.txt
+          pytest -s e2e -v
+
+      # Run categories-service E2E tests
+      - name: Run categories-service E2E tests
+        working-directory: backend/categories-service
+        run: |
+          pip install -r requirements.txt
+          pytest -s e2e -v
+        
       # Tear down services with Docker Compose v2 syntax
       - name: Tear down services
         if: always()
