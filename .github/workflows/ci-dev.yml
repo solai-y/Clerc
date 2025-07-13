@@ -74,7 +74,7 @@ jobs:
 
         - name: Sync backend to EC2
           run: |
-            rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" backend/ ${{ secrets.E2C_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/backend/
+            rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" backend/ ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/backend/
 
         - name: Deploy on EC2
           run: |
