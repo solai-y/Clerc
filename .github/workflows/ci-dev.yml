@@ -59,3 +59,27 @@ jobs:
       - name: Tear down services
         if: always()
         run: cd backend && docker compose down
+
+  deploy:
+      needs: build-and-test
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+
+        - name: Set up SSH
+          uses: webfactory/ssh-agent@v0.8.0
+          with:
+            ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+        - name: Sync backend to EC2
+          run: |
+            rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" backend/ ${{ secrets.E2C_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/backend/
+
+        - name: Deploy on EC2
+          run: |
+            ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_HOST }} "
+              cd /home/ubuntu/backend &&
+              docker-compose down &&
+              docker-compose up --build -d
+            "
