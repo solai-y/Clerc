@@ -75,7 +75,13 @@ jobs:
         - name: Sync backend to EC2
           run: |
             rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" backend/ ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/backend/
-            scp -o StrictHostKeyChecking=no backend/.env ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/backend/.env
+
+        - name: Create .env on EC2
+          run: |
+            ssh -A -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
+              echo 'SUPABASE_URL=${{ secrets.SUPABASE_URL }}' > /home/ubuntu/backend/.env
+              echo 'SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}' >> /home/ubuntu/backend/.env
+            "
 
         - name: Deploy on EC2
           run: |
