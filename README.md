@@ -123,6 +123,8 @@ CI/CD
 
 -   Branch protection rules are recommended for `main` and `dev` to require passing CI and code review before merging.
 
+- The CD is done for the backend by redeploying the contents of the backend folder to the EC2 instance using resync
+
 Contributing
 ------------
 
