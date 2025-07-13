@@ -46,14 +46,14 @@ jobs:
         working-directory: backend/company-service
         run: |
           pip install -r requirements.txt
-          pytest -s e2e -v
+          pytest -s tests/e2e -v
 
       # Run categories-service E2E tests
       - name: Run categories-service E2E tests
         working-directory: backend/categories-service
         run: |
           pip install -r requirements.txt
-          pytest -s e2e -v
+          pytest -s tests/e2e -v
         
       # Tear down services with Docker Compose v2 syntax
       - name: Tear down services

@@ -123,8 +123,6 @@ CI/CD
 
 -   Branch protection rules are recommended for `main` and `dev` to require passing CI and code review before merging.
 
--   To test the CI pipeline without pushing you can run the following code `act -W ci-dev.yml --container-architecture linux/amd64` in command line for M1 macs
-
 Contributing
 ------------
 
