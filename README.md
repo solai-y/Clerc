@@ -125,6 +125,8 @@ CI/CD
 
 - The CD is done for the backend by redeploying the contents of the backend folder to the EC2 instance using resync
 
+- The secrets for the CI CD pipeline such as the EC2 IP and the Private Key are loading into the Github Secrets
+
 Contributing
 ------------
 
