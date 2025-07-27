@@ -17,6 +17,7 @@ jobs:
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> backend/.env
           echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" >> backend/.env
 
+      #! START BACKEND
       # Start backend services with Docker Compose v2 syntax
       - name: Start backend services
         run: |
@@ -24,21 +25,68 @@ jobs:
           docker compose up -d
           sleep 10  # Wait for services to initialize
 
-      # Run company-service tests
+      #! INTEGRATION TESTS
+      # Run company-service integration tests
       - name: Run company-service tests
         working-directory: backend/company-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
-      # Run categories-service tests
+      # Run categories-service integration tests
       - name: Run categories-service tests
         working-directory: backend/categories-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
+      #! E2E TESTS
+      # Run company-service E2E tests
+      - name: Run company-service E2E tests
+        working-directory: backend/company-service
+        run: |
+          pip install -r requirements.txt
+          pytest -s tests/e2e -v
+
+      # Run categories-service E2E tests
+      - name: Run categories-service E2E tests
+        working-directory: backend/categories-service
+        run: |
+          pip install -r requirements.txt
+          pytest -s tests/e2e -v
+        
       # Tear down services with Docker Compose v2 syntax
       - name: Tear down services
         if: always()
         run: cd backend && docker compose down
+
+  deploy:
+      needs: build-and-test
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+
+        - name: Set up SSH
+          uses: webfactory/ssh-agent@v0.8.0
+          with:
+            ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+        - name: Sync backend to EC2
+          run: |
+            rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" backend/ ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/backend/
+
+        - name: Create .env on EC2
+          run: |
+            ssh -A -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
+              echo 'SUPABASE_URL=${{ secrets.SUPABASE_URL }}' > /home/ubuntu/backend/.env
+              echo 'SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}' >> /home/ubuntu/backend/.env
+            "
+
+        - name: Deploy on EC2
+          run: |
+            ssh -A -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
+              cd /home/ubuntu/backend &&
+              docker-compose down &&
+              docker-compose up --build -d
+            "

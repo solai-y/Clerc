@@ -21,5 +21,12 @@ def get_companies():
     response = supabase.table('company').select("*").execute()
     return jsonify(response.data), 200
 
+@app.route('/company/<int:company_id>', methods=['GET'])
+def get_company(company_id):
+    response = supabase.table('company').select("*").eq("id", company_id).execute()
+    if response.data:
+        return jsonify(response.data[0]), 200
+    return jsonify({'error': 'Company not found'}), 404
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001)

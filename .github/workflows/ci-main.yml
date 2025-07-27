@@ -6,50 +6,46 @@ on:
 
 jobs:
   check-pr-source:
-      runs-on: ubuntu-latest
-      steps:
-        - name: Fail if PR is not from dev branch
-          run: |
-            echo "Source branch: ${{ github.head_ref }}"
-            if [ "${{ github.head_ref }}" != "dev" ]; then
-              echo "❌ Only PRs from dev branch are allowed to merge to main."
-              exit 1
-            fi
-  
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if PR is not from dev branch
+        run: |
+          echo "Source branch: ${{ github.head_ref }}"
+          if [ "${{ github.head_ref }}" != "dev" ]; then
+            echo "❌ Only PRs from dev branch are allowed to merge to main."
+            exit 1
+          fi
+
   build-and-test:
+    needs: check-pr-source   # <-- Add this line!
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Create the .env file from GitHub Secrets
       - name: Create .env file for Docker Compose
         run: |
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> backend/.env
           echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" >> backend/.env
 
-      # Start backend services with Docker Compose v2 syntax
       - name: Start backend services
         run: |
           cd backend
           docker compose up -d
           sleep 10  # Wait for services to initialize
 
-      # Run company-service tests
       - name: Run company-service tests
         working-directory: backend/company-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
-      # Run categories-service tests
       - name: Run categories-service tests
         working-directory: backend/categories-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
-      # Tear down services with Docker Compose v2 syntax
       - name: Tear down services
         if: always()
         run: cd backend && docker compose down
