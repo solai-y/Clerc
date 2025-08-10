@@ -23,13 +23,6 @@ def get_categories():
     response = supabase.table('categories').select("*").execute()
     return jsonify(response.data), 200
 
-@app.route('/categories/<int:category_id>', methods=['GET'])
-def get_category(category_id):
-    response = supabase.table('categories').select("*").eq("id", category_id).execute()
-    if response.data:
-        return jsonify(response.data[0]), 200
-    return jsonify({'error': 'Category not found'}), 404
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002)
