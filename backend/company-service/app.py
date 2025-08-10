@@ -18,7 +18,7 @@ def e2e_test():
 
 @app.route('/companies', methods=['GET'])
 def get_companies():
-    response = supabase.table('company').select("*").execute()
+    response = supabase.table('companies').select("*").execute()
     return jsonify(response.data), 200
 
 if __name__ == '__main__':
