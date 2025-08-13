@@ -2,11 +2,11 @@
 
 import type React from "react"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Upload, FileText, CheckCircle } from "lucide-react"
+import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react'
 
 interface Document {
   id: string
@@ -28,6 +28,8 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -53,6 +55,36 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
     const files = e.target.files
     if (files && files.length > 0) {
       handleFileUpload(files[0])
+    }
+  }
+
+  const handleBrowseClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const uploadToS3 = async (file: File): Promise<{ success: boolean; url?: string; error?: string }> => {
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch('http://localhost/s3/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Upload failed' }))
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+      }
+
+      const result = await response.json()
+      return { success: true, url: result.url || result.location }
+    } catch (error) {
+      console.error('S3 upload error:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown upload error' 
+      }
     }
   }
 
@@ -124,33 +156,62 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
     setUploadedFile(file)
     setIsUploading(true)
     setUploadProgress(0)
+    setUploadError(null)
 
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval)
-          // Simulate AI processing and create document
-          setTimeout(() => {
-            const aiResult = generateAITags(file.name)
-            const newDocument: Document = {
-              id: Date.now().toString(),
-              name: file.name,
-              uploadDate: new Date().toISOString().split("T")[0],
-              tags: aiResult.tags,
-              subtags: aiResult.subtags,
-              size: formatFileSize(file.size),
-            }
-            onUploadComplete(newDocument)
-            setIsUploading(false)
-            setUploadProgress(0)
-            setUploadedFile(null)
-          }, 1000)
-          return 100
-        }
-        return prev + 10
-      })
-    }, 200)
+    try {
+      // Step 1: Upload to S3 (0-70% progress)
+      setUploadProgress(10)
+      
+      const s3Result = await uploadToS3(file)
+      
+      if (!s3Result.success) {
+        throw new Error(s3Result.error || 'Failed to upload to S3')
+      }
+
+      setUploadProgress(70)
+
+      // Step 2: Simulate AI processing (70-100% progress)
+      const processingInterval = setInterval(() => {
+        setUploadProgress((prev) => {
+          if (prev >= 95) {
+            clearInterval(processingInterval)
+            return 95
+          }
+          return prev + 5
+        })
+      }, 200)
+
+      // Simulate AI processing delay
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      clearInterval(processingInterval)
+      setUploadProgress(100)
+
+      // Step 3: Create document with AI tags
+      const aiResult = generateAITags(file.name)
+      const newDocument: Document = {
+        id: Date.now().toString(),
+        name: file.name,
+        uploadDate: new Date().toISOString().split("T")[0],
+        tags: aiResult.tags,
+        subtags: aiResult.subtags,
+        size: formatFileSize(file.size),
+        status: "pending",
+      }
+
+      // Complete the upload
+      setTimeout(() => {
+        onUploadComplete(newDocument)
+        setIsUploading(false)
+        setUploadProgress(0)
+        setUploadedFile(null)
+      }, 500)
+
+    } catch (error) {
+      console.error('Upload failed:', error)
+      setUploadError(error instanceof Error ? error.message : 'Upload failed')
+      setIsUploading(false)
+      setUploadProgress(0)
+    }
   }
 
   const formatFileSize = (bytes: number): string => {
@@ -166,6 +227,14 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
       onClose()
       setUploadedFile(null)
       setUploadProgress(0)
+      setUploadError(null)
+    }
+  }
+
+  const handleRetry = () => {
+    if (uploadedFile) {
+      setUploadError(null)
+      handleFileUpload(uploadedFile)
     }
   }
 
@@ -180,7 +249,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
         </DialogHeader>
 
         <div className="space-y-4">
-          {!isUploading && !uploadedFile && (
+          {!isUploading && !uploadedFile && !uploadError && (
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
                 isDragOver ? "border-red-500 bg-red-50" : "border-gray-300 hover:border-red-400 hover:bg-gray-50"
@@ -193,17 +262,16 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
               <p className="text-lg font-medium text-gray-900 mb-2">Drop your document here</p>
               <p className="text-sm text-gray-500 mb-4">or click to browse files</p>
               <input
+                ref={fileInputRef}
                 type="file"
                 onChange={handleFileSelect}
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.txt"
                 className="hidden"
                 id="file-upload"
               />
-              <label htmlFor="file-upload">
-                <Button variant="outline" className="cursor-pointer bg-transparent">
-                  Browse Files
-                </Button>
-              </label>
+              <Button variant="outline" onClick={handleBrowseClick} className="cursor-pointer">
+                Browse Files
+              </Button>
               <p className="text-xs text-gray-400 mt-2">Supported formats: PDF, DOC, DOCX, XLS, XLSX, TXT</p>
             </div>
           )}
@@ -221,7 +289,12 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">
-                    {uploadProgress < 100 ? "Uploading..." : "Processing with AI..."}
+                  {uploadProgress < 70 
+                      ? "Uploading to S3..." 
+                      : uploadProgress < 100 
+                      ? "Processing with AI..." 
+                      : "Complete!"
+                    }
                   </span>
                   <span className="text-gray-900">{uploadProgress}%</span>
                 </div>
@@ -234,6 +307,37 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
                   <span className="text-sm font-medium">Upload complete! Processing tags...</span>
                 </div>
               )}
+            </div>
+          )}
+          {uploadError && (
+            <div className="space-y-4">
+              <div className="flex items-center space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
+                <AlertCircle className="w-8 h-8 text-red-600" />
+                <div className="flex-1">
+                  <p className="font-medium text-red-900">Upload Failed</p>
+                  <p className="text-sm text-red-700">{uploadError}</p>
+                </div>
+              </div>
+              
+              <div className="flex space-x-2">
+                <Button 
+                  variant="outline" 
+                  onClick={handleRetry}
+                  className="flex-1"
+                >
+                  Try Again
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setUploadError(null)
+                    setUploadedFile(null)
+                  }}
+                  className="flex-1"
+                >
+                  Choose Different File
+                </Button>
+              </div>
             </div>
           )}
         </div>
