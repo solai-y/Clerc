@@ -36,6 +36,10 @@ def upload_file():
     file = request.files['file']
     if file.filename == '':
         return jsonify({"error": "Empty filename"}), 400
+    
+    # check if file is pdf
+    # if not file.content_type == "application/pdf":
+        # return jsonify({"error": "File is not a PDF"}), 400
 
     try:
         filename = secure_filename(file.filename)
