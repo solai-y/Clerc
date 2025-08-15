@@ -13,6 +13,13 @@ services:
       - "5002:5002"
     env_file:
       - .env
+
+  document-service:
+    build: ./document-service
+    ports:
+      - "5003:5003"
+    env_file:
+      - .env
       
   nginx:
     image: nginx:latest
@@ -23,3 +30,4 @@ services:
     depends_on:
       - company-service
       - categories-service
+      - document-service
