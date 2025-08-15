@@ -4,7 +4,16 @@
       "Bash(mkdir:*)",
       "Bash(python:*)",
       "Bash(docker-compose:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker logs:*)",
+      "Bash(python run_tests.py:*)",
+      "Bash(python3 run_tests.py:*)",
+      "Bash(python3:*)",
+      "Bash(chmod:*)",
+      "Bash(./run_container_tests.sh:*)",
+      "Bash(bash:*)"
     ],
     "deny": []
   }

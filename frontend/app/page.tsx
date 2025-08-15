@@ -1,90 +1,21 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Upload, Search, Filter } from "lucide-react"
+import { Upload, Search, Filter, AlertCircle, RefreshCw } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
 import { ConfirmTagsModal } from "@/components/confirm-tags-modal"
 import { DocumentTable } from "@/components/document-table"
-
-interface Document {
-  id: string
-  name: string
-  uploadDate: string
-  tags: string[]
-  subtags: { [tagId: string]: string[] } // Map of tag to its subtags
-  size: string
-}
-
-const mockDocuments: Document[] = [
-  {
-    id: "1",
-    name: "Q3_Financial_Report.pdf",
-    uploadDate: "2024-01-15",
-    tags: ["Financial Report", "Quarterly", "Revenue"],
-    subtags: {
-      "Financial Report": ["Income Statement", "Balance Sheet"],
-      Quarterly: ["Q3 2024"],
-      Revenue: ["Operating Revenue", "Non-Operating Revenue"],
-    },
-    size: "2.4 MB",
-  },
-  {
-    id: "2",
-    name: "Risk_Assessment_2024.docx",
-    uploadDate: "2024-01-14",
-    tags: ["Risk Management", "Assessment", "Compliance"],
-    subtags: {
-      "Risk Management": ["Credit Risk", "Market Risk", "Operational Risk"],
-      Assessment: ["Annual Assessment"],
-      Compliance: ["Regulatory Compliance", "Internal Compliance"],
-    },
-    size: "1.8 MB",
-  },
-  {
-    id: "3",
-    name: "Investment_Strategy.pdf",
-    uploadDate: "2024-01-13",
-    tags: ["Investment", "Strategy", "Portfolio"],
-    subtags: {
-      Investment: ["Equity Investment", "Bond Investment"],
-      Strategy: ["Long-term Strategy", "Short-term Strategy"],
-      Portfolio: ["Diversified Portfolio"],
-    },
-    size: "3.1 MB",
-  },
-  {
-    id: "4",
-    name: "Market_Analysis_Jan.xlsx",
-    uploadDate: "2024-01-12",
-    tags: ["Market Analysis", "Data", "Trends"],
-    subtags: {
-      "Market Analysis": ["Technical Analysis", "Fundamental Analysis"],
-      Data: ["Historical Data", "Real-time Data"],
-      Trends: ["Market Trends", "Industry Trends"],
-    },
-    size: "5.2 MB",
-  },
-  {
-    id: "5",
-    name: "Compliance_Checklist.pdf",
-    uploadDate: "2024-01-11",
-    tags: ["Compliance", "Regulatory", "Checklist"],
-    subtags: {
-      Compliance: ["SOX Compliance", "Basel III"],
-      Regulatory: ["SEC Requirements", "FINRA Rules"],
-      Checklist: ["Monthly Checklist", "Annual Checklist"],
-    },
-    size: "892 KB",
-  },
-]
+import { useDocuments } from "@/hooks/use-documents"
+import { Document } from "@/lib/api"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function HomePage() {
-  const [documents, setDocuments] = useState<Document[]>(mockDocuments)
+  // Local state for UI
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState<"name" | "date" | "size">("date")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
@@ -92,6 +23,34 @@ export default function HomePage() {
   const [confirmTagsDocument, setConfirmTagsDocument] = useState<Document | null>(null)
   const [filterTag, setFilterTag] = useState<string>("")
   const [filterSubtag, setFilterSubtag] = useState<string>("")
+
+  // Debounced search to avoid too many API calls
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm)
+    }, 500) // 500ms debounce
+
+    return () => clearTimeout(timer)
+  }, [searchTerm])
+
+  // Fetch documents from API
+  const {
+    documents,
+    loading,
+    error,
+    refetch,
+    createDocument,
+    updateDocument,
+    deleteDocument,
+    categories,
+    categoriesLoading,
+    categoriesError,
+  } = useDocuments({
+    search: debouncedSearchTerm || undefined, // Use debounced search term
+    limit: 100, // Reasonable limit for initial load
+  })
 
   const filteredAndSortedDocuments = useMemo(() => {
     const filtered = documents.filter((doc) => {
@@ -153,21 +112,31 @@ export default function HomePage() {
     }
   }
 
-  const handleUploadComplete = (newDocument: Document) => {
-    setDocuments((prev) => [newDocument, ...prev])
-    setConfirmTagsDocument(newDocument)
-    setIsUploadModalOpen(false)
+  const handleUploadComplete = async (newDocument: Document) => {
+    try {
+      // In a real implementation, this would create the document via API
+      // For now, we'll just refetch to get the latest data
+      await refetch()
+      setConfirmTagsDocument(newDocument)
+      setIsUploadModalOpen(false)
+    } catch (err) {
+      console.error('Error after upload:', err)
+    }
   }
 
-  const handleConfirmTags = (
+  const handleConfirmTags = async (
     documentId: string,
     confirmedTags: string[],
     confirmedSubtags: { [tagId: string]: string[] },
   ) => {
-    setDocuments((prev) =>
-      prev.map((doc) => (doc.id === documentId ? { ...doc, tags: confirmedTags, subtags: confirmedSubtags } : doc)),
-    )
-    setConfirmTagsDocument(null)
+    try {
+      // In a real implementation, this would update the document via API
+      // For now, we'll just refetch to get the latest data
+      await refetch()
+      setConfirmTagsDocument(null)
+    } catch (err) {
+      console.error('Error updating tags:', err)
+    }
   }
 
 
@@ -187,6 +156,37 @@ export default function HomePage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Error Alert */}
+        {error && (
+          <Alert className="mb-6 border-red-200 bg-red-50">
+            <AlertCircle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800">
+              <div className="flex items-center justify-between">
+                <span>Error loading documents: {error}</span>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={refetch}
+                  className="ml-4 border-red-300 text-red-700 hover:bg-red-100"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Retry
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Categories Error Alert */}
+        {categoriesError && (
+          <Alert className="mb-6 border-yellow-200 bg-yellow-50">
+            <AlertCircle className="h-4 w-4 text-yellow-600" />
+            <AlertDescription className="text-yellow-800">
+              Warning: Could not load categories. Tag filtering may be limited.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Search and Filters */}
         <Card className="mb-6">
           <CardHeader>
@@ -257,11 +257,17 @@ export default function HomePage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>Document Library ({filteredAndSortedDocuments.length})</span>
+              <div className="flex items-center space-x-2">
+                <span>Document Library</span>
+                {loading && <RefreshCw className="w-4 h-4 animate-spin text-gray-500" />}
+                <span className="text-sm text-gray-500">
+                  ({loading ? "Loading..." : `${filteredAndSortedDocuments.length} documents`})
+                </span>
+              </div>
               <div className="flex items-center space-x-2 text-sm text-gray-500">
                 <Filter className="w-4 h-4" />
                 <span>Sort by:</span>
-                <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
+                <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)} disabled={loading}>
                   <SelectTrigger className="w-32">
                     <SelectValue />
                   </SelectTrigger>
@@ -275,13 +281,20 @@ export default function HomePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <DocumentTable
-              documents={filteredAndSortedDocuments}
-              sortBy={sortBy}
-              sortOrder={sortOrder}
-              onSort={handleSort}
-              onEditTags={setConfirmTagsDocument}
-            />
+            {loading && documents.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <RefreshCw className="w-8 h-8 mx-auto mb-4 animate-spin text-gray-300" />
+                <p>Loading documents...</p>
+              </div>
+            ) : (
+              <DocumentTable
+                documents={filteredAndSortedDocuments}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+                onEditTags={setConfirmTagsDocument}
+              />
+            )}
           </CardContent>
         </Card>
       </main>

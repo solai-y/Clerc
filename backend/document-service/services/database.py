@@ -1,0 +1,153 @@
+import os
+import logging
+from typing import List, Optional, Dict, Any
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class DatabaseService:
+    """Database operations service with error handling"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.supabase_url = os.environ.get("SUPABASE_URL")
+        self.supabase_key = os.environ.get("SUPABASE_KEY")
+        
+        if not self.supabase_url or not self.supabase_key:
+            raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY environment variables")
+        
+        try:
+            self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
+            self.logger.info("Database connection initialized")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize database connection: {str(e)}")
+            raise
+    
+    def test_connection(self) -> tuple[bool, Optional[str]]:
+        """Test database connection"""
+        try:
+            # Simple query to test connection
+            response = self.supabase.table('raw_documents').select("document_id").limit(1).execute()
+            self.logger.info("Database connection test successful")
+            return True, None
+        except Exception as e:
+            error_msg = str(e)
+            self.logger.error(f"Database connection test failed: {error_msg}")
+            return False, error_msg
+    
+    def get_all_documents(self, limit: Optional[int] = None, offset: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
+        """Get all documents with optional pagination"""
+        try:
+            query = self.supabase.table('raw_documents').select("*")
+            
+            if offset:
+                query = query.range(offset, offset + (limit or 50) - 1)
+            elif limit:
+                query = query.limit(limit)
+            
+            response = query.execute()
+            self.logger.info(f"Retrieved {len(response.data)} documents")
+            return response.data, None
+        except Exception as e:
+            error_msg = f"Failed to retrieve documents: {str(e)}"
+            self.logger.error(error_msg)
+            return [], error_msg
+    
+    def get_document_by_id(self, document_id: int) -> tuple[Optional[Dict], Optional[str]]:
+        """Get document by ID"""
+        try:
+            response = self.supabase.table('raw_documents').select("*").eq('document_id', document_id).execute()
+            
+            if response.data:
+                self.logger.info(f"Retrieved document with ID: {document_id}")
+                return response.data[0], None
+            else:
+                self.logger.warning(f"Document with ID {document_id} not found")
+                return None, f"Document with ID {document_id} not found"
+        except Exception as e:
+            error_msg = f"Failed to retrieve document {document_id}: {str(e)}"
+            self.logger.error(error_msg)
+            return None, error_msg
+    
+    def create_document(self, document_data: Dict[str, Any]) -> tuple[Optional[Dict], Optional[str]]:
+        """Create a new document"""
+        try:
+            response = self.supabase.table('raw_documents').insert(document_data).execute()
+            
+            if response.data:
+                created_doc = response.data[0]
+                self.logger.info(f"Created document with ID: {created_doc.get('id')}")
+                return created_doc, None
+            else:
+                error_msg = "Failed to create document - no data returned"
+                self.logger.error(error_msg)
+                return None, error_msg
+        except Exception as e:
+            error_msg = f"Failed to create document: {str(e)}"
+            self.logger.error(error_msg)
+            return None, error_msg
+    
+    def update_document(self, document_id: int, document_data: Dict[str, Any]) -> tuple[Optional[Dict], Optional[str]]:
+        """Update an existing document"""
+        try:
+            # First check if document exists
+            existing_doc, error = self.get_document_by_id(document_id)
+            if error:
+                return None, error
+            
+            if not existing_doc:
+                return None, f"Document with ID {document_id} not found"
+            
+            # Update the document
+            response = self.supabase.table('raw_documents').update(document_data).eq('document_id', document_id).execute()
+            
+            if response.data:
+                updated_doc = response.data[0]
+                self.logger.info(f"Updated document with ID: {document_id}")
+                return updated_doc, None
+            else:
+                error_msg = f"Failed to update document {document_id} - no data returned"
+                self.logger.error(error_msg)
+                return None, error_msg
+        except Exception as e:
+            error_msg = f"Failed to update document {document_id}: {str(e)}"
+            self.logger.error(error_msg)
+            return None, error_msg
+    
+    def delete_document(self, document_id: int) -> tuple[bool, Optional[str]]:
+        """Delete a document"""
+        try:
+            # First check if document exists
+            existing_doc, error = self.get_document_by_id(document_id)
+            if error:
+                return False, error
+            
+            if not existing_doc:
+                return False, f"Document with ID {document_id} not found"
+            
+            # Delete the document
+            response = self.supabase.table('raw_documents').delete().eq('document_id', document_id).execute()
+            
+            self.logger.info(f"Deleted document with ID: {document_id}")
+            return True, None
+        except Exception as e:
+            error_msg = f"Failed to delete document {document_id}: {str(e)}"
+            self.logger.error(error_msg)
+            return False, error_msg
+    
+    def search_documents(self, search_term: str, limit: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
+        """Search documents by name (basic text search)"""
+        try:
+            query = self.supabase.table('raw_documents').select("*").ilike('document_name', f'%{search_term}%')
+            
+            if limit:
+                query = query.limit(limit)
+            
+            response = query.execute()
+            self.logger.info(f"Search for '{search_term}' returned {len(response.data)} documents")
+            return response.data, None
+        except Exception as e:
+            error_msg = f"Failed to search documents: {str(e)}"
+            self.logger.error(error_msg)
+            return [], error_msg
