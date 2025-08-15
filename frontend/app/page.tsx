@@ -10,6 +10,7 @@ import { Upload, Search, Filter, AlertCircle, RefreshCw } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
 import { ConfirmTagsModal } from "@/components/confirm-tags-modal"
 import { DocumentTable } from "@/components/document-table"
+import { DocumentPagination } from "@/components/document-pagination"
 import { useDocuments } from "@/hooks/use-documents"
 import { Document } from "@/lib/api"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -23,6 +24,10 @@ export default function HomePage() {
   const [confirmTagsDocument, setConfirmTagsDocument] = useState<Document | null>(null)
   const [filterTag, setFilterTag] = useState<string>("")
   const [filterSubtag, setFilterSubtag] = useState<string>("")
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 15
 
   // Debounced search to avoid too many API calls
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
@@ -35,9 +40,15 @@ export default function HomePage() {
     return () => clearTimeout(timer)
   }, [searchTerm])
 
+  // Reset to first page when search changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [debouncedSearchTerm])
+
   // Fetch documents from API
   const {
     documents,
+    pagination,
     loading,
     error,
     refetch,
@@ -49,22 +60,16 @@ export default function HomePage() {
     categoriesError,
   } = useDocuments({
     search: debouncedSearchTerm || undefined, // Use debounced search term
-    limit: 100, // Reasonable limit for initial load
+    limit: itemsPerPage, // 15 documents per page
+    offset: (currentPage - 1) * itemsPerPage, // Calculate offset based on current page
   })
 
+  // Apply client-side filtering for tags and sorting (search is handled server-side)
   const filteredAndSortedDocuments = useMemo(() => {
     const filtered = documents.filter((doc) => {
-      const matchesSearch =
-        doc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doc.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        Object.values(doc.subtags)
-          .flat()
-          .some((subtag) => subtag.toLowerCase().includes(searchTerm.toLowerCase()))
-
       const matchesTag = !filterTag || doc.tags.includes(filterTag)
       const matchesSubtag = !filterSubtag || Object.values(doc.subtags).flat().includes(filterSubtag)
-
-      return matchesSearch && matchesTag && matchesSubtag
+      return matchesTag && matchesSubtag
     })
 
     return filtered.sort((a, b) => {
@@ -84,7 +89,7 @@ export default function HomePage() {
       }
       return sortOrder === "asc" ? comparison : -comparison
     })
-  }, [documents, searchTerm, sortBy, sortOrder, filterTag, filterSubtag])
+  }, [documents, sortBy, sortOrder, filterTag, filterSubtag])
 
   const availableTags = useMemo(() => {
     const tags = new Set<string>()
@@ -261,7 +266,13 @@ export default function HomePage() {
                 <span>Document Library</span>
                 {loading && <RefreshCw className="w-4 h-4 animate-spin text-gray-500" />}
                 <span className="text-sm text-gray-500">
-                  ({loading ? "Loading..." : `${filteredAndSortedDocuments.length} documents`})
+                  {loading ? (
+                    "Loading..."
+                  ) : pagination ? (
+                    `Page ${pagination.currentPage} of ${pagination.totalPages} (${pagination.totalItems} total)`
+                  ) : (
+                    `${filteredAndSortedDocuments.length} documents`
+                  )}
                 </span>
               </div>
               <div className="flex items-center space-x-2 text-sm text-gray-500">
@@ -287,13 +298,29 @@ export default function HomePage() {
                 <p>Loading documents...</p>
               </div>
             ) : (
-              <DocumentTable
-                documents={filteredAndSortedDocuments}
-                sortBy={sortBy}
-                sortOrder={sortOrder}
-                onSort={handleSort}
-                onEditTags={setConfirmTagsDocument}
-              />
+              <>
+                <DocumentTable
+                  documents={filteredAndSortedDocuments}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  onEditTags={setConfirmTagsDocument}
+                />
+                
+                {/* Pagination */}
+                {pagination && (
+                  <div className="mt-6 border-t pt-4">
+                    <DocumentPagination
+                      currentPage={currentPage}
+                      totalPages={pagination.totalPages}
+                      totalItems={pagination.totalItems}
+                      itemsPerPage={pagination.itemsPerPage}
+                      onPageChange={setCurrentPage}
+                      loading={loading}
+                    />
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>

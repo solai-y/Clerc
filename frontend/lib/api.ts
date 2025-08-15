@@ -39,6 +39,18 @@ export interface APIResponse<T> {
   error_code?: string
 }
 
+export interface PaginatedResponse<T> {
+  data: T[]
+  pagination: {
+    currentPage: number
+    totalPages: number
+    totalItems: number
+    itemsPerPage: number
+    hasNextPage: boolean
+    hasPreviousPage: boolean
+  }
+}
+
 // Frontend types (existing)
 export interface Document {
   id: string
@@ -90,17 +102,38 @@ class APIClient {
     limit?: number
     offset?: number
     search?: string
-  }): Promise<BackendDocument[]> {
+  }): Promise<PaginatedResponse<BackendDocument>> {
     const searchParams = new URLSearchParams()
     
     if (params?.limit) searchParams.append('limit', params.limit.toString())
     if (params?.offset) searchParams.append('offset', params.offset.toString())
     if (params?.search) searchParams.append('search', params.search)
 
+    // First, get the requested documents
     const url = `${DIRECT_DOCUMENT_SERVICE_URL}/documents${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
     const response = await this.fetchWithErrorHandling<BackendDocument[]>(url)
     
-    return response.data
+    // Get total count for pagination (we'll fetch without limit to get total)
+    const totalUrl = `${DIRECT_DOCUMENT_SERVICE_URL}/documents${params?.search ? `?search=${params.search}` : ''}`
+    const totalResponse = await this.fetchWithErrorHandling<BackendDocument[]>(totalUrl)
+    
+    const limit = params?.limit || 15
+    const offset = params?.offset || 0
+    const totalItems = totalResponse.data.length
+    const currentPage = Math.floor(offset / limit) + 1
+    const totalPages = Math.ceil(totalItems / limit)
+    
+    return {
+      data: response.data,
+      pagination: {
+        currentPage,
+        totalPages,
+        totalItems,
+        itemsPerPage: limit,
+        hasNextPage: currentPage < totalPages,
+        hasPreviousPage: currentPage > 1,
+      }
+    }
   }
 
   async getDocument(id: number): Promise<BackendDocument> {

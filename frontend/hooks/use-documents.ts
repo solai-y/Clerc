@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { apiClient, Document, BackendDocument, BackendCategory, transformBackendDocument, buildCategoriesMap } from '@/lib/api'
+import { apiClient, Document, BackendDocument, BackendCategory, transformBackendDocument, buildCategoriesMap, PaginatedResponse } from '@/lib/api'
 
 interface UseDocumentsParams {
   limit?: number
@@ -12,8 +12,18 @@ interface UseDocumentsParams {
   autoFetch?: boolean
 }
 
+interface PaginationInfo {
+  currentPage: number
+  totalPages: number
+  totalItems: number
+  itemsPerPage: number
+  hasNextPage: boolean
+  hasPreviousPage: boolean
+}
+
 interface UseDocumentsReturn {
   documents: Document[]
+  pagination: PaginationInfo | null
   loading: boolean
   error: string | null
   refetch: () => Promise<void>
@@ -30,6 +40,7 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
   
   // Documents state
   const [documents, setDocuments] = useState<Document[]>([])
+  const [pagination, setPagination] = useState<PaginationInfo | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -62,7 +73,7 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
     
     try {
       // Fetch documents and categories in parallel if categories not already loaded
-      const [documentsData, categoriesData] = await Promise.all([
+      const [documentsResponse, categoriesData] = await Promise.all([
         apiClient.getDocuments({ limit, offset, search }),
         categories.length === 0 ? apiClient.getCategories() : Promise.resolve(categories)
       ])
@@ -74,11 +85,12 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
 
       // Transform backend documents to frontend format
       const categoriesMap = buildCategoriesMap(categoriesData)
-      const transformedDocuments = documentsData.map(doc => 
+      const transformedDocuments = documentsResponse.data.map(doc => 
         transformBackendDocument(doc, categoriesMap)
       )
 
       setDocuments(transformedDocuments)
+      setPagination(documentsResponse.pagination)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch documents'
       setError(errorMessage)
@@ -86,6 +98,7 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
       
       // Fallback to empty array on error
       setDocuments([])
+      setPagination(null)
     } finally {
       setLoading(false)
     }
@@ -146,6 +159,7 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
 
   return {
     documents,
+    pagination,
     loading,
     error,
     refetch: fetchDocuments,
