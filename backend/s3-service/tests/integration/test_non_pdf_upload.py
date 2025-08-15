@@ -14,32 +14,32 @@ def client():
         yield client
     print("[INFO] Flask test client teardown complete.")
 
-def test_file_upload(client: FlaskClient):
-    print("\n[TEST] Running POST /upload endpoint test success...")
+def test_non_pdf_upload(client: FlaskClient):
+    print("\n[TEST] Running POST /upload endpoint test whilst passing an image...")
 
-    with open("./mock/TESTING_success.pdf", "rb") as pdf_file:
+    with open("./mock/SMU_Logo.png", "rb") as image_file:
         response = client.post(
             '/upload',
-            data={'file': (pdf_file, 'TESTING_success.pdf')},
+            data={'file': (image_file, 'SMU_Logo.png')},
             content_type='multipart/form-data'
         )
     print(f"[DEBUG] Received response with status code: {response.status_code}")
 
     try:
-        assert response.status_code == 200
-        print("[PASS] Status code is 200 (OK).")
+        assert response.status_code == 400
+        print("[PASS] Status code is 400 (Bad Request).")
     except AssertionError:
-        print(f"[FAIL] Expected status code 200, got {response.status_code}")
+        print(f"[FAIL] Expected status code 400, got {response.status_code}")
         raise
 
     data = response.get_json()
     print(f"[DEBUG] Response JSON data: {data}")
 
     try:
-        assert data['message'] == "File uploaded successfully"
-        print("[PASS] Success message is 'File uploaded successfully'.")
+        assert data['error'] == "File is not a PDF"
+        print("[PASS] Error message is 'File is not a PDF'.")
     except AssertionError:
-        print(f"[FAIL] Response success message is not as expected, got {data['message']}")
+        print(f"[FAIL] Response error message is not as expected, got {data['error']}")
         raise
 
-    print("[SUCCESS] POST /upload endpoint test completed successfully.")
+    print("[SUCCESS] POST /upload endpoint test of non image upload completed successfully.")

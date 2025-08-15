@@ -30,20 +30,28 @@ def e2e_test():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    # Check if the request contains a file
     if 'file' not in request.files:
         return jsonify({"error": "No file provided"}), 400
 
+    # Get the file from the request
     file = request.files['file']
+
+    # Check if the file is empty
     if file.filename == '':
         return jsonify({"error": "Empty filename"}), 400
     
-    # check if file is pdf
-    # if not file.content_type == "application/pdf":
-        # return jsonify({"error": "File is not a PDF"}), 400
+    # Check if file is pdf
+    if not file.content_type == "application/pdf":
+        return jsonify({"error": "File is not a PDF"}), 400
+    
+    # Check file size max 100MB
+    if file.content_length > 100 * 1024 * 1024:
+        return jsonify({"error": "File is too large"}), 400 
 
     try:
         filename = secure_filename(file.filename)
-        key = f"uploads/{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{filename}"
+        key = f"uploads/{filename}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
 
         s3_client.upload_fileobj(
             file,
