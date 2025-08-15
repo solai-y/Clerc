@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Upload, Search, Filter, ArrowUpDown, FileText, Calendar, Tag } from "lucide-react"
+import { Upload, Search, Filter } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
 import { ConfirmTagsModal } from "@/components/confirm-tags-modal"
+import { DocumentTable } from "@/components/document-table"
 
 interface Document {
   id: string
@@ -170,13 +170,6 @@ export default function HomePage() {
     setConfirmTagsDocument(null)
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    })
-  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -282,96 +275,13 @@ export default function HomePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="cursor-pointer hover:bg-gray-50" onClick={() => handleSort("name")}>
-                    <div className="flex items-center space-x-1">
-                      <span>Document Name</span>
-                      <ArrowUpDown className="w-4 h-4" />
-                    </div>
-                  </TableHead>
-                  <TableHead>Tags</TableHead>
-                  <TableHead>Subtags</TableHead>
-                  <TableHead className="cursor-pointer hover:bg-gray-50" onClick={() => handleSort("date")}>
-                    <div className="flex items-center space-x-1">
-                      <span>Upload Date</span>
-                      <ArrowUpDown className="w-4 h-4" />
-                    </div>
-                  </TableHead>
-                  <TableHead className="cursor-pointer hover:bg-gray-50" onClick={() => handleSort("size")}>
-                    <div className="flex items-center space-x-1">
-                      <span>Size</span>
-                      <ArrowUpDown className="w-4 h-4" />
-                    </div>
-                  </TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredAndSortedDocuments.map((doc) => (
-                  <TableRow key={doc.id} className="hover:bg-gray-50">
-                    <TableCell className="font-medium">
-                      <div className="flex items-center space-x-2">
-                        <FileText className="w-4 h-4 text-gray-500" />
-                        <span>{doc.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {doc.tags.map((tag, index) => (
-                          <Badge key={index} variant="secondary" className="bg-red-50 text-red-700 hover:bg-red-100">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {Object.entries(doc.subtags).map(([tag, subtags]) =>
-                          subtags.map((subtag, index) => (
-                            <Badge
-                              key={`${tag}-${index}`}
-                              variant="outline"
-                              className="text-xs border-red-200 text-red-600"
-                            >
-                              {subtag}
-                            </Badge>
-                          )),
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-1 text-gray-600">
-                        <Calendar className="w-4 h-4" />
-                        <span>{formatDate(doc.uploadDate)}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{doc.size}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setConfirmTagsDocument(doc)}
-                          className="border-red-200 text-red-700 hover:bg-red-50"
-                        >
-                          <Tag className="w-4 h-4 mr-1" />
-                          Edit Tags
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-
-            {filteredAndSortedDocuments.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
-                <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                <p>No documents found matching your criteria.</p>
-              </div>
-            )}
+            <DocumentTable
+              documents={filteredAndSortedDocuments}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              onSort={handleSort}
+              onEditTags={setConfirmTagsDocument}
+            />
           </CardContent>
         </Card>
       </main>
