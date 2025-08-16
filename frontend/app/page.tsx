@@ -151,10 +151,10 @@ export default function HomePage() {
       <header className="border-b border-gray-200 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-3">
-              <img src="/nomura-logo.png" alt="Nomura Holdings" className="h-8 w-auto" />
-              <div className="h-6 w-px bg-gray-300"></div>
-              <h1 className="text-xl font-bold text-gray-900">Document AI</h1>
+            <div className="flex items-center">
+              <h1 className="text-5xl font-bold text-red-600" style={{ marginLeft: '1rem' }}>Clerc.</h1>
+                <div className="h-6 w-px bg-gray-300 mx-4"></div>
+                <h1 className="text-xl font-bold text-gray-900">Document AI</h1>
             </div>
           </div>
         </div>
