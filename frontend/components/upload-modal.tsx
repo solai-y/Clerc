@@ -60,12 +60,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (files && files.length > 0) {
-      const file = files[0]
-      if (file.size > 80 * 1024 * 1024) {
-        setUploadError("File size exceeds 80 MB limit.")
-        return
-      }
-      handleFileUpload(file)
+      handleFileUpload(files[0])
     }
   }
 
@@ -91,7 +86,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
 
       const result = await response.json()
       console.log("✅ PDF upload successful")
-      console.log("📦 JSON response:", result)
+      console.log("📦 S3 Upload API JSON response:", result)
 
       // Extract s3_url from response
       return { success: true, url: result.s3_url }
@@ -195,30 +190,53 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
 
       setUploadProgress(70)
 
-      // Step 2: Simulate AI processing (70-100% progress)
-      const processingInterval = setInterval(() => {
-        setUploadProgress((prev) => {
-          if (prev >= 95) {
-            clearInterval(processingInterval)
-            return 95
-          }
-          return prev + 5
-        })
-      }, 200)
+      // Step 2: Simulate /v1/predict (instead of generateAITags)
+      setUploadProgress(75)
 
-      // Simulate AI processing delay
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-      clearInterval(processingInterval)
+      // fake network delay so progress feels real
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+
+      const predictJson = {
+        threshold_pct: 60,
+        results: [
+          {
+            filename: file.name,
+            tags: [
+              { tag: "news", score: 0.92 },
+              { tag: "Recommendations", score: 0.81 }
+            ],
+            user_labels: ["Discovery Event", "FY2024"],
+            ocr_used: true,
+            processing_ms: 842
+          }
+        ],
+        errors: [],
+        saved_training: true,
+        saved_count: 1,
+        request_id: "req_01HZ..."
+      }
+
+      console.log("🔮 Simulated V1 Predict API response:", predictJson)
+
+      const first = predictJson.results?.[0]
+      if (!first) {
+        throw new Error("No prediction results returned")
+      }
+
       setUploadProgress(100)
 
-      // Step 3: Create document with AI tags
-      const aiResult = generateAITags(file.name)
+      // Build Document from simulated API
       const newDocument: Document = {
         id: Date.now().toString(),
         name: file.name,
         uploadDate: new Date().toISOString().split("T")[0],
-        tags: aiResult.tags,
-        subtags: aiResult.subtags,
+        tags: (first.tags || []).map((t: any) => t.tag),
+        subtags: {
+          ...(first.user_labels ? { "User Labels": first.user_labels } : {}),
+          "Model Tags (w/ confidence)": first.tags.map(
+            (t: any) => `${t.tag} (${Math.round(t.score * 100)}%)`
+          )
+        },
         size: formatFileSize(file.size),
         status: "pending",
       }
