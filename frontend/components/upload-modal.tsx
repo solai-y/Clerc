@@ -47,14 +47,25 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
 
     const files = Array.from(e.dataTransfer.files)
     if (files.length > 0) {
-      handleFileUpload(files[0])
+      const file = files[0]
+      if (file.size > 80 * 1024 * 1024) {
+        setUploadError("File size exceeds 80 MB limit.")
+        return
+      }
+      handleFileUpload(file)
     }
   }, [])
+  
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (files && files.length > 0) {
-      handleFileUpload(files[0])
+      const file = files[0]
+      if (file.size > 80 * 1024 * 1024) {
+        setUploadError("File size exceeds 80 MB limit.")
+        return
+      }
+      handleFileUpload(file)
     }
   }
 
@@ -74,11 +85,16 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Upload failed' }))
+        console.error("❌ PDF upload failed with status:", response.status, errorData)
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
       }
 
       const result = await response.json()
-      return { success: true, url: result.url || result.location }
+      console.log("✅ PDF upload successful")
+      console.log("📦 JSON response:", result)
+
+      // Extract s3_url from response
+      return { success: true, url: result.s3_url }
     } catch (error) {
       console.error('S3 upload error:', error)
       return { 
@@ -153,6 +169,12 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   }
 
   const handleFileUpload = async (file: File) => {
+    const maxSize = 80 * 1024 * 1024 // 80 MB in bytes
+    if (file.size > maxSize) {
+      setUploadError("File size exceeds 80 MB limit.")
+      return
+    }
+    
     setUploadedFile(file)
     setIsUploading(true)
     setUploadProgress(0)
@@ -167,6 +189,9 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
       if (!s3Result.success) {
         throw new Error(s3Result.error || 'Failed to upload to S3')
       }
+      // Store the S3 URL in a variable (state)
+      const s3Link = s3Result.url
+      console.log("🌐 Stored S3 Link:", s3Link)
 
       setUploadProgress(70)
 
