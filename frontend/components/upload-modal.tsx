@@ -104,69 +104,6 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
     }
   }
 
-  const generateAITags = (fileName: string): { tags: string[]; subtags: { [tagId: string]: string[] } } => {
-    // Simulate AI tagging based on filename
-    const name = fileName.toLowerCase()
-    const tags: string[] = []
-    const subtags: { [tagId: string]: string[] } = {}
-
-    if (name.includes("financial") || name.includes("finance")) {
-      tags.push("Financial Report")
-      subtags["Financial Report"] = ["Income Statement", "Cash Flow"]
-    }
-    if (name.includes("risk")) {
-      tags.push("Risk Management")
-      subtags["Risk Management"] = ["Credit Risk", "Market Risk"]
-    }
-    if (name.includes("investment")) {
-      tags.push("Investment")
-      subtags["Investment"] = ["Equity Investment", "Fixed Income"]
-    }
-    if (name.includes("market")) {
-      tags.push("Market Analysis")
-      subtags["Market Analysis"] = ["Technical Analysis", "Market Trends"]
-    }
-    if (name.includes("compliance")) {
-      tags.push("Compliance")
-      subtags["Compliance"] = ["Regulatory Compliance", "Internal Audit"]
-    }
-    if (
-      name.includes("quarterly") ||
-      name.includes("q1") ||
-      name.includes("q2") ||
-      name.includes("q3") ||
-      name.includes("q4")
-    ) {
-      tags.push("Quarterly")
-      subtags["Quarterly"] = ["Q1 2024", "Q2 2024", "Q3 2024", "Q4 2024"].filter((q) =>
-        name.includes(q.toLowerCase().replace(" ", "_")),
-      )
-      if (subtags["Quarterly"].length === 0) {
-        subtags["Quarterly"] = ["Current Quarter"]
-      }
-    }
-    if (name.includes("annual")) {
-      tags.push("Annual")
-      subtags["Annual"] = ["Annual Report", "Year-end Summary"]
-    }
-    if (name.includes("strategy")) {
-      tags.push("Strategy")
-      subtags["Strategy"] = ["Business Strategy", "Investment Strategy"]
-    }
-    if (name.includes("portfolio")) {
-      tags.push("Portfolio")
-      subtags["Portfolio"] = ["Portfolio Analysis", "Asset Allocation"]
-    }
-
-    // Add some default tags if none found
-    if (tags.length === 0) {
-      tags.push("Document", "Unclassified")
-      subtags["Document"] = ["General Document"]
-      subtags["Unclassified"] = ["Needs Review"]
-    }
-
-    return { tags, subtags }
-  }
 
   const handleFileUpload = async (file: File) => {
     const maxSize = 80 * 1024 * 1024 // 80 MB in bytes
