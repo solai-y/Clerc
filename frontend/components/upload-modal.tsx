@@ -60,7 +60,12 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (files && files.length > 0) {
-      handleFileUpload(files[0])
+      const file = files[0]
+      if (file.size > 80 * 1024 * 1024) {
+        setUploadError("File size exceeds 80 MB limit.")
+        return
+      }
+      handleFileUpload(file)
     }
   }
 
