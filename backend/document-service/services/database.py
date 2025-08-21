@@ -36,13 +36,35 @@ class DatabaseService:
             self.logger.error(f"Database connection test failed: {error_msg}")
             return False, error_msg
     
+    def get_total_documents_count(self, search: Optional[str] = None, status: Optional[str] = None, company_id: Optional[int] = None) -> tuple[int, Optional[str]]:
+        """Get total count of documents with optional filters"""
+        try:
+            query = self.supabase.table('raw_documents').select("document_id", count="exact")
+            
+            if search:
+                query = query.ilike('document_name', f'%{search}%')
+            if status:
+                query = query.eq('status', status)
+            if company_id:
+                query = query.eq('company', company_id)
+            
+            response = query.execute()
+            total_count = response.count if response.count is not None else 0
+            self.logger.info(f"Total documents count: {total_count}")
+            return total_count, None
+        except Exception as e:
+            error_msg = f"Failed to get documents count: {str(e)}"
+            self.logger.error(error_msg)
+            return 0, error_msg
+
     def get_all_documents(self, limit: Optional[int] = None, offset: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
         """Get all documents with optional pagination"""
         try:
             query = self.supabase.table('raw_documents').select("*")
             
-            if offset:
-                query = query.range(offset, offset + (limit or 50) - 1)
+            if offset is not None and limit is not None:
+                # Use range for pagination: range(start, end) where end is inclusive
+                query = query.range(offset, offset + limit - 1)
             elif limit:
                 query = query.limit(limit)
             
@@ -136,12 +158,14 @@ class DatabaseService:
             self.logger.error(error_msg)
             return False, error_msg
     
-    def search_documents(self, search_term: str, limit: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
+    def search_documents(self, search_term: str, limit: Optional[int] = None, offset: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
         """Search documents by name (basic text search)"""
         try:
             query = self.supabase.table('raw_documents').select("*").ilike('document_name', f'%{search_term}%')
             
-            if limit:
+            if offset is not None and limit is not None:
+                query = query.range(offset, offset + limit - 1)
+            elif limit:
                 query = query.limit(limit)
             
             response = query.execute()

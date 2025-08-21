@@ -81,15 +81,20 @@ class APIClient {
     const url = `${DIRECT_DOCUMENT_SERVICE_URL}/documents${params.toString() ? `?${params}` : ''}`
     console.log('Calling document service at:', url)
     
-    // Backend returns documents array directly in the data field
-    const documentsArray = await this.fetchWithErrorHandling<BackendDocument[]>(url)
+    // Backend now returns an object with documents and pagination info
+    const responseData = await this.fetchWithErrorHandling<{
+      documents: BackendDocument[]
+      pagination: {
+        total: number
+        page: number
+        totalPages: number
+        limit: number
+        offset: number
+      }
+    }>(url)
     
-    // Create pagination info (backend doesn't provide this yet, so we'll estimate)
-    const pagination = {
-      total: documentsArray.length,
-      page: Math.floor((options.offset || 0) / (options.limit || 15)) + 1,
-      totalPages: Math.ceil(documentsArray.length / (options.limit || 15))
-    }
+    const documentsArray = responseData.documents
+    const pagination = responseData.pagination
 
     return {
       data: documentsArray,

@@ -38,9 +38,15 @@ def get_documents():
         if offset is not None and offset < 0:
             return APIResponse.validation_error("Offset must be non-negative")
         
+        # Get total count for pagination
+        total_count, count_error = db_service.get_total_documents_count(search, status, company_id)
+        if count_error:
+            logger.error(f"Database error getting count: {count_error}")
+            return APIResponse.internal_error("Failed to retrieve documents count")
+        
         # Search, filter, or get all documents
         if search:
-            documents, error = db_service.search_documents(search, limit)
+            documents, error = db_service.search_documents(search, limit, offset)
         elif status:
             documents, error = db_service.get_documents_by_status(status, limit)
         elif company_id:
@@ -52,8 +58,27 @@ def get_documents():
             logger.error(f"Database error: {error}")
             return APIResponse.internal_error("Failed to retrieve documents")
         
-        logger.info(f"Successfully retrieved {len(documents)} documents")
-        return APIResponse.success(documents, f"Retrieved {len(documents)} documents")
+        # Calculate pagination metadata
+        current_limit = limit or 50
+        current_offset = offset or 0
+        current_page = (current_offset // current_limit) + 1
+        total_pages = (total_count + current_limit - 1) // current_limit  # Ceiling division
+        
+        pagination_info = {
+            "total": total_count,
+            "page": current_page,
+            "totalPages": total_pages,
+            "limit": current_limit,
+            "offset": current_offset
+        }
+        
+        response_data = {
+            "documents": documents,
+            "pagination": pagination_info
+        }
+        
+        logger.info(f"Successfully retrieved {len(documents)} of {total_count} documents (page {current_page}/{total_pages})")
+        return APIResponse.success(response_data, f"Retrieved {len(documents)} of {total_count} documents")
         
     except Exception as e:
         logger.error(f"Unexpected error in get_documents: {str(e)}")

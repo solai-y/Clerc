@@ -59,7 +59,29 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
       )
 
       setDocuments(transformedDocuments)
-      setPagination(documentsResponse?.pagination || { total: 0, page: 1, totalPages: 1 })
+      
+      // Transform API pagination to PaginationInfo format
+      const apiPagination = documentsResponse?.pagination
+      if (apiPagination) {
+        const paginationInfo: PaginationInfo = {
+          currentPage: apiPagination.page,
+          totalPages: apiPagination.totalPages,
+          totalItems: apiPagination.total,
+          itemsPerPage: limit || 15,
+          hasNextPage: apiPagination.page < apiPagination.totalPages,
+          hasPreviousPage: apiPagination.page > 1
+        }
+        setPagination(paginationInfo)
+      } else {
+        setPagination({
+          currentPage: 1,
+          totalPages: 1,
+          totalItems: transformedDocuments.length,
+          itemsPerPage: limit || 15,
+          hasNextPage: false,
+          hasPreviousPage: false
+        })
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch documents'
       setError(errorMessage)
