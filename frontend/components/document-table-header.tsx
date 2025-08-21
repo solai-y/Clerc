@@ -23,7 +23,6 @@ export function DocumentTableHeader({ sortBy, sortOrder, onSort }: DocumentTable
           </div>
         </TableHead>
         <TableHead>Tags</TableHead>
-        <TableHead>Subtags</TableHead>
         <TableHead className="cursor-pointer hover:bg-gray-50" onClick={() => onSort("date")}>
           <div className="flex items-center space-x-1">
             <span>Upload Date</span>

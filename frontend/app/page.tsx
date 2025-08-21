@@ -23,7 +23,6 @@ export default function HomePage() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [confirmTagsDocument, setConfirmTagsDocument] = useState<Document | null>(null)
   const [filterTag, setFilterTag] = useState<string>("")
-  const [filterSubtag, setFilterSubtag] = useState<string>("")
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
@@ -65,8 +64,8 @@ export default function HomePage() {
   const filteredAndSortedDocuments = useMemo(() => {
     const filtered = documents.filter((doc) => {
       const matchesTag = !filterTag || doc.tags.includes(filterTag)
-      const matchesSubtag = !filterSubtag || Object.values(doc.subtags).flat().includes(filterSubtag)
-      return matchesTag && matchesSubtag
+      // Only tag filtering is applied
+      return matchesTag
     })
 
     return filtered.sort((a, b) => {
@@ -86,7 +85,7 @@ export default function HomePage() {
       }
       return sortOrder === "asc" ? comparison : -comparison
     })
-  }, [documents, sortBy, sortOrder, filterTag, filterSubtag])
+  }, [documents, sortBy, sortOrder, filterTag])
 
   const availableTags = useMemo(() => {
     const tags = new Set<string>()
@@ -94,16 +93,6 @@ export default function HomePage() {
     return Array.from(tags).sort()
   }, [documents])
 
-  const availableSubtags = useMemo(() => {
-    if (!filterTag) return []
-    const subtags = new Set<string>()
-    documents.forEach((doc) => {
-      if (doc.tags.includes(filterTag) && doc.subtags[filterTag]) {
-        doc.subtags[filterTag].forEach((subtag) => subtags.add(subtag))
-      }
-    })
-    return Array.from(subtags).sort()
-  }, [documents, filterTag])
 
   const handleSort = (column: "name" | "date" | "size") => {
     if (sortBy === column) {
@@ -128,8 +117,7 @@ export default function HomePage() {
 
   const handleConfirmTags = async (
     documentId: string,
-    confirmedTags: string[],
-    confirmedSubtags: { [tagId: string]: string[] },
+    confirmedTags: string[]
   ) => {
     try {
       // In a real implementation, this would update the document via API
@@ -192,7 +180,7 @@ export default function HomePage() {
             <div className="flex flex-col gap-4">
               <div className="flex-1">
                 <Input
-                  placeholder="Search by document name, tags, or subtags..."
+                  placeholder="Search by document name or tags..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full"
@@ -204,7 +192,6 @@ export default function HomePage() {
                   onValueChange={(value: string) => {
                     const newValue = value === "all-tags" ? "" : value
                     setFilterTag(newValue)
-                    setFilterSubtag("") // Reset subtag when tag changes
                   }}
                 >
                   <SelectTrigger className="w-full sm:w-48">
@@ -220,27 +207,6 @@ export default function HomePage() {
                   </SelectContent>
                 </Select>
 
-                {filterTag && (
-                  <Select
-                    value={filterSubtag || "all-subtags"}
-                    onValueChange={(value: string) => {
-                      const newValue = value === "all-subtags" ? "" : value
-                      setFilterSubtag(newValue)
-                    }}
-                  >
-                    <SelectTrigger className="w-full sm:w-48">
-                      <SelectValue placeholder="Filter by subtag" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all-subtags">All Subtags</SelectItem>
-                      {availableSubtags.map((subtag) => (
-                        <SelectItem key={subtag} value={subtag}>
-                          {subtag}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
               </div>
             </div>
           </CardContent>

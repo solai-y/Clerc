@@ -10,7 +10,6 @@ interface Document {
   name: string
   uploadDate: string
   tags: string[]
-  subtags: { [tagId: string]: string[] }
   size: string
 }
 

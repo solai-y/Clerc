@@ -10,7 +10,6 @@ interface Document {
   name: string
   uploadDate: string
   tags: string[]
-  subtags: { [tagId: string]: string[] }
   size: string
 }
 
@@ -43,21 +42,6 @@ export function DocumentTableRow({ document, onEditTags }: DocumentTableRowProps
               {tag}
             </Badge>
           ))}
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex flex-wrap gap-1">
-          {Object.entries(document.subtags).map(([tag, subtags]) =>
-            subtags.map((subtag, index) => (
-              <Badge
-                key={`${tag}-${index}`}
-                variant="outline"
-                className="text-xs border-red-200 text-red-600"
-              >
-                {subtag}
-              </Badge>
-            ))
-          )}
         </div>
       </TableCell>
       <TableCell>

@@ -3,8 +3,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { apiClient, transformBackendDocument, type BackendDocument } from '@/lib/api'
-import type { Document } from '@/types'
+import { apiClient, transformBackendDocument, type BackendProcessedDocument, type Document } from '@/lib/api'
 
 interface UseDocumentsParams {
   limit?: number
@@ -28,8 +27,8 @@ interface UseDocumentsReturn {
   loading: boolean
   error: string | null
   refetch: () => Promise<void>
-  createDocument: (document: Omit<BackendDocument, 'document_id' | 'upload_date'>) => Promise<void>
-  updateDocument: (id: number, document: Partial<Omit<BackendDocument, 'document_id'>>) => Promise<void>
+  createDocument: (document: Omit<BackendProcessedDocument, 'process_id' | 'processing_date'>) => Promise<void>
+  updateDocument: (id: number, document: Partial<Omit<BackendProcessedDocument, 'process_id'>>) => Promise<void>
   deleteDocument: (id: number) => Promise<void>
 }
 
@@ -96,7 +95,7 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
   }, [limit, offset, search]) // Removed categories dependency to avoid infinite loops
 
   // Create document
-  const createDocument = useCallback(async (document: Omit<BackendDocument, 'document_id' | 'upload_date'>) => {
+  const createDocument = useCallback(async (document: Omit<BackendProcessedDocument, 'process_id' | 'processing_date'>) => {
     try {
       await apiClient.createDocument(document)
       // Refetch documents after creation
@@ -109,7 +108,7 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
   }, [fetchDocuments])
 
   // Update document
-  const updateDocument = useCallback(async (id: number, document: Partial<Omit<BackendDocument, 'document_id'>>) => {
+  const updateDocument = useCallback(async (id: number, document: Partial<Omit<BackendProcessedDocument, 'process_id'>>) => {
     try {
       await apiClient.updateDocument(id, document)
       // Refetch documents after update
@@ -156,7 +155,7 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
   }
 }
 
-// Hook for getting available tags and subtags from documents
+// Hook for getting available tags from documents
 export function useDocumentTags(documents: Document[]) {
   const availableTags = useState(() => {
     const tags = new Set<string>()
@@ -164,19 +163,7 @@ export function useDocumentTags(documents: Document[]) {
     return Array.from(tags).sort()
   })
 
-  const getAvailableSubtags = useCallback((filterTag: string) => {
-    if (!filterTag) return []
-    const subtags = new Set<string>()
-    documents.forEach((doc) => {
-      if (doc.tags.includes(filterTag) && doc.subtags[filterTag]) {
-        doc.subtags[filterTag].forEach((subtag) => subtags.add(subtag))
-      }
-    })
-    return Array.from(subtags).sort()
-  }, [documents])
-
   return {
     availableTags: availableTags[0],
-    getAvailableSubtags,
   }
 }

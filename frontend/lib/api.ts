@@ -8,18 +8,38 @@ const DOCUMENT_SERVICE_URL = `${API_BASE_URL}/documents`
 // For direct service access during development (if nginx is not being used)
 const DIRECT_DOCUMENT_SERVICE_URL = process.env.NEXT_PUBLIC_DOCUMENT_SERVICE_URL || 'http://localhost:5003'
 
-// Types from backend
-export interface BackendDocument {
+// Types from backend - actual processed documents structure
+export interface BackendProcessedDocument {
+  process_id: number
   document_id: number
-  document_name: string
-  document_type: string
-  link: string
-  company: number
-  uploaded_by: number
-  upload_date: string
-  file_size?: number
-  file_hash?: string
-  status?: string
+  model_id: number | null
+  threshold_pct: number
+  confirmed_tags: string[] | null // confirmed tags by user
+  suggested_tags: Array<{
+    tag: string
+    score: number
+  }> | null // AI suggested tags with scores
+  user_added_labels: string[] | null // user manually added labels
+  ocr_used: boolean
+  processing_ms: number | null
+  processing_date: string
+  errors: string[] | null
+  saved_training: boolean
+  saved_count: number
+  request_id: string | null
+  status: string
+  user_reviewed: boolean | null
+  raw_documents: {
+    document_name: string
+    document_type: string
+    link: string
+    uploaded_by: number | null
+    company: number | null
+    upload_date: string
+    file_size: number | null
+    file_hash: string | null
+    status: string
+  }
 }
 
 export interface APIResponse<T> {
@@ -81,9 +101,9 @@ class APIClient {
     const url = `${DIRECT_DOCUMENT_SERVICE_URL}/documents${params.toString() ? `?${params}` : ''}`
     console.log('Calling document service at:', url)
     
-    // Backend now returns an object with documents and pagination info
+    // Backend now returns an object with processed documents and pagination info
     const responseData = await this.fetchWithErrorHandling<{
-      documents: BackendDocument[]
+      documents: BackendProcessedDocument[]
       pagination: {
         total: number
         page: number
@@ -102,19 +122,19 @@ class APIClient {
     }
   }
 
-  async getDocument(id: number): Promise<BackendDocument> {
-    return await this.fetchWithErrorHandling<BackendDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents/${id}`)
+  async getDocument(id: number): Promise<BackendProcessedDocument> {
+    return await this.fetchWithErrorHandling<BackendProcessedDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents/${id}`)
   }
 
-  async createDocument(document: Omit<BackendDocument, 'document_id' | 'upload_date'>): Promise<BackendDocument> {
-    return await this.fetchWithErrorHandling<BackendDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents`, {
+  async createDocument(document: Omit<BackendProcessedDocument, 'process_id' | 'processing_date'>): Promise<BackendProcessedDocument> {
+    return await this.fetchWithErrorHandling<BackendProcessedDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents`, {
       method: 'POST',
       body: JSON.stringify(document),
     })
   }
 
-  async updateDocument(id: number, document: Partial<Omit<BackendDocument, 'document_id'>>): Promise<BackendDocument> {
-    return await this.fetchWithErrorHandling<BackendDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents/${id}`, {
+  async updateDocument(id: number, document: Partial<Omit<BackendProcessedDocument, 'process_id'>>): Promise<BackendProcessedDocument> {
+    return await this.fetchWithErrorHandling<BackendProcessedDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents/${id}`, {
       method: 'PUT',
       body: JSON.stringify(document),
     })
@@ -127,32 +147,61 @@ class APIClient {
   }
 }
 
+// Frontend Document interface
+export interface Document {
+  id: string
+  name: string
+  uploadDate: string
+  tags: string[]
+  size: string
+  type: string
+  link: string
+  company: number | null
+  uploaded_by: number | null
+  status: string
+}
+
 // Utility functions to transform backend data to frontend format
 export function transformBackendDocument(
-  backendDoc: BackendDocument
+  processedDoc: BackendProcessedDocument
 ): Document {
-  // In the new schema, documents don't have categories field anymore
-  // For now, return empty tags until we implement tag extraction from processed_documents
+  // Extract tags from processed document
   const tags: string[] = []
-  const subtags: { [tagId: string]: string[] } = {}
+  
+  // Add CONFIRMED TAGS (tags confirmed by user)
+  if (processedDoc.confirmed_tags) {
+    processedDoc.confirmed_tags.forEach(tag => {
+      if (!tags.includes(tag)) {
+        tags.push(tag)
+      }
+    })
+  }
+  
+  // Add USER_ADDED_LABELS (manually added by user)
+  if (processedDoc.user_added_labels) {
+    processedDoc.user_added_labels.forEach(userLabel => {
+      if (!tags.includes(userLabel)) {
+        tags.push(userLabel)
+      }
+    })
+  }
 
-  // Use actual file size from backend if available, otherwise estimate
-  const sizeEstimate = backendDoc.file_size 
-    ? formatFileSize(backendDoc.file_size) 
-    : estimateFileSize(backendDoc.document_type)
+  // Use actual file size from raw document if available, otherwise estimate
+  const sizeEstimate = processedDoc.raw_documents?.file_size 
+    ? formatFileSize(processedDoc.raw_documents.file_size) 
+    : estimateFileSize(processedDoc.raw_documents?.document_type || 'PDF')
 
   return {
-    id: backendDoc.document_id.toString(),
-    name: backendDoc.document_name,
-    uploadDate: backendDoc.upload_date.split('T')[0], // Extract date part
+    id: processedDoc.document_id.toString(),
+    name: processedDoc.raw_documents?.document_name || 'Unknown Document',
+    uploadDate: processedDoc.raw_documents?.upload_date.split('T')[0] || '', // Extract date part
     tags: tags,
-    subtags: subtags,
     size: sizeEstimate,
-    type: backendDoc.document_type,
-    link: backendDoc.link,
-    company: backendDoc.company,
-    uploaded_by: backendDoc.uploaded_by,
-    status: backendDoc.status || 'uploaded'
+    type: processedDoc.raw_documents?.document_type || 'PDF',
+    link: processedDoc.raw_documents?.link || '',
+    company: processedDoc.raw_documents?.company,
+    uploaded_by: processedDoc.raw_documents?.uploaded_by,
+    status: processedDoc.status || 'processed'
   }
 }
 

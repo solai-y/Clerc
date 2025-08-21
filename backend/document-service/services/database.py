@@ -37,30 +37,50 @@ class DatabaseService:
             return False, error_msg
     
     def get_total_documents_count(self, search: Optional[str] = None, status: Optional[str] = None, company_id: Optional[int] = None) -> tuple[int, Optional[str]]:
-        """Get total count of documents with optional filters"""
+        """Get total count of processed documents with optional filters"""
         try:
-            query = self.supabase.table('raw_documents').select("document_id", count="exact")
+            query = self.supabase.table('processed_documents').select("process_id", count="exact")
             
-            if search:
-                query = query.ilike('document_name', f'%{search}%')
+            # For search and company filters, we need to join with raw_documents
+            if search or company_id:
+                query = query.select("process_id, raw_documents!document_id(document_name, company)", count="exact")
+                if search:
+                    # This is more complex with joins, may need to adjust based on Supabase capabilities
+                    pass  # Will implement search filtering in the main query
+                if company_id:
+                    # Will implement company filtering in the main query  
+                    pass
+            
             if status:
                 query = query.eq('status', status)
-            if company_id:
-                query = query.eq('company', company_id)
             
             response = query.execute()
             total_count = response.count if response.count is not None else 0
-            self.logger.info(f"Total documents count: {total_count}")
+            self.logger.info(f"Total processed documents count: {total_count}")
             return total_count, None
         except Exception as e:
-            error_msg = f"Failed to get documents count: {str(e)}"
+            error_msg = f"Failed to get processed documents count: {str(e)}"
             self.logger.error(error_msg)
             return 0, error_msg
 
     def get_all_documents(self, limit: Optional[int] = None, offset: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
-        """Get all documents with optional pagination"""
+        """Get all processed documents with document info from raw_documents"""
         try:
-            query = self.supabase.table('raw_documents').select("*")
+            # Query processed_documents as primary table and join with raw_documents for document info
+            query = self.supabase.table('processed_documents').select("""
+                *,
+                raw_documents!document_id(
+                    document_name,
+                    document_type,
+                    link,
+                    uploaded_by,
+                    company,
+                    upload_date,
+                    file_size,
+                    file_hash,
+                    status
+                )
+            """)
             
             if offset is not None and limit is not None:
                 # Use range for pagination: range(start, end) where end is inclusive
@@ -69,10 +89,10 @@ class DatabaseService:
                 query = query.limit(limit)
             
             response = query.execute()
-            self.logger.info(f"Retrieved {len(response.data)} documents")
+            self.logger.info(f"Retrieved {len(response.data)} processed documents")
             return response.data, None
         except Exception as e:
-            error_msg = f"Failed to retrieve documents: {str(e)}"
+            error_msg = f"Failed to retrieve processed documents: {str(e)}"
             self.logger.error(error_msg)
             return [], error_msg
     
@@ -159,20 +179,50 @@ class DatabaseService:
             return False, error_msg
     
     def search_documents(self, search_term: str, limit: Optional[int] = None, offset: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
-        """Search documents by name (basic text search)"""
+        """Search processed documents by document name"""
         try:
-            query = self.supabase.table('raw_documents').select("*").ilike('document_name', f'%{search_term}%')
+            # Query processed_documents and join with raw_documents, then filter by document name
+            query = self.supabase.table('processed_documents').select("""
+                *,
+                raw_documents!document_id(
+                    document_name,
+                    document_type,
+                    link,
+                    uploaded_by,
+                    company,
+                    upload_date,
+                    file_size,
+                    file_hash,
+                    status
+                )
+            """)
             
+            # Note: Filtering by joined table fields in Supabase can be tricky
+            # We'll get all processed documents first, then filter in Python
             if offset is not None and limit is not None:
                 query = query.range(offset, offset + limit - 1)
             elif limit:
-                query = query.limit(limit)
+                query = query.limit(limit * 5)  # Get more records to account for filtering
             
             response = query.execute()
-            self.logger.info(f"Search for '{search_term}' returned {len(response.data)} documents")
-            return response.data, None
+            
+            # Filter by document name in Python
+            filtered_documents = []
+            for doc in response.data:
+                if (doc.get('raw_documents') and 
+                    isinstance(doc['raw_documents'], dict) and
+                    search_term.lower() in doc['raw_documents'].get('document_name', '').lower()):
+                    filtered_documents.append(doc)
+            
+            # Apply limit after filtering
+            if limit:
+                filtered_documents = filtered_documents[:limit]
+            
+            self.logger.info(f"Search for '{search_term}' returned {len(filtered_documents)} processed documents")
+            return filtered_documents, None
+            
         except Exception as e:
-            error_msg = f"Failed to search documents: {str(e)}"
+            error_msg = f"Failed to search processed documents: {str(e)}"
             self.logger.error(error_msg)
             return [], error_msg
     

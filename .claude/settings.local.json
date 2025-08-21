@@ -16,7 +16,8 @@
       "Bash(bash:*)",
       "Bash(claude doctor)",
       "Bash(pip3 install:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }
