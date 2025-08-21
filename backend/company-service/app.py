@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from supabase import create_client, Client
 import os
 from dotenv import load_dotenv
@@ -10,6 +11,9 @@ supabase_key = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(supabase_url, supabase_key)
 
 app = Flask(__name__)
+
+# Enable CORS for all routes
+CORS(app, origins=['http://localhost:3000'])
 
 @app.route('/e2e', methods=['GET'])
 def e2e_test():

@@ -13,7 +13,10 @@
       "Bash(python3:*)",
       "Bash(chmod:*)",
       "Bash(./run_container_tests.sh:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(claude doctor)",
+      "Bash(pip3 install:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

@@ -10,10 +10,12 @@ class DocumentModel:
         self.document_name = self._sanitize_string(data.get('document_name', ''))
         self.document_type = self._sanitize_string(data.get('document_type', ''))
         self.link = self._sanitize_string(data.get('link', ''))
-        self.categories = data.get('categories', [])
         self.upload_date = self._validate_date(data.get('upload_date'))
         self.uploaded_by = self._validate_integer(data.get('uploaded_by'))
         self.company = self._validate_integer(data.get('company'))
+        self.file_size = self._validate_integer(data.get('file_size'))
+        self.file_hash = self._sanitize_string(data.get('file_hash', ''))
+        self.status = self._sanitize_string(data.get('status', 'uploaded'))
     
     def _sanitize_string(self, value: Any) -> str:
         """Sanitize string input"""
@@ -72,9 +74,10 @@ class DocumentModel:
         if self.company is None:
             errors.append("Company ID is required")
         
-        # Validate categories is a list
-        if self.categories is not None and not isinstance(self.categories, list):
-            errors.append("Categories must be a list")
+        # Validate status values
+        valid_statuses = ['uploaded', 'processing', 'processed', 'failed']
+        if self.status and self.status not in valid_statuses:
+            errors.append(f"Status must be one of: {', '.join(valid_statuses)}")
         
         return len(errors) == 0, errors
     
@@ -85,14 +88,17 @@ class DocumentModel:
             'document_type': self.document_type,
             'link': self.link,
             'uploaded_by': self.uploaded_by,
-            'company': self.company
+            'company': self.company,
+            'status': self.status
         }
         
         # Include optional fields if they exist
         if include_id and self.document_id is not None:
             data['document_id'] = self.document_id
-        if self.categories is not None:
-            data['categories'] = self.categories
+        if self.file_size is not None:
+            data['file_size'] = self.file_size
+        if self.file_hash:
+            data['file_hash'] = self.file_hash
         if self.upload_date is not None:
             data['upload_date'] = self.upload_date
         

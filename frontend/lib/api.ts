@@ -1,15 +1,12 @@
-/**
- * API client for Document Service
- */
+// api.ts - Frontend API client for document management
+import type { DocumentPaginationResponse, Document } from '../types'
 
-// API Configuration
+// Configuration
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost'
 const DOCUMENT_SERVICE_URL = `${API_BASE_URL}/documents`
-const CATEGORIES_SERVICE_URL = `${API_BASE_URL}/categories`
 
 // For direct service access during development (if nginx is not being used)
-const DIRECT_DOCUMENT_SERVICE_URL = process.env.NEXT_PUBLIC_DOCUMENT_SERVICE_URL || '/api'
-const DIRECT_CATEGORIES_SERVICE_URL = process.env.NEXT_PUBLIC_CATEGORIES_SERVICE_URL || '/api'
+const DIRECT_DOCUMENT_SERVICE_URL = process.env.NEXT_PUBLIC_DOCUMENT_SERVICE_URL || 'http://localhost:5003'
 
 // Types from backend
 export interface BackendDocument {
@@ -17,80 +14,54 @@ export interface BackendDocument {
   document_name: string
   document_type: string
   link: string
-  categories: number[]
   company: number
   uploaded_by: number
   upload_date: string
-}
-
-export interface BackendCategory {
-  category_id: number
-  category_name: string
-  description: string
-  parent_category_id: number | null
-  created_at: string
+  file_size?: number
+  file_hash?: string
+  status?: string
 }
 
 export interface APIResponse<T> {
-  status: 'success' | 'error'
+  status: string
   message: string
   data: T
   timestamp: string
-  error_code?: string
-}
-
-export interface PaginatedResponse<T> {
-  data: T[]
-  pagination: {
-    currentPage: number
+  pagination?: {
+    total: number
+    page: number
     totalPages: number
-    totalItems: number
-    itemsPerPage: number
-    hasNextPage: boolean
-    hasPreviousPage: boolean
   }
 }
 
-// Frontend types (existing)
-export interface Document {
-  id: string
-  name: string
-  uploadDate: string
-  tags: string[]
-  subtags: { [tagId: string]: string[] }
-  size: string
-  type?: string
-  link?: string
-  company?: number
-  uploadedBy?: number
-}
-
-export interface Category {
-  id: number
-  name: string
-  description: string
-  parentId: number | null
-  children: Category[]
+export interface GetDocumentsOptions {
+  limit?: number
+  offset?: number
+  search?: string
 }
 
 class APIClient {
-  private async fetchWithErrorHandling<T>(url: string, options?: RequestInit): Promise<APIResponse<T>> {
+  private async fetchWithErrorHandling<T>(url: string, options: RequestInit = {}): Promise<T> {
     try {
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
-          ...options?.headers,
+          ...options.headers,
         },
         ...options,
       })
 
-      const data = await response.json()
-
       if (!response.ok) {
-        throw new Error(data.message || `HTTP ${response.status}: ${response.statusText}`)
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
 
-      return data
+      const data: APIResponse<T> = await response.json()
+
+      if (data.status !== 'success') {
+        throw new Error(data.message || 'API request failed')
+      }
+
+      return data.data
     } catch (error) {
       console.error(`API Error for ${url}:`, error)
       throw error
@@ -98,63 +69,50 @@ class APIClient {
   }
 
   // Document Service Methods
-  async getDocuments(params?: {
-    limit?: number
-    offset?: number
-    search?: string
-  }): Promise<PaginatedResponse<BackendDocument>> {
-    const searchParams = new URLSearchParams()
-    
-    if (params?.limit) searchParams.append('limit', params.limit.toString())
-    if (params?.offset) searchParams.append('offset', params.offset.toString())
-    if (params?.search) searchParams.append('search', params.search)
+  async getDocuments(options: GetDocumentsOptions = {}): Promise<{
+    data: BackendDocument[]
+    pagination: { total: number; page: number; totalPages: number }
+  }> {
+    const params = new URLSearchParams()
+    if (options.limit) params.append('limit', options.limit.toString())
+    if (options.offset) params.append('offset', options.offset.toString())
+    if (options.search) params.append('search', options.search)
 
-    // First, get the requested documents
-    const url = `${DIRECT_DOCUMENT_SERVICE_URL}/documents${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
-    const response = await this.fetchWithErrorHandling<BackendDocument[]>(url)
+    const url = `${DIRECT_DOCUMENT_SERVICE_URL}/documents${params.toString() ? `?${params}` : ''}`
+    console.log('Calling document service at:', url)
     
-    // Get total count for pagination (we'll fetch without limit to get total)
-    const totalUrl = `${DIRECT_DOCUMENT_SERVICE_URL}/documents${params?.search ? `?search=${params.search}` : ''}`
-    const totalResponse = await this.fetchWithErrorHandling<BackendDocument[]>(totalUrl)
+    // Backend returns documents array directly in the data field
+    const documentsArray = await this.fetchWithErrorHandling<BackendDocument[]>(url)
     
-    const limit = params?.limit || 15
-    const offset = params?.offset || 0
-    const totalItems = totalResponse.data.length
-    const currentPage = Math.floor(offset / limit) + 1
-    const totalPages = Math.ceil(totalItems / limit)
-    
+    // Create pagination info (backend doesn't provide this yet, so we'll estimate)
+    const pagination = {
+      total: documentsArray.length,
+      page: Math.floor((options.offset || 0) / (options.limit || 15)) + 1,
+      totalPages: Math.ceil(documentsArray.length / (options.limit || 15))
+    }
+
     return {
-      data: response.data,
-      pagination: {
-        currentPage,
-        totalPages,
-        totalItems,
-        itemsPerPage: limit,
-        hasNextPage: currentPage < totalPages,
-        hasPreviousPage: currentPage > 1,
-      }
+      data: documentsArray,
+      pagination
     }
   }
 
   async getDocument(id: number): Promise<BackendDocument> {
-    const response = await this.fetchWithErrorHandling<BackendDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents/${id}`)
-    return response.data
+    return await this.fetchWithErrorHandling<BackendDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents/${id}`)
   }
 
   async createDocument(document: Omit<BackendDocument, 'document_id' | 'upload_date'>): Promise<BackendDocument> {
-    const response = await this.fetchWithErrorHandling<BackendDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents`, {
+    return await this.fetchWithErrorHandling<BackendDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents`, {
       method: 'POST',
       body: JSON.stringify(document),
     })
-    return response.data
   }
 
   async updateDocument(id: number, document: Partial<Omit<BackendDocument, 'document_id'>>): Promise<BackendDocument> {
-    const response = await this.fetchWithErrorHandling<BackendDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents/${id}`, {
+    return await this.fetchWithErrorHandling<BackendDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents/${id}`, {
       method: 'PUT',
       body: JSON.stringify(document),
     })
-    return response.data
   }
 
   async deleteDocument(id: number): Promise<void> {
@@ -162,62 +120,21 @@ class APIClient {
       method: 'DELETE',
     })
   }
-
-  // Categories Service Methods
-  async getCategories(): Promise<BackendCategory[]> {
-    const response = await fetch(`${DIRECT_CATEGORIES_SERVICE_URL}/categories`)
-    const data = await response.json()
-    
-    if (!response.ok) {
-      throw new Error(data.message || `HTTP ${response.status}: ${response.statusText}`)
-    }
-
-    // Categories service returns array directly, not wrapped in APIResponse
-    return Array.isArray(data) ? data : data.data || []
-  }
-
-  async getCategory(id: number): Promise<BackendCategory> {
-    const response = await fetch(`${DIRECT_CATEGORIES_SERVICE_URL}/categories/${id}`)
-    const data = await response.json()
-    
-    if (!response.ok) {
-      throw new Error(data.message || `HTTP ${response.status}: ${response.statusText}`)
-    }
-
-    return Array.isArray(data) ? data[0] : data.data || data
-  }
 }
 
 // Utility functions to transform backend data to frontend format
 export function transformBackendDocument(
-  backendDoc: BackendDocument, 
-  categoriesMap: Map<number, BackendCategory>
+  backendDoc: BackendDocument
 ): Document {
-  // Map categories to tag names
-  const tags = backendDoc.categories.map(catId => {
-    const category = categoriesMap.get(catId)
-    return category ? category.category_name : `Category ${catId}`
-  })
-
-  // Create subtags based on parent-child relationships
+  // In the new schema, documents don't have categories field anymore
+  // For now, return empty tags until we implement tag extraction from processed_documents
+  const tags: string[] = []
   const subtags: { [tagId: string]: string[] } = {}
-  
-  backendDoc.categories.forEach(catId => {
-    const category = categoriesMap.get(catId)
-    if (category) {
-      // Find child categories
-      const children = Array.from(categoriesMap.values())
-        .filter(cat => cat.parent_category_id === catId)
-        .map(cat => cat.category_name)
-      
-      if (children.length > 0) {
-        subtags[category.category_name] = children
-      }
-    }
-  })
 
-  // Generate a file size (since backend doesn't have this, we'll estimate based on file type)
-  const sizeEstimate = estimateFileSize(backendDoc.document_type)
+  // Use actual file size from backend if available, otherwise estimate
+  const sizeEstimate = backendDoc.file_size 
+    ? formatFileSize(backendDoc.file_size) 
+    : estimateFileSize(backendDoc.document_type)
 
   return {
     id: backendDoc.document_id.toString(),
@@ -229,16 +146,18 @@ export function transformBackendDocument(
     type: backendDoc.document_type,
     link: backendDoc.link,
     company: backendDoc.company,
-    uploadedBy: backendDoc.uploaded_by,
+    uploaded_by: backendDoc.uploaded_by,
+    status: backendDoc.status || 'uploaded'
   }
 }
 
-export function buildCategoriesMap(categories: BackendCategory[]): Map<number, BackendCategory> {
-  const map = new Map<number, BackendCategory>()
-  categories.forEach(category => {
-    map.set(category.category_id, category)
-  })
-  return map
+
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
 function estimateFileSize(documentType: string): string {
@@ -257,6 +176,3 @@ function estimateFileSize(documentType: string): string {
 
 // Export singleton instance
 export const apiClient = new APIClient()
-
-// Export types for external use
-export type { APIResponse, BackendDocument, BackendCategory, Document, Category }

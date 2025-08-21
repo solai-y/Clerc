@@ -55,9 +55,6 @@ export default function HomePage() {
     createDocument,
     updateDocument,
     deleteDocument,
-    categories,
-    categoriesLoading,
-    categoriesError,
   } = useDocuments({
     search: debouncedSearchTerm || undefined, // Use debounced search term
     limit: itemsPerPage, // 15 documents per page
@@ -182,15 +179,6 @@ export default function HomePage() {
           </Alert>
         )}
 
-        {/* Categories Error Alert */}
-        {categoriesError && (
-          <Alert className="mb-6 border-yellow-200 bg-yellow-50">
-            <AlertCircle className="h-4 w-4 text-yellow-600" />
-            <AlertDescription className="text-yellow-800">
-              Warning: Could not load categories. Tag filtering may be limited.
-            </AlertDescription>
-          </Alert>
-        )}
 
         {/* Search and Filters */}
         <Card className="mb-6">

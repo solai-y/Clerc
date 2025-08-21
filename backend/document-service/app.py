@@ -2,6 +2,7 @@ import os
 import logging
 from datetime import datetime
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from dotenv import load_dotenv
 
 # Import custom modules
@@ -26,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Enable CORS for all routes
+CORS(app, origins=['http://localhost:3000'])
 
 # Register blueprints
 app.register_blueprint(documents_bp, url_prefix='/documents')

@@ -28,6 +28,8 @@ def get_documents():
         limit = request.args.get('limit', type=int)
         offset = request.args.get('offset', type=int)
         search = request.args.get('search', type=str)
+        status = request.args.get('status', type=str)
+        company_id = request.args.get('company_id', type=int)
         
         # Validate parameters
         if limit is not None and limit <= 0:
@@ -36,9 +38,13 @@ def get_documents():
         if offset is not None and offset < 0:
             return APIResponse.validation_error("Offset must be non-negative")
         
-        # Search or get all documents
+        # Search, filter, or get all documents
         if search:
             documents, error = db_service.search_documents(search, limit)
+        elif status:
+            documents, error = db_service.get_documents_by_status(status, limit)
+        elif company_id:
+            documents, error = db_service.get_documents_by_company(company_id, limit)
         else:
             documents, error = db_service.get_all_documents(limit, offset)
         
@@ -183,4 +189,44 @@ def delete_document(document_id):
         
     except Exception as e:
         logger.error(f"Unexpected error in delete_document: {str(e)}")
+        return APIResponse.internal_error()
+
+@documents_bp.route('/<int:document_id>/status', methods=['PATCH'])
+def update_document_status(document_id):
+    """Update document status"""
+    logger.info(f"PATCH /documents/{document_id}/status - Request from {request.remote_addr}")
+    
+    if not db_service:
+        return APIResponse.internal_error("Database service not available")
+    
+    try:
+        # Validate request data
+        if not request.is_json:
+            return APIResponse.validation_error("Request must be JSON")
+        
+        data = request.get_json()
+        if not data or 'status' not in data:
+            return APIResponse.validation_error("Status field is required")
+        
+        status = data.get('status')
+        if not isinstance(status, str):
+            return APIResponse.validation_error("Status must be a string")
+        
+        # Update document status
+        success, error = db_service.update_document_status(document_id, status)
+        
+        if not success:
+            if error and "not found" in error.lower():
+                return APIResponse.not_found(f"Document with ID {document_id}")
+            elif error and "Invalid status" in error:
+                return APIResponse.validation_error(error)
+            else:
+                logger.error(f"Database error: {error}")
+                return APIResponse.internal_error("Failed to update document status")
+        
+        logger.info(f"Successfully updated document {document_id} status to '{status}'")
+        return APIResponse.success(None, f"Document status updated to '{status}'")
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in update_document_status: {str(e)}")
         return APIResponse.internal_error()

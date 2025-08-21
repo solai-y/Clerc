@@ -151,3 +151,54 @@ class DatabaseService:
             error_msg = f"Failed to search documents: {str(e)}"
             self.logger.error(error_msg)
             return [], error_msg
+    
+    def get_documents_by_status(self, status: str, limit: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
+        """Get documents by status"""
+        try:
+            query = self.supabase.table('raw_documents').select("*").eq('status', status)
+            
+            if limit:
+                query = query.limit(limit)
+            
+            response = query.execute()
+            self.logger.info(f"Retrieved {len(response.data)} documents with status '{status}'")
+            return response.data, None
+        except Exception as e:
+            error_msg = f"Failed to get documents by status: {str(e)}"
+            self.logger.error(error_msg)
+            return [], error_msg
+    
+    def get_documents_by_company(self, company_id: int, limit: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
+        """Get documents by company ID"""
+        try:
+            query = self.supabase.table('raw_documents').select("*").eq('company', company_id)
+            
+            if limit:
+                query = query.limit(limit)
+            
+            response = query.execute()
+            self.logger.info(f"Retrieved {len(response.data)} documents for company {company_id}")
+            return response.data, None
+        except Exception as e:
+            error_msg = f"Failed to get documents by company: {str(e)}"
+            self.logger.error(error_msg)
+            return [], error_msg
+    
+    def update_document_status(self, document_id: int, status: str) -> tuple[bool, Optional[str]]:
+        """Update document status"""
+        try:
+            valid_statuses = ['uploaded', 'processing', 'processed', 'failed']
+            if status not in valid_statuses:
+                return False, f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+            
+            response = self.supabase.table('raw_documents').update({'status': status}).eq('document_id', document_id).execute()
+            
+            if response.data:
+                self.logger.info(f"Updated document {document_id} status to '{status}'")
+                return True, None
+            else:
+                return False, f"Document with ID {document_id} not found"
+        except Exception as e:
+            error_msg = f"Failed to update document status: {str(e)}"
+            self.logger.error(error_msg)
+            return False, error_msg

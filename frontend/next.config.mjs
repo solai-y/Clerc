@@ -15,10 +15,6 @@ const nextConfig = {
         source: '/api/documents/:path*',
         destination: 'http://localhost:5003/documents/:path*',
       },
-      {
-        source: '/api/categories/:path*',
-        destination: 'http://localhost:5002/categories/:path*',
-      },
     ]
   },
 }

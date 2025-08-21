@@ -3,7 +3,8 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { apiClient, Document, BackendDocument, BackendCategory, transformBackendDocument, buildCategoriesMap, PaginatedResponse } from '@/lib/api'
+import { apiClient, transformBackendDocument, type BackendDocument } from '@/lib/api'
+import type { Document } from '@/types'
 
 interface UseDocumentsParams {
   limit?: number
@@ -30,9 +31,6 @@ interface UseDocumentsReturn {
   createDocument: (document: Omit<BackendDocument, 'document_id' | 'upload_date'>) => Promise<void>
   updateDocument: (id: number, document: Partial<Omit<BackendDocument, 'document_id'>>) => Promise<void>
   deleteDocument: (id: number) => Promise<void>
-  categories: BackendCategory[]
-  categoriesLoading: boolean
-  categoriesError: string | null
 }
 
 export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsReturn {
@@ -44,27 +42,6 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Categories state
-  const [categories, setCategories] = useState<BackendCategory[]>([])
-  const [categoriesLoading, setCategoriesLoading] = useState(false)
-  const [categoriesError, setCategoriesError] = useState<string | null>(null)
-
-  // Fetch categories
-  const fetchCategories = useCallback(async () => {
-    setCategoriesLoading(true)
-    setCategoriesError(null)
-    
-    try {
-      const categoriesData = await apiClient.getCategories()
-      setCategories(categoriesData)
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch categories'
-      setCategoriesError(errorMessage)
-      console.error('Error fetching categories:', err)
-    } finally {
-      setCategoriesLoading(false)
-    }
-  }, [])
 
   // Fetch documents
   const fetchDocuments = useCallback(async () => {
@@ -72,25 +49,17 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
     setError(null)
     
     try {
-      // Fetch documents and categories in parallel if categories not already loaded
-      const [documentsResponse, categoriesData] = await Promise.all([
-        apiClient.getDocuments({ limit, offset, search }),
-        categories.length === 0 ? apiClient.getCategories() : Promise.resolve(categories)
-      ])
-
-      // Update categories if we fetched them
-      if (categories.length === 0 && categoriesData.length > 0) {
-        setCategories(categoriesData)
-      }
-
+      // Fetch documents
+      const documentsResponse = await apiClient.getDocuments({ limit, offset, search })
+      
       // Transform backend documents to frontend format
-      const categoriesMap = buildCategoriesMap(categoriesData)
-      const transformedDocuments = documentsResponse.data.map(doc => 
-        transformBackendDocument(doc, categoriesMap)
+      const documentsData = documentsResponse?.data || []
+      const transformedDocuments = documentsData.map(doc => 
+        transformBackendDocument(doc)
       )
 
       setDocuments(transformedDocuments)
-      setPagination(documentsResponse.pagination)
+      setPagination(documentsResponse?.pagination || { total: 0, page: 1, totalPages: 1 })
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch documents'
       setError(errorMessage)
@@ -152,10 +121,6 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
     }
   }, [fetchDocuments, autoFetch])
 
-  // Fetch categories on mount
-  useEffect(() => {
-    fetchCategories()
-  }, [fetchCategories])
 
   return {
     documents,
@@ -166,9 +131,6 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
     createDocument,
     updateDocument,
     deleteDocument,
-    categories,
-    categoriesLoading,
-    categoriesError,
   }
 }
 
