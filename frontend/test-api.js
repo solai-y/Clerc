@@ -9,7 +9,7 @@ async function testAPI() {
   try {
     // Test document service
     console.log('1. Testing Document Service...')
-    const docsResponse = await fetch('http://localhost:5003/documents?limit=3')
+    const docsResponse = await fetch(`${process.env.NEXT_PUBLIC_DOCUMENT_SERVICE_URL || 'http://localhost:5003'}/documents?limit=3`)
     const docsData = await docsResponse.json()
     
     if (docsResponse.ok) {

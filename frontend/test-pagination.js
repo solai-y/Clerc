@@ -6,7 +6,7 @@ const fetch = require('node-fetch')
 async function testPagination() {
   console.log('Testing Pagination Functionality...\n')
   
-  const baseUrl = 'http://localhost:5003/documents'
+  const baseUrl = `${process.env.NEXT_PUBLIC_DOCUMENT_SERVICE_URL || 'http://localhost:5003'}/documents`
   
   try {
     // Test 1: Get total count
