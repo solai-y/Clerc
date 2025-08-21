@@ -89,6 +89,33 @@ class DatabaseService:
                 query = query.limit(limit)
             
             response = query.execute()
+            
+            # Fetch company names for documents that have company IDs
+            if response.data:
+                # Get unique company IDs
+                company_ids = set()
+                for doc in response.data:
+                    if doc.get('raw_documents', {}).get('company'):
+                        company_ids.add(doc['raw_documents']['company'])
+                
+                # Fetch company information if we have company IDs
+                company_names = {}
+                if company_ids:
+                    companies_response = self.supabase.table('companies').select('company_id, company_name').in_('company_id', list(company_ids)).execute()
+                    for company in companies_response.data:
+                        company_names[company['company_id']] = company['company_name']
+                
+                # Add company names to the documents
+                for doc in response.data:
+                    if doc.get('raw_documents', {}).get('company'):
+                        company_id = doc['raw_documents']['company']
+                        doc['raw_documents']['companies'] = {
+                            'company_id': company_id,
+                            'company_name': company_names.get(company_id, 'Unknown Company')
+                        }
+                    else:
+                        doc['raw_documents']['companies'] = None
+            
             self.logger.info(f"Retrieved {len(response.data)} processed documents")
             return response.data, None
         except Exception as e:

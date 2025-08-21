@@ -117,6 +117,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
               type: file.type || 'application/pdf',
               link: '',
               company: null,
+              companyName: null,
               uploaded_by: null,
               status: 'uploaded',
               modelGeneratedTags: aiResult.tags.map(tag => ({

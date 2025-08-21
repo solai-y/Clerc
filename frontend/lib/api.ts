@@ -38,6 +38,10 @@ export interface BackendProcessedDocument {
     file_size: number | null
     file_hash: string | null
     status: string
+    companies: {
+      company_id: number
+      company_name: string
+    } | null
   }
 }
 
@@ -156,6 +160,7 @@ export interface Document {
   type: string
   link: string
   company: number | null
+  companyName: string | null
   uploaded_by: number | null
   status: string
   // Detailed tag information for modal display
@@ -226,6 +231,7 @@ export function transformBackendDocument(
     type: processedDoc.raw_documents?.document_type || 'PDF',
     link: processedDoc.raw_documents?.link || '',
     company: processedDoc.raw_documents?.company,
+    companyName: processedDoc.raw_documents?.companies?.company_name || null,
     uploaded_by: processedDoc.raw_documents?.uploaded_by,
     status: processedDoc.status || 'processed',
     modelGeneratedTags: modelGeneratedTags,

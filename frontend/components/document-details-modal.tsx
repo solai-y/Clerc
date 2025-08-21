@@ -33,6 +33,7 @@ interface Document {
   type: string
   link: string
   company: number | null
+  companyName: string | null
   uploaded_by: number | null
   status: string
   modelGeneratedTags: Array<{
@@ -189,15 +190,15 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                     </p>
                   </div>
 
-                  {(document.company || document.uploaded_by) && (
+                  {(document.companyName || document.uploaded_by) && (
                     <div className="grid grid-cols-2 gap-3">
-                      {document.company && (
+                      {document.companyName && (
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
                             <Building className="w-4 h-4 text-gray-500" />
-                            <span className="font-medium text-sm">Company ID</span>
+                            <span className="font-medium text-sm">Company</span>
                           </div>
-                          <p className="text-sm bg-gray-50 p-2 rounded border">{document.company}</p>
+                          <p className="text-sm bg-gray-50 p-2 rounded border">{document.companyName}</p>
                         </div>
                       )}
 

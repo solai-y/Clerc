@@ -12,11 +12,13 @@ tests/
 ├── integration/             # Integration tests using Flask test client
 │   ├── test_get_all_documents.py  # Basic document listing tests
 │   ├── test_crud_operations.py    # Full CRUD operation tests
+│   ├── test_missing_endpoints.py  # Tests for root and status update endpoints
 │   └── __init__.py
 ├── e2e/                     # End-to-end tests via HTTP requests
-│   ├── test_e2e.py                # Basic service availability tests
-│   ├── test_nginx_e2e.py          # Nginx routing tests
-│   └── test_full_crud_e2e.py      # Comprehensive E2E tests
+│   ├── test_e2e.py                     # Basic service availability tests
+│   ├── test_nginx_e2e.py               # Nginx routing tests
+│   ├── test_full_crud_e2e.py           # Comprehensive E2E tests
+│   └── test_missing_endpoints_e2e.py   # E2E tests for previously untested endpoints
 ├── run_tests.py             # Test runner script
 ├── README.md               # This file
 └── pytest.ini             # Pytest configuration
@@ -123,15 +125,19 @@ The tests expect:
 ## Test Coverage
 
 ### API Endpoints Tested
+- ✅ `GET /` - Root endpoint with API information
 - ✅ `GET /e2e` - Service availability
 - ✅ `GET /health` - Health check
 - ✅ `GET /documents` - List all documents
 - ✅ `GET /documents?limit=N&offset=N` - Pagination
 - ✅ `GET /documents?search=term` - Search
+- ✅ `GET /documents?status=X` - Filter by status
+- ✅ `GET /documents?company_id=X` - Filter by company
 - ✅ `GET /documents/{id}` - Get specific document
 - ✅ `POST /documents` - Create document
 - ✅ `PUT /documents/{id}` - Update document  
 - ✅ `DELETE /documents/{id}` - Delete document
+- ✅ `PATCH /documents/{id}/status` - Update document status
 
 ### Error Scenarios Tested
 - ✅ 404 Not Found (non-existent documents)
