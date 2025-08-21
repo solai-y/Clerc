@@ -3,22 +3,17 @@
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { TableCell, TableRow } from "@/components/ui/table"
-import { FileText, Calendar, Tag } from "lucide-react"
+import { FileText, Calendar, Tag, Eye } from "lucide-react"
 
-interface Document {
-  id: string
-  name: string
-  uploadDate: string
-  tags: string[]
-  size: string
-}
+import { Document } from "@/lib/api"
 
 interface DocumentTableRowProps {
   document: Document
   onEditTags: (document: Document) => void
+  onViewDetails: (document: Document) => void
 }
 
-export function DocumentTableRow({ document, onEditTags }: DocumentTableRowProps) {
+export function DocumentTableRow({ document, onEditTags, onViewDetails }: DocumentTableRowProps) {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
@@ -53,6 +48,15 @@ export function DocumentTableRow({ document, onEditTags }: DocumentTableRowProps
       <TableCell>{document.size}</TableCell>
       <TableCell>
         <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onViewDetails(document)}
+            className="border-blue-200 text-blue-700 hover:bg-blue-50"
+          >
+            <Eye className="w-4 h-4 mr-1" />
+            View Details
+          </Button>
           <Button
             size="sm"
             variant="outline"

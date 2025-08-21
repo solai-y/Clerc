@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Upload, Search, Filter, AlertCircle, RefreshCw } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
 import { ConfirmTagsModal } from "@/components/confirm-tags-modal"
+import { DocumentDetailsModal } from "@/components/document-details-modal"
 import { DocumentTable } from "@/components/document-table"
 import { DocumentPagination } from "@/components/document-pagination"
 import { useDocuments } from "@/hooks/use-documents"
@@ -22,6 +23,7 @@ export default function HomePage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [confirmTagsDocument, setConfirmTagsDocument] = useState<Document | null>(null)
+  const [detailsDocument, setDetailsDocument] = useState<Document | null>(null)
   const [filterTag, setFilterTag] = useState<string>("")
   
   // Pagination state
@@ -259,6 +261,7 @@ export default function HomePage() {
                   sortOrder={sortOrder}
                   onSort={handleSort}
                   onEditTags={setConfirmTagsDocument}
+                  onViewDetails={setDetailsDocument}
                 />
                 
                 {/* Pagination */}
@@ -302,6 +305,14 @@ export default function HomePage() {
           document={confirmTagsDocument}
           onConfirm={handleConfirmTags}
           onClose={() => setConfirmTagsDocument(null)}
+        />
+      )}
+
+      {/* Document Details Modal */}
+      {detailsDocument && (
+        <DocumentDetailsModal
+          document={detailsDocument}
+          onClose={() => setDetailsDocument(null)}
         />
       )}
     </div>

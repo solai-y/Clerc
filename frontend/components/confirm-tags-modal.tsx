@@ -9,14 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FileText, Tag, Plus, X } from "lucide-react"
-
-interface Document {
-  id: string
-  name: string
-  uploadDate: string
-  tags: string[]
-  size: string
-}
+import { Document } from "@/lib/api"
 
 interface ConfirmTagsModalProps {
   document: Document

@@ -7,14 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Upload, FileText, CheckCircle } from "lucide-react"
-
-interface Document {
-  id: string
-  name: string
-  uploadDate: string
-  tags: string[]
-  size: string
-}
+import { Document } from "@/lib/api"
 
 interface UploadModalProps {
   isOpen: boolean
@@ -121,6 +114,17 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
               uploadDate: new Date().toISOString().split("T")[0],
               tags: aiResult.tags,
               size: formatFileSize(file.size),
+              type: file.type || 'application/pdf',
+              link: '',
+              company: null,
+              uploaded_by: null,
+              status: 'uploaded',
+              modelGeneratedTags: aiResult.tags.map(tag => ({
+                tag,
+                score: Math.random() * 0.5 + 0.5, // Random confidence between 0.5-1.0
+                isConfirmed: false
+              })),
+              userAddedTags: []
             }
             onUploadComplete(newDocument)
             setIsUploading(false)

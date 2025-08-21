@@ -1,5 +1,4 @@
 // api.ts - Frontend API client for document management
-import type { DocumentPaginationResponse, Document } from '../types'
 
 // Configuration
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost'
@@ -90,7 +89,7 @@ class APIClient {
 
   // Document Service Methods
   async getDocuments(options: GetDocumentsOptions = {}): Promise<{
-    data: BackendDocument[]
+    data: BackendProcessedDocument[]
     pagination: { total: number; page: number; totalPages: number }
   }> {
     const params = new URLSearchParams()
@@ -159,6 +158,13 @@ export interface Document {
   company: number | null
   uploaded_by: number | null
   status: string
+  // Detailed tag information for modal display
+  modelGeneratedTags: Array<{
+    tag: string
+    score: number
+    isConfirmed: boolean
+  }>
+  userAddedTags: string[]
 }
 
 // Utility functions to transform backend data to frontend format
@@ -167,21 +173,41 @@ export function transformBackendDocument(
 ): Document {
   // Extract tags from processed document
   const tags: string[] = []
+  const modelGeneratedTags: Array<{tag: string, score: number, isConfirmed: boolean}> = []
+  const userAddedTags: string[] = []
   
-  // Add CONFIRMED TAGS (tags confirmed by user)
-  if (processedDoc.confirmed_tags) {
-    processedDoc.confirmed_tags.forEach(tag => {
-      if (!tags.includes(tag)) {
-        tags.push(tag)
+  // Process MODEL GENERATED TAGS (from suggested_tags with scores)
+  if (processedDoc.suggested_tags) {
+    processedDoc.suggested_tags.forEach(tagData => {
+      const isConfirmed = processedDoc.confirmed_tags?.includes(tagData.tag) || false
+      modelGeneratedTags.push({
+        tag: tagData.tag,
+        score: tagData.score,
+        isConfirmed: isConfirmed
+      })
+      
+      // Add confirmed model tags to main tags array
+      if (isConfirmed && !tags.includes(tagData.tag)) {
+        tags.push(tagData.tag)
       }
     })
   }
   
-  // Add USER_ADDED_LABELS (manually added by user)
+  // Process USER_ADDED_LABELS (manually added by user)
   if (processedDoc.user_added_labels) {
     processedDoc.user_added_labels.forEach(userLabel => {
+      userAddedTags.push(userLabel)
       if (!tags.includes(userLabel)) {
         tags.push(userLabel)
+      }
+    })
+  }
+  
+  // Add any confirmed tags that weren't in suggested_tags (edge case)
+  if (processedDoc.confirmed_tags) {
+    processedDoc.confirmed_tags.forEach(confirmedTag => {
+      if (!tags.includes(confirmedTag)) {
+        tags.push(confirmedTag)
       }
     })
   }
@@ -201,7 +227,9 @@ export function transformBackendDocument(
     link: processedDoc.raw_documents?.link || '',
     company: processedDoc.raw_documents?.company,
     uploaded_by: processedDoc.raw_documents?.uploaded_by,
-    status: processedDoc.status || 'processed'
+    status: processedDoc.status || 'processed',
+    modelGeneratedTags: modelGeneratedTags,
+    userAddedTags: userAddedTags
   }
 }
 

@@ -5,13 +5,7 @@ import { FileText } from "lucide-react"
 import { DocumentTableHeader } from "@/components/document-table-header"
 import { DocumentTableRow } from "@/components/document-table-row"
 
-interface Document {
-  id: string
-  name: string
-  uploadDate: string
-  tags: string[]
-  size: string
-}
+import { Document } from "@/lib/api"
 
 type SortBy = "name" | "date" | "size"
 type SortOrder = "asc" | "desc"
@@ -22,9 +16,10 @@ interface DocumentTableProps {
   sortOrder: SortOrder
   onSort: (column: SortBy) => void
   onEditTags: (document: Document) => void
+  onViewDetails: (document: Document) => void
 }
 
-export function DocumentTable({ documents, sortBy, sortOrder, onSort, onEditTags }: DocumentTableProps) {
+export function DocumentTable({ documents, sortBy, sortOrder, onSort, onEditTags, onViewDetails }: DocumentTableProps) {
   if (documents.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">
@@ -39,7 +34,12 @@ export function DocumentTable({ documents, sortBy, sortOrder, onSort, onEditTags
       <DocumentTableHeader sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} />
       <TableBody>
         {documents.map((document) => (
-          <DocumentTableRow key={document.id} document={document} onEditTags={onEditTags} />
+          <DocumentTableRow 
+            key={document.id} 
+            document={document} 
+            onEditTags={onEditTags}
+            onViewDetails={onViewDetails}
+          />
         ))}
       </TableBody>
     </Table>
