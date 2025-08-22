@@ -33,9 +33,9 @@ jobs:
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
-      # Run categories-service integration tests
+      # Run s3-service integration tests
       - name: Run categories-service tests
-        working-directory: backend/categories-service
+        working-directory: backend/s3-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
@@ -48,9 +48,9 @@ jobs:
           pip install -r requirements.txt
           pytest -s tests/e2e -v
 
-      # Run categories-service E2E tests
-      - name: Run categories-service E2E tests
-        working-directory: backend/categories-service
+      # Run s3-service E2E tests
+      - name: Run s3-service E2E tests
+        working-directory: backend/s3-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/e2e -v
