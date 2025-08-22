@@ -33,10 +33,24 @@ jobs:
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
+      # Run document-service integration tests
+      - name: Run document-service tests
+        working-directory: backend/document-service
+        run: |
+          pip install -r requirements.txt
+          pytest -s tests/integration -v
+
       #! E2E TESTS
       # Run company-service E2E tests
       - name: Run company-service E2E tests
         working-directory: backend/company-service
+        run: |
+          pip install -r requirements.txt
+          pytest -s tests/e2e -v
+
+      # Run document-service E2E tests
+      - name: Run document-service E2E tests
+        working-directory: backend/document-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/e2e -v
