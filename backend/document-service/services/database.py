@@ -303,3 +303,103 @@ class DatabaseService:
             error_msg = f"Failed to update document status: {str(e)}"
             self.logger.error(error_msg)
             return False, error_msg
+    
+    def create_processed_document(self, document_data: Dict[str, Any]) -> tuple[Optional[Dict], Optional[str]]:
+        """Create a new processed document entry with empty tag fields"""
+        try:
+            # Validate required fields
+            required_fields = ['document_id']
+            for field in required_fields:
+                if field not in document_data:
+                    return None, f"Missing required field: {field}"
+            
+            # Prepare data with empty tag fields
+            processed_data = {
+                'document_id': document_data['document_id'],
+                'model_id': document_data.get('model_id'),
+                'threshold_pct': document_data.get('threshold_pct', 60),
+                'suggested_tags': document_data.get('suggested_tags'),
+                'confirmed_tags': [],  # Empty array
+                'user_added_labels': [],  # Empty array
+                'user_removed_tags': [],  # Empty array
+                'user_reviewed': False,
+                'user_id': document_data.get('user_id'),
+                'ocr_used': document_data.get('ocr_used', False),
+                'processing_ms': document_data.get('processing_ms'),
+                'errors': document_data.get('errors'),
+                'saved_training': document_data.get('saved_training', False),
+                'saved_count': document_data.get('saved_count', 0),
+                'request_id': document_data.get('request_id'),
+                'status': document_data.get('status', 'api_processed')
+            }
+            
+            response = self.supabase.table('processed_documents').insert(processed_data).execute()
+            
+            if response.data:
+                created_doc = response.data[0]
+                self.logger.info(f"Created processed document with process_id: {created_doc.get('process_id')}")
+                return created_doc, None
+            else:
+                error_msg = "Failed to create processed document - no data returned"
+                self.logger.error(error_msg)
+                return None, error_msg
+        except Exception as e:
+            error_msg = f"Failed to create processed document: {str(e)}"
+            self.logger.error(error_msg)
+            return None, error_msg
+    
+    def update_document_tags(self, document_id: int, tag_data: Dict[str, Any]) -> tuple[Optional[Dict], Optional[str]]:
+        """Update confirmed_tags, user_added_labels, and user_removed_tags for a processed document"""
+        try:
+            # First check if processed document exists for this document_id
+            existing_response = self.supabase.table('processed_documents').select("*").eq('document_id', document_id).execute()
+            
+            if not existing_response.data:
+                return None, f"No processed document found for document_id {document_id}"
+            
+            existing_doc = existing_response.data[0]
+            process_id = existing_doc['process_id']
+            
+            # Prepare update data
+            update_data = {}
+            
+            if 'confirmed_tags' in tag_data:
+                if not isinstance(tag_data['confirmed_tags'], list):
+                    return None, "confirmed_tags must be an array"
+                update_data['confirmed_tags'] = tag_data['confirmed_tags']
+            
+            if 'user_added_labels' in tag_data:
+                if not isinstance(tag_data['user_added_labels'], list):
+                    return None, "user_added_labels must be an array"
+                update_data['user_added_labels'] = tag_data['user_added_labels']
+            
+            if 'user_removed_tags' in tag_data:
+                if not isinstance(tag_data['user_removed_tags'], list):
+                    return None, "user_removed_tags must be an array"
+                update_data['user_removed_tags'] = tag_data['user_removed_tags']
+            
+            # Mark as user reviewed and add review timestamp
+            update_data['user_reviewed'] = True
+            update_data['reviewed_at'] = 'now()'
+            
+            if 'user_id' in tag_data:
+                update_data['user_id'] = tag_data['user_id']
+            
+            if not update_data:
+                return None, "No valid tag data provided for update"
+            
+            # Update the processed document
+            response = self.supabase.table('processed_documents').update(update_data).eq('process_id', process_id).execute()
+            
+            if response.data:
+                updated_doc = response.data[0]
+                self.logger.info(f"Updated tags for processed document {process_id} (document_id: {document_id})")
+                return updated_doc, None
+            else:
+                error_msg = f"Failed to update processed document tags - no data returned"
+                self.logger.error(error_msg)
+                return None, error_msg
+        except Exception as e:
+            error_msg = f"Failed to update document tags: {str(e)}"
+            self.logger.error(error_msg)
+            return None, error_msg

@@ -255,3 +255,90 @@ def update_document_status(document_id):
     except Exception as e:
         logger.error(f"Unexpected error in update_document_status: {str(e)}")
         return APIResponse.internal_error()
+
+@documents_bp.route('/processed', methods=['POST'])
+def create_processed_document():
+    """Create a new processed document entry with empty tag fields"""
+    logger.info(f"POST /documents/processed - Request from {request.remote_addr}")
+    
+    if not db_service:
+        return APIResponse.internal_error("Database service not available")
+    
+    try:
+        # Validate request data
+        if not request.is_json:
+            return APIResponse.validation_error("Request must be JSON")
+        
+        data = request.get_json()
+        if not data:
+            return APIResponse.validation_error("Request body cannot be empty")
+        
+        # Validate required fields
+        if 'document_id' not in data:
+            return APIResponse.validation_error("document_id field is required")
+        
+        # Create processed document
+        created_document, error = db_service.create_processed_document(data)
+        
+        if error:
+            logger.error(f"Database error: {error}")
+            return APIResponse.internal_error("Failed to create processed document")
+        
+        logger.info(f"Successfully created processed document for document_id: {data['document_id']}")
+        return APIResponse.success(created_document, "Processed document created successfully", 201)
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in create_processed_document: {str(e)}")
+        return APIResponse.internal_error()
+
+@documents_bp.route('/<int:document_id>/tags', methods=['PATCH', 'OPTIONS'])
+def update_document_tags(document_id):
+    """Update confirmed_tags, user_added_labels, and user_removed_tags for a document"""
+    
+    # Handle OPTIONS preflight request
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    logger.info(f"PATCH /documents/{document_id}/tags - Request from {request.remote_addr}")
+    
+    if not db_service:
+        return APIResponse.internal_error("Database service not available")
+    
+    try:
+        # Validate request data
+        if not request.is_json:
+            return APIResponse.validation_error("Request must be JSON")
+        
+        data = request.get_json()
+        if not data:
+            return APIResponse.validation_error("Request body cannot be empty")
+        
+        # Validate that at least one tag field is provided
+        valid_fields = ['confirmed_tags', 'user_added_labels', 'user_removed_tags', 'user_id']
+        tag_fields = ['confirmed_tags', 'user_added_labels', 'user_removed_tags']
+        
+        has_tag_field = any(field in data for field in tag_fields)
+        if not has_tag_field:
+            return APIResponse.validation_error(f"At least one of the following fields is required: {', '.join(tag_fields)}")
+        
+        # Validate array fields
+        for field in tag_fields:
+            if field in data and not isinstance(data[field], list):
+                return APIResponse.validation_error(f"{field} must be an array")
+        
+        # Update document tags
+        updated_document, error = db_service.update_document_tags(document_id, data)
+        
+        if error:
+            if "not found" in error.lower():
+                return APIResponse.not_found(f"Processed document for document_id {document_id}")
+            else:
+                logger.error(f"Database error: {error}")
+                return APIResponse.internal_error("Failed to update document tags")
+        
+        logger.info(f"Successfully updated tags for document {document_id}")
+        return APIResponse.success(updated_document, "Document tags updated successfully")
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in update_document_tags: {str(e)}")
+        return APIResponse.internal_error()

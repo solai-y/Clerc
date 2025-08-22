@@ -13,7 +13,7 @@ import { DocumentDetailsModal } from "@/components/document-details-modal"
 import { DocumentTable } from "@/components/document-table"
 import { DocumentPagination } from "@/components/document-pagination"
 import { useDocuments } from "@/hooks/use-documents"
-import { Document } from "@/lib/api"
+import { Document, apiClient } from "@/lib/api"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function HomePage() {
@@ -119,15 +119,22 @@ export default function HomePage() {
 
   const handleConfirmTags = async (
     documentId: string,
-    confirmedTags: string[]
+    confirmedTags: string[],
+    userAddedTags: string[]
   ) => {
     try {
-      // In a real implementation, this would update the document via API
-      // For now, we'll just refetch to get the latest data
+      const documentIdNum = parseInt(documentId)
+      
+      await apiClient.updateDocumentTags(documentIdNum, {
+        confirmed_tags: confirmedTags,
+        user_added_labels: userAddedTags
+      })
+      
       await refetch()
       setConfirmTagsDocument(null)
     } catch (err) {
       console.error('Error updating tags:', err)
+      throw err
     }
   }
 

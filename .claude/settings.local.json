@@ -22,7 +22,11 @@
       "Bash(npx tsc:*)",
       "Bash(npm install:*)",
       "Bash(npm run dev:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(./test_tag_operations.sh:*)",
+      "Bash(lsof:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker inspect:*)"
     ],
     "deny": []
   }

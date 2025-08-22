@@ -148,6 +148,17 @@ class APIClient {
       method: 'DELETE',
     })
   }
+
+  async updateDocumentTags(documentId: number, tagData: {
+    confirmed_tags?: string[]
+    user_added_labels?: string[]
+    user_removed_tags?: string[]
+  }): Promise<BackendProcessedDocument> {
+    return await this.fetchWithErrorHandling<BackendProcessedDocument>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents/${documentId}/tags`, {
+      method: 'PATCH',
+      body: JSON.stringify(tagData),
+    })
+  }
 }
 
 // Frontend Document interface

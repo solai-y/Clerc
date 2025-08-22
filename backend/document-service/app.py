@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Enable CORS for all routes
-CORS(app, origins=['http://localhost:3000'])
+CORS(app, origins=['http://localhost:3000'], supports_credentials=True, allow_headers=['Content-Type'])
 
 # Register blueprints
 app.register_blueprint(documents_bp, url_prefix='/documents')
@@ -113,7 +113,10 @@ def root():
             "GET /documents/<id> - Get document by ID",
             "POST /documents - Create new document",
             "PUT /documents/<id> - Update document",
-            "DELETE /documents/<id> - Delete document"
+            "DELETE /documents/<id> - Delete document",
+            "PATCH /documents/<id>/status - Update document status",
+            "POST /documents/processed - Create processed document entry",
+            "PATCH /documents/<id>/tags - Update document tags"
         ]
     }, "Document service API")
 

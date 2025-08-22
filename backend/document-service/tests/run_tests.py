@@ -44,17 +44,52 @@ def main():
     
     if args.type in ['unit', 'all']:
         print("\n🧪 RUNNING UNIT TESTS")
+        
+        # Run document model tests
         total_count += 1
-        if run_command("python unit/test_document_model.py", "Unit Tests"):
+        if run_command("python unit/test_document_model.py", "Document Model Unit Tests"):
             success_count += 1
+        
+        # Run tag operations unit tests (requires Flask)
+        total_count += 1
+        print("  [INFO] Checking Flask availability for tag unit tests...")
+        try:
+            import flask
+            if run_command("python -m pytest unit/test_tag_operations.py -v", "Tag Operations Unit Tests"):
+                success_count += 1
+        except ImportError:
+            print("  [SKIP] Flask not available - skipping tag unit tests")
+            print("         Install Flask: pip install flask")
+            success_count += 1  # Don't fail the test suite
     
     if args.type in ['integration', 'all']:
         print("\n🔗 RUNNING INTEGRATION TESTS")
-        print("Note: Integration tests skipped - require Flask dependencies in Docker container")
-        print("Use E2E tests for full API testing instead.")
-        # Skip integration tests if Flask is not available
-        total_count += 1
-        success_count += 1  # Consider this a pass since E2E covers the same functionality
+        
+        print("  [INFO] Checking Flask availability for integration tests...")
+        try:
+            import flask
+            
+            # Run CRUD operations integration tests
+            total_count += 1
+            if run_command("python -m pytest integration/test_crud_operations.py -v", "CRUD Operations Integration Tests"):
+                success_count += 1
+            
+            # Run tag operations integration tests
+            total_count += 1
+            if run_command("python -m pytest integration/test_tag_operations_integration.py -v", "Tag Operations Integration Tests"):
+                success_count += 1
+            
+            # Run other integration tests
+            total_count += 1
+            if run_command("python -m pytest integration/test_get_all_documents.py -v", "Get All Documents Integration Tests"):
+                success_count += 1
+                
+        except ImportError:
+            print("  [SKIP] Flask not available - skipping integration tests")
+            print("         Install Flask: pip install flask")
+            print("         Integration tests require Flask test client")
+            total_count += 3
+            success_count += 3  # Don't fail the test suite
     
     if args.type in ['e2e', 'all']:
         print("\n🌐 RUNNING END-TO-END TESTS")
@@ -75,6 +110,11 @@ def main():
         # Run missing endpoints E2E tests
         total_count += 1
         if run_command("python e2e/test_missing_endpoints_e2e.py", "Missing Endpoints E2E Tests"):
+            success_count += 1
+        
+        # Run tag operations E2E tests
+        total_count += 1
+        if run_command("python e2e/test_tag_operations_e2e.py", "Tag Operations E2E Tests"):
             success_count += 1
     
     # Summary
