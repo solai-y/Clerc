@@ -32,6 +32,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    restart: unless-stopped
       
   nginx:
     image: nginx:latest
@@ -47,4 +48,4 @@ services:
         condition: service_started        # no healthcheck needed
       ai-service:
         condition: service_healthy        # needs a healthcheck
-  restart: unless-stopped
+    restart: unless-stopped
