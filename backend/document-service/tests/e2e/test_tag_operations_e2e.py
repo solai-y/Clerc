@@ -121,11 +121,21 @@ class TestTagOperationsE2E:
         doc_info = self.create_test_document_with_processing("workflow")
         document_id = doc_info["document_id"]
         
-        # Step 2: Retrieve document to see AI suggestions
+        # Step 2: Retrieve document to see AI suggestions from processed documents
         print("  [STEP 2] Retrieving document to view AI suggestions...")
-        get_response = requests.get(f"{self.base_url}/documents/{document_id}")
+        # Query processed documents, filtering by document_id
+        get_response = requests.get(f"{self.base_url}/documents")
         assert get_response.status_code == 200
-        doc_data = get_response.json()["data"]
+        
+        # Find our created document in the processed documents
+        documents = get_response.json()["data"]["documents"]
+        doc_data = None
+        for doc in documents:
+            if doc["document_id"] == document_id:
+                doc_data = doc
+                break
+        
+        assert doc_data is not None, f"Document {document_id} not found in processed documents"
         
         # Verify AI suggestions are present
         assert len(doc_data["suggested_tags"]) == 4
@@ -178,9 +188,19 @@ class TestTagOperationsE2E:
         
         # Step 5: Final verification
         print("  [STEP 5] Final verification of tag state...")
-        final_response = requests.get(f"{self.base_url}/documents/{document_id}")
-        final_doc = final_response.json()["data"]
+        # Query processed documents again to verify final state
+        final_response = requests.get(f"{self.base_url}/documents")
+        assert final_response.status_code == 200
         
+        # Find our document in processed documents
+        final_documents = final_response.json()["data"]["documents"]
+        final_doc = None
+        for doc in final_documents:
+            if doc["document_id"] == document_id:
+                final_doc = doc
+                break
+        
+        assert final_doc is not None, f"Document {document_id} not found in final verification"
         assert final_doc["confirmed_tags"] == ["invoice"]
         assert set(final_doc["user_added_labels"]) == {"client-abc", "priority-medium", "q1-2024", "reviewed"}
         # AI suggestions should still be preserved
@@ -486,10 +506,19 @@ class TestTagOperationsE2E:
             assert set(result["confirmed_tags"]) == set(operation["confirmed_tags"])
             assert set(result["user_added_labels"]) == set(operation["user_added_labels"])
             
-            # Verify by retrieving the document
-            get_response = requests.get(f"{self.base_url}/documents/{document_id}")
-            retrieved_doc = get_response.json()["data"]
+            # Verify by retrieving the document from processed documents
+            get_response = requests.get(f"{self.base_url}/documents")
+            assert get_response.status_code == 200
             
+            # Find our document
+            documents = get_response.json()["data"]["documents"]
+            retrieved_doc = None
+            for doc in documents:
+                if doc["document_id"] == document_id:
+                    retrieved_doc = doc
+                    break
+            
+            assert retrieved_doc is not None, f"Document {document_id} not found in operation {i+1}"
             assert set(retrieved_doc["confirmed_tags"]) == set(operation["confirmed_tags"])
             assert set(retrieved_doc["user_added_labels"]) == set(operation["user_added_labels"])
             

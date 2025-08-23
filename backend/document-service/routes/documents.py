@@ -309,7 +309,11 @@ def update_document_tags(document_id):
         if not request.is_json:
             return APIResponse.validation_error("Request must be JSON")
         
-        data = request.get_json()
+        try:
+            data = request.get_json()
+        except Exception as json_error:
+            return APIResponse.validation_error(f"Invalid JSON format: {str(json_error)}")
+            
         if not data:
             return APIResponse.validation_error("Request body cannot be empty")
         
@@ -330,7 +334,7 @@ def update_document_tags(document_id):
         updated_document, error = db_service.update_document_tags(document_id, data)
         
         if error:
-            if "not found" in error.lower():
+            if "not found" in error.lower() or "no processed document found" in error.lower():
                 return APIResponse.not_found(f"Processed document for document_id {document_id}")
             else:
                 logger.error(f"Database error: {error}")

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Upload, Search, Filter, AlertCircle, RefreshCw } from "lucide-react"
+import { Upload, Search, Filter, AlertCircle, RefreshCw, TestTube } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
 import { ConfirmTagsModal } from "@/components/confirm-tags-modal"
 import { DocumentDetailsModal } from "@/components/document-details-modal"
@@ -123,6 +123,25 @@ export default function HomePage() {
     userAddedTags: string[]
   ) => {
     try {
+      // Check if this is a test document
+      if (documentId.startsWith('test-doc-')) {
+        console.log('✅ Test document tags confirmed successfully:', {
+          documentId,
+          confirmedTags,
+          userAddedTags,
+          totalTags: confirmedTags.length + userAddedTags.length
+        })
+        
+        // Simulate API delay for testing
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
+        setConfirmTagsDocument(null)
+        
+        // Show success message
+        alert(`✅ Test successful!\n\nDocument: ${documentId}\nConfirmed AI Tags: ${confirmedTags.join(', ') || 'None'}\nCustom Tags: ${userAddedTags.join(', ') || 'None'}\nTotal Tags: ${confirmedTags.length + userAddedTags.length}`)
+        return
+      }
+
       const documentIdNum = parseInt(documentId)
       
       await apiClient.updateDocumentTags(documentIdNum, {
@@ -136,6 +155,71 @@ export default function HomePage() {
       console.error('Error updating tags:', err)
       throw err
     }
+  }
+
+  // Create mock processed document for testing
+  const createMockProcessedDocument = (): Document => {
+    // Create various test scenarios
+    const testScenarios = [
+      {
+        name: "Test_Invoice_2024_Q1.pdf",
+        tags: [
+          { tag: "invoice", score: 0.92 },
+          { tag: "financial", score: 0.87 },
+          { tag: "business", score: 0.74 },
+          { tag: "payment", score: 0.68 },
+          { tag: "accounting", score: 0.61 }
+        ]
+      },
+      {
+        name: "Contract_Agreement_Legal.pdf", 
+        tags: [
+          { tag: "contract", score: 0.95 },
+          { tag: "legal", score: 0.89 },
+          { tag: "agreement", score: 0.82 },
+          { tag: "terms", score: 0.71 },
+          { tag: "business", score: 0.65 }
+        ]
+      },
+      {
+        name: "Marketing_Report_Q4.pdf",
+        tags: [
+          { tag: "marketing", score: 0.91 },
+          { tag: "report", score: 0.88 },
+          { tag: "analytics", score: 0.76 },
+          { tag: "quarterly", score: 0.69 },
+          { tag: "strategy", score: 0.62 }
+        ]
+      }
+    ]
+
+    // Randomly select a scenario
+    const scenario = testScenarios[Math.floor(Math.random() * testScenarios.length)]
+
+    return {
+      id: `test-doc-${Date.now()}`,
+      name: scenario.name,
+      uploadDate: new Date().toISOString().split('T')[0],
+      tags: [], // Will be populated based on confirmed tags
+      size: `${(Math.random() * 3 + 1).toFixed(1)} MB`,
+      type: "PDF",
+      link: `/documents/${scenario.name}`,
+      company: 1,
+      companyName: "Test Company Inc.",
+      uploaded_by: 1,
+      status: "pending_review",
+      modelGeneratedTags: scenario.tags.map(tag => ({
+        tag: tag.tag,
+        score: tag.score,
+        isConfirmed: false // Initially none are confirmed
+      })),
+      userAddedTags: [] // Initially empty
+    }
+  }
+
+  const handleTestProcessedDocument = () => {
+    const mockDoc = createMockProcessedDocument()
+    setConfirmTagsDocument(mockDoc)
   }
 
 
@@ -290,14 +374,28 @@ export default function HomePage() {
         </Card>
       </main>
 
-      {/* Floating Upload Button */}
-      <Button
-        onClick={() => setIsUploadModalOpen(true)}
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-red-600 hover:bg-red-700 shadow-lg"
-        size="icon"
-      >
-        <Upload className="w-6 h-6" />
-      </Button>
+      {/* Floating Action Buttons */}
+      <div className="fixed bottom-6 right-6 flex flex-col gap-3">
+        {/* Test Processed Document Button */}
+        <Button
+          onClick={handleTestProcessedDocument}
+          className="h-12 w-12 rounded-full bg-blue-600 hover:bg-blue-700 shadow-lg"
+          size="icon"
+          title="Test Tag Confirmation Flow"
+        >
+          <TestTube className="w-5 h-5" />
+        </Button>
+        
+        {/* Upload Button */}
+        <Button
+          onClick={() => setIsUploadModalOpen(true)}
+          className="h-14 w-14 rounded-full bg-red-600 hover:bg-red-700 shadow-lg"
+          size="icon"
+          title="Upload Document"
+        >
+          <Upload className="w-6 h-6" />
+        </Button>
+      </div>
 
       {/* Upload Modal */}
       <UploadModal
