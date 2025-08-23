@@ -2,6 +2,10 @@ import pytest
 from flask.testing import FlaskClient
 import sys
 import os
+from pathlib import Path
+
+HERE = Path(__file__).parent.resolve()
+MOCK_DIR = HERE / "mock"
 
 # Add the parent directory (which contains app.py) to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -17,7 +21,8 @@ def client():
 def test_file_upload(client: FlaskClient):
     print("\n[TEST] Running POST /upload endpoint test success...")
 
-    with open("./mock/TESTING_success.pdf", "rb") as pdf_file:
+    pdf_path = MOCK_DIR / "TESTING_success.pdf"
+    with open(pdf_path, "rb") as pdf_file:
         response = client.post(
             '/upload',
             data={'file': (pdf_file, 'TESTING_success.pdf')},
