@@ -52,7 +52,12 @@ export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsMo
   const handleConfirm = async () => {
     setIsLoading(true)
     try {
-      await onConfirm(document.id, Array.from(confirmedModelTags), userAddedTags)
+      // If no changes were made, auto-confirm all suggested tags
+      const finalConfirmedTags = hasChanges 
+        ? Array.from(confirmedModelTags)
+        : document.modelGeneratedTags.map(tag => tag.tag) // Auto-confirm all suggested tags
+      
+      await onConfirm(document.id, finalConfirmedTags, userAddedTags)
       onClose()
     } catch (error) {
       console.error('Error confirming tags:', error)
@@ -194,7 +199,11 @@ export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsMo
 
         <DialogFooter className="shrink-0 flex-row justify-between items-center">
           <div className="text-sm text-gray-600">
-            {allTags.length} tag{allTags.length !== 1 ? 's' : ''} selected
+            {hasChanges ? (
+              `${allTags.length} tag${allTags.length !== 1 ? 's' : ''} selected`
+            ) : (
+              `Will confirm all ${document.modelGeneratedTags.length} AI tag${document.modelGeneratedTags.length !== 1 ? 's' : ''}`
+            )}
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose} disabled={isLoading}>
@@ -203,17 +212,22 @@ export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsMo
             <Button
               onClick={handleConfirm}
               className="bg-red-600 hover:bg-red-700 text-white"
-              disabled={isLoading || !hasChanges}
+              disabled={isLoading}
             >
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Updating...
                 </>
-              ) : (
+              ) : hasChanges ? (
                 <>
                   <CheckCircle className="w-4 h-4 mr-2" />
                   Update Tags
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Confirm All & Continue
                 </>
               )}
             </Button>

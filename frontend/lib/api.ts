@@ -159,6 +159,28 @@ class APIClient {
       body: JSON.stringify(tagData),
     })
   }
+
+  async getUnprocessedDocuments(limit: number = 1): Promise<{
+    unprocessed_documents: any[]
+    count: number
+  }> {
+    return await this.fetchWithErrorHandling<{
+      unprocessed_documents: any[]
+      count: number
+    }>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents/unprocessed?limit=${limit}`)
+  }
+
+  async createProcessedDocument(data: {
+    document_id: number
+    suggested_tags?: Array<{tag: string, score: number}>
+    model_id?: number
+    threshold_pct?: number
+  }): Promise<any> {
+    return await this.fetchWithErrorHandling<any>(`${DIRECT_DOCUMENT_SERVICE_URL}/documents/processed`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
 }
 
 // Frontend Document interface

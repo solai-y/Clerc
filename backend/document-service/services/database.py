@@ -403,3 +403,29 @@ class DatabaseService:
             error_msg = f"Failed to update document tags: {str(e)}"
             self.logger.error(error_msg)
             return None, error_msg
+    
+    def get_unprocessed_documents(self, limit: int = 1) -> tuple[List[Dict], Optional[str]]:
+        """Get raw documents that haven't been processed yet"""
+        try:
+            # Get all processed document IDs
+            processed_response = self.supabase.table('processed_documents').select('document_id').execute()
+            processed_ids = {doc['document_id'] for doc in processed_response.data}
+            
+            # Get all raw documents
+            raw_response = self.supabase.table('raw_documents').select("*").execute()
+            
+            # Filter out already processed documents
+            unprocessed_docs = []
+            for doc in raw_response.data:
+                if doc['document_id'] not in processed_ids:
+                    unprocessed_docs.append(doc)
+                    if len(unprocessed_docs) >= limit:
+                        break
+            
+            self.logger.info(f"Retrieved {len(unprocessed_docs)} unprocessed documents out of {len(raw_response.data)} total raw documents")
+            return unprocessed_docs, None
+            
+        except Exception as e:
+            error_msg = f"Failed to get unprocessed documents: {str(e)}"
+            self.logger.error(error_msg)
+            return [], error_msg

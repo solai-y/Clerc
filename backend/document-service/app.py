@@ -116,7 +116,8 @@ def root():
             "DELETE /documents/<id> - Delete document",
             "PATCH /documents/<id>/status - Update document status",
             "POST /documents/processed - Create processed document entry",
-            "PATCH /documents/<id>/tags - Update document tags"
+            "PATCH /documents/<id>/tags - Update document tags",
+            "GET /documents/unprocessed - Get unprocessed documents"
         ]
     }, "Document service API")
 

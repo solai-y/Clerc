@@ -362,3 +362,39 @@ def update_document_tags(document_id):
     except Exception as e:
         logger.error(f"Unexpected error in update_document_tags: {str(e)}")
         return APIResponse.internal_error()
+
+@documents_bp.route('/unprocessed', methods=['GET'])
+def get_unprocessed_documents():
+    """Get raw documents that haven't been processed yet"""
+    logger.info(f"GET /documents/unprocessed - Request from {request.remote_addr}")
+    
+    if not db_service:
+        return APIResponse.internal_error("Database service not available")
+    
+    try:
+        # Get query parameters
+        limit = request.args.get('limit', default=1, type=int)
+        
+        # Validate parameters
+        if limit <= 0:
+            return APIResponse.validation_error("Limit must be greater than 0")
+        
+        # Get unprocessed documents
+        unprocessed_docs, error = db_service.get_unprocessed_documents(limit)
+        
+        if error:
+            logger.error(f"Database error: {error}")
+            return APIResponse.internal_error("Failed to retrieve unprocessed documents")
+        
+        if not unprocessed_docs:
+            return APIResponse.not_found("No unprocessed documents found")
+        
+        logger.info(f"Successfully retrieved {len(unprocessed_docs)} unprocessed document(s)")
+        return APIResponse.success({
+            "unprocessed_documents": unprocessed_docs,
+            "count": len(unprocessed_docs)
+        }, f"Retrieved {len(unprocessed_docs)} unprocessed document(s)")
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in get_unprocessed_documents: {str(e)}")
+        return APIResponse.internal_error()

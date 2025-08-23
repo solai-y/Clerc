@@ -123,34 +123,65 @@ export default function HomePage() {
     userAddedTags: string[]
   ) => {
     try {
-      // Check if this is a test document
-      if (documentId.startsWith('test-doc-')) {
-        console.log('✅ Test document tags confirmed successfully:', {
-          documentId,
-          confirmedTags,
-          userAddedTags,
-          totalTags: confirmedTags.length + userAddedTags.length
-        })
-        
-        // Simulate API delay for testing
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        
-        setConfirmTagsDocument(null)
-        
-        // Show success message
-        alert(`✅ Test successful!\n\nDocument: ${documentId}\nConfirmed AI Tags: ${confirmedTags.join(', ') || 'None'}\nCustom Tags: ${userAddedTags.join(', ') || 'None'}\nTotal Tags: ${confirmedTags.length + userAddedTags.length}`)
-        return
-      }
+      // Check if this came from our test button (real unprocessed documents)
+      const isTestFlow = confirmTagsDocument !== null
+      
+      console.log('✅ Processing document tags:', {
+        documentId,
+        confirmedTags,
+        userAddedTags,
+        totalTags: confirmedTags.length + userAddedTags.length,
+        isTestFlow
+      })
 
       const documentIdNum = parseInt(documentId)
       
-      await apiClient.updateDocumentTags(documentIdNum, {
-        confirmed_tags: confirmedTags,
-        user_added_labels: userAddedTags
-      })
-      
-      await refetch()
-      setConfirmTagsDocument(null)
+      if (isTestFlow) {
+        // For test flow: First create processed document entry, then update tags
+        try {
+          // Step 1: Create processed document with AI suggested tags
+          const mockAITags = confirmTagsDocument?.modelGeneratedTags.map(tag => ({
+            tag: tag.tag,
+            score: tag.score
+          })) || []
+          
+          await apiClient.createProcessedDocument({
+            document_id: documentIdNum,
+            suggested_tags: mockAITags,
+            model_id: 1, // Mock model ID
+            threshold_pct: 70 // Mock threshold
+          })
+          
+          console.log('✅ Created processed document entry')
+          
+          // Step 2: Update with confirmed tags
+          await apiClient.updateDocumentTags(documentIdNum, {
+            confirmed_tags: confirmedTags,
+            user_added_labels: userAddedTags
+          })
+          
+          console.log('✅ Updated document tags')
+          
+          // Refresh the document list to show the newly processed document
+          await refetch()
+          
+          setConfirmTagsDocument(null)
+          
+        } catch (error) {
+          console.error('❌ Error in test flow:', error)
+          alert('❌ Error processing document!\n\n' + (error as Error).message)
+          throw error
+        }
+      } else {
+        // Regular flow: Document already exists in processed_documents
+        await apiClient.updateDocumentTags(documentIdNum, {
+          confirmed_tags: confirmedTags,
+          user_added_labels: userAddedTags
+        })
+        
+        await refetch()
+        setConfirmTagsDocument(null)
+      }
     } catch (err) {
       console.error('Error updating tags:', err)
       throw err
@@ -158,6 +189,65 @@ export default function HomePage() {
   }
 
   // Create mock processed document for testing
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return "0 B"
+    const k = 1024
+    const sizes = ["B", "KB", "MB", "GB"]
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i]
+  }
+
+  const generateMockAITags = (fileName: string) => {
+    // Generate AI tags based on filename
+    const name = fileName.toLowerCase()
+    const tags: { tag: string; score: number }[] = []
+
+    // Document type detection
+    if (name.includes("financial") || name.includes("finance")) {
+      tags.push({ tag: "Financial Report", score: 0.92 })
+    }
+    if (name.includes("risk")) {
+      tags.push({ tag: "Risk Management", score: 0.87 })
+    }
+    if (name.includes("investment")) {
+      tags.push({ tag: "Investment", score: 0.84 })
+    }
+    if (name.includes("market")) {
+      tags.push({ tag: "Market Analysis", score: 0.81 })
+    }
+    if (name.includes("compliance")) {
+      tags.push({ tag: "Compliance", score: 0.88 })
+    }
+    if (name.includes("contract")) {
+      tags.push({ tag: "Contract", score: 0.95 })
+    }
+    if (name.includes("legal")) {
+      tags.push({ tag: "Legal", score: 0.89 })
+    }
+    if (name.includes("invoice")) {
+      tags.push({ tag: "Invoice", score: 0.94 })
+    }
+    if (name.includes("report")) {
+      tags.push({ tag: "Report", score: 0.85 })
+    }
+    
+    // Time period detection
+    if (name.includes("quarterly") || name.includes("q1") || name.includes("q2") || name.includes("q3") || name.includes("q4")) {
+      tags.push({ tag: "Quarterly", score: 0.78 })
+    }
+    if (name.includes("annual")) {
+      tags.push({ tag: "Annual", score: 0.75 })
+    }
+
+    // Add some default tags if none found
+    if (tags.length === 0) {
+      tags.push({ tag: "Document", score: 0.70 })
+      tags.push({ tag: "Unclassified", score: 0.60 })
+    }
+
+    return tags
+  }
+
   const createMockProcessedDocument = (): Document => {
     // Create various test scenarios
     const testScenarios = [
@@ -197,7 +287,7 @@ export default function HomePage() {
     const scenario = testScenarios[Math.floor(Math.random() * testScenarios.length)]
 
     return {
-      id: `test-doc-${Date.now()}`,
+      id: Math.floor(Date.now() / 1000).toString(), // Generate integer-like ID
       name: scenario.name,
       uploadDate: new Date().toISOString().split('T')[0],
       tags: [], // Will be populated based on confirmed tags
@@ -211,15 +301,54 @@ export default function HomePage() {
       modelGeneratedTags: scenario.tags.map(tag => ({
         tag: tag.tag,
         score: tag.score,
-        isConfirmed: false // Initially none are confirmed
+        isConfirmed: true // AI tags are selected by default
       })),
       userAddedTags: [] // Initially empty
     }
   }
 
-  const handleTestProcessedDocument = () => {
-    const mockDoc = createMockProcessedDocument()
-    setConfirmTagsDocument(mockDoc)
+  const handleTestProcessedDocument = async () => {
+    try {
+      // Get a real unprocessed document from the database
+      const response = await apiClient.getUnprocessedDocuments(1)
+      
+      if (response.count === 0) {
+        alert('⚠️ No unprocessed documents found!\n\nAll raw documents have already been processed.')
+        return
+      }
+      
+      const rawDoc = response.unprocessed_documents[0]
+      
+      // Transform raw document into a format suitable for tag confirmation
+      // Generate mock AI tags for this real document
+      const mockAITags = generateMockAITags(rawDoc.document_name)
+      
+      const testDoc: Document = {
+        id: rawDoc.document_id.toString(),
+        name: rawDoc.document_name,
+        uploadDate: rawDoc.upload_date?.split('T')[0] || new Date().toISOString().split('T')[0],
+        tags: [], // Will be populated based on confirmed tags
+        size: rawDoc.file_size ? formatFileSize(rawDoc.file_size) : 'Unknown',
+        type: rawDoc.document_type || 'PDF',
+        link: rawDoc.link || '',
+        company: rawDoc.company,
+        companyName: null, // We don't have company name from raw document
+        uploaded_by: rawDoc.uploaded_by,
+        status: "pending_review",
+        modelGeneratedTags: mockAITags.map(tag => ({
+          tag: tag.tag,
+          score: tag.score,
+          isConfirmed: true // AI tags are selected by default
+        })),
+        userAddedTags: [] // Initially empty
+      }
+      
+      setConfirmTagsDocument(testDoc)
+      
+    } catch (error) {
+      console.error('Failed to get unprocessed document:', error)
+      alert('❌ Failed to get unprocessed document!\n\nError: ' + (error as Error).message)
+    }
   }
 
 
