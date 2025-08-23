@@ -86,7 +86,15 @@ jobs:
         - name: Deploy on EC2
           run: |
             ssh -A -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
-              cd /home/ubuntu/backend &&
-              docker-compose down &&
-              docker-compose up --build -d
+              set -e
+              cd /home/ubuntu/backend
+              export COMPOSE_PROJECT_NAME=backend
+
+              # Clean up
+              docker-compose down --remove-orphans || true
+              docker ps --filter network=${COMPOSE_PROJECT_NAME}_default -q | xargs -r docker rm -f || true
+              docker network rm ${COMPOSE_PROJECT_NAME}_default || true
+
+              # Bring services up
+              docker-compose up -d --build --remove-orphans
             "
