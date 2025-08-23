@@ -6,3 +6,7 @@ Clerc.pem
 models/
 *.pem
 .env
+
+# macOS
+.DS_Store
+
