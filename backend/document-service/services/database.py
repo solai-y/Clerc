@@ -39,14 +39,14 @@ class DatabaseService:
     def get_total_documents_count(self, search: Optional[str] = None, status: Optional[str] = None, company_id: Optional[int] = None) -> tuple[int, Optional[str]]:
         """Get total count of processed documents with optional filters"""
         try:
-            query = self.supabase.table('processed_documents').select("process_id", count="exact")
-            
             # For search and company filters, we need to join with raw_documents
             if search or company_id:
-                query = query.select("process_id, raw_documents!document_id(document_name, company)", count="exact")
+                query = self.supabase.table('processed_documents').select("process_id, raw_documents!document_id(document_name, company)", count="exact")
                 if search:
                     # This is more complex with joins, may need to adjust based on Supabase capabilities
                     pass  # Will implement search filtering in the main query
+            else:
+                query = self.supabase.table('processed_documents').select("process_id", count="exact")
                 if company_id:
                     # Will implement company filtering in the main query  
                     pass

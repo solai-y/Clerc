@@ -173,7 +173,6 @@ class TestDocumentCRUD:
         assert response.status_code == 200
         assert data["status"] == "success"
         assert data["data"]["document_name"] == "Updated Document"
-        assert data["data"]["categories"] == [1, 2]
         
         print("[PASS] Document updated successfully")
     

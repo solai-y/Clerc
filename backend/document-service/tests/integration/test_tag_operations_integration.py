@@ -106,12 +106,20 @@ class TestTagOperationsIntegration:
         assert user_tag_result["data"]["user_added_labels"] == ["urgent", "q1-2024", "client-xyz"]
         print(f"  [PASS] User tags added successfully")
         
-        # Step 5: Verify by retrieving the document
+        # Step 5: Verify by retrieving the document from processed documents
         print("  [STEP 5] Verifying final document state...")
-        get_response = client.get(f'/documents/{document_id}')
+        get_response = client.get('/documents')
         assert get_response.status_code == 200
-        final_doc = get_response.get_json()["data"]
         
+        # Find our document in the processed documents
+        documents = get_response.get_json()["data"]["documents"]
+        final_doc = None
+        for doc in documents:
+            if doc["document_id"] == document_id:
+                final_doc = doc
+                break
+        
+        assert final_doc is not None, f"Document {document_id} not found in processed documents"
         assert final_doc["confirmed_tags"] == ["invoice", "financial"]
         assert final_doc["user_added_labels"] == ["urgent", "q1-2024", "client-xyz"]
         assert len(final_doc["suggested_tags"]) == 3  # Original AI suggestions preserved
@@ -272,8 +280,18 @@ class TestTagOperationsIntegration:
             assert response.status_code == 200
         
         # Verify final state
-        get_response = client.get(f'/documents/{document_id}')
-        final_doc = get_response.get_json()["data"]
+        get_response = client.get('/documents')
+        assert get_response.status_code == 200
+        
+        # Find our document in processed documents
+        documents = get_response.get_json()["data"]["documents"]
+        final_doc = None
+        for doc in documents:
+            if doc["document_id"] == document_id:
+                final_doc = doc
+                break
+        
+        assert final_doc is not None, f"Document {document_id} not found in processed documents"
         assert final_doc["confirmed_tags"] == ["base-tag"]
         assert final_doc["user_added_labels"] == ["update1", "update2", "update3"]
         
@@ -416,9 +434,18 @@ class TestTagOperationsIntegration:
         
         # Verify final state
         print("  [VERIFICATION] Checking final state...")
-        get_response = client.get(f'/documents/{document_id}')
-        final_doc = get_response.get_json()["data"]
+        get_response = client.get('/documents')
+        assert get_response.status_code == 200
         
+        # Find our document in processed documents
+        documents = get_response.get_json()["data"]["documents"]
+        final_doc = None
+        for doc in documents:
+            if doc["document_id"] == document_id:
+                final_doc = doc
+                break
+        
+        assert final_doc is not None, f"Document {document_id} not found in processed documents"
         assert set(final_doc["confirmed_tags"]) == {"persistent-tag1", "persistent-tag2"}
         assert set(final_doc["user_added_labels"]) == {"user-tag1", "user-tag3"}
         assert len(final_doc["suggested_tags"]) == 2  # AI suggestions preserved

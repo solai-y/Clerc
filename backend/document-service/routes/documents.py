@@ -122,7 +122,11 @@ def create_document():
         if not request.is_json:
             return APIResponse.validation_error("Request must be JSON")
         
-        data = request.get_json()
+        try:
+            data = request.get_json()
+        except Exception as json_error:
+            return APIResponse.validation_error(f"Invalid JSON format: {str(json_error)}")
+            
         if not data:
             return APIResponse.validation_error("Request body cannot be empty")
         
@@ -160,7 +164,11 @@ def update_document(document_id):
         if not request.is_json:
             return APIResponse.validation_error("Request must be JSON")
         
-        data = request.get_json()
+        try:
+            data = request.get_json()
+        except Exception as json_error:
+            return APIResponse.validation_error(f"Invalid JSON format: {str(json_error)}")
+            
         if not data:
             return APIResponse.validation_error("Request body cannot be empty")
         
@@ -229,7 +237,11 @@ def update_document_status(document_id):
         if not request.is_json:
             return APIResponse.validation_error("Request must be JSON")
         
-        data = request.get_json()
+        try:
+            data = request.get_json()
+        except Exception as json_error:
+            return APIResponse.validation_error(f"Invalid JSON format: {str(json_error)}")
+            
         if not data or 'status' not in data:
             return APIResponse.validation_error("Status field is required")
         
@@ -269,7 +281,11 @@ def create_processed_document():
         if not request.is_json:
             return APIResponse.validation_error("Request must be JSON")
         
-        data = request.get_json()
+        try:
+            data = request.get_json()
+        except Exception as json_error:
+            return APIResponse.validation_error(f"Invalid JSON format: {str(json_error)}")
+            
         if not data:
             return APIResponse.validation_error("Request body cannot be empty")
         

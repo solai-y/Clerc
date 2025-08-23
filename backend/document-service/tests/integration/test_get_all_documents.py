@@ -40,10 +40,15 @@ def test_get_documents(client: FlaskClient):
         raise
 
     try:
-        assert isinstance(data.get("data"), list)
-        print("[PASS] Response data is a list.")
+        # Check new API response structure with documents and pagination
+        response_data = data.get("data")
+        assert isinstance(response_data, dict)
+        assert "documents" in response_data
+        assert "pagination" in response_data
+        assert isinstance(response_data["documents"], list)
+        print("[PASS] Response data structure is correct (documents + pagination).")
     except AssertionError:
-        print(f"[FAIL] Response data is not a list, got {type(data.get('data'))}")
+        print(f"[FAIL] Response data structure is incorrect, got {type(data.get('data'))}")
         raise
 
     try:
@@ -73,8 +78,12 @@ def test_get_documents_with_pagination(client: FlaskClient):
     
     try:
         assert data.get("status") == "success"
-        assert isinstance(data.get("data"), list)
-        assert len(data.get("data", [])) <= 5  # Should not exceed limit
+        response_data = data.get("data")
+        assert isinstance(response_data, dict)
+        assert "documents" in response_data
+        assert "pagination" in response_data
+        assert len(response_data["documents"]) <= 5  # Should not exceed limit
+        assert response_data["pagination"]["limit"] == 5
         print("[PASS] Pagination works correctly.")
     except AssertionError as e:
         print(f"[FAIL] Pagination test failed: {e}")
@@ -99,7 +108,10 @@ def test_get_documents_with_search(client: FlaskClient):
     
     try:
         assert data.get("status") == "success"
-        assert isinstance(data.get("data"), list)
+        response_data = data.get("data")
+        assert isinstance(response_data, dict)
+        assert "documents" in response_data
+        assert "pagination" in response_data
         print("[PASS] Search functionality works.")
     except AssertionError as e:
         print(f"[FAIL] Search test failed: {e}")
