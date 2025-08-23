@@ -90,11 +90,11 @@ jobs:
               cd /home/ubuntu/backend
               export COMPOSE_PROJECT_NAME=backend
 
-              # Pre-clean: down with orphans, best-effort network cleanup
-              docker compose down --remove-orphans || true
+              # Clean up
+              docker-compose down --remove-orphans || true
               docker ps --filter network=${COMPOSE_PROJECT_NAME}_default -q | xargs -r docker rm -f || true
               docker network rm ${COMPOSE_PROJECT_NAME}_default || true
 
-              # Up with orphans removed
-              docker compose up --build -d --remove-orphans
+              # Bring services up
+              docker-compose up -d --build --remove-orphans
             "
