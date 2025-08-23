@@ -1,0 +1,18 @@
+{
+    "Disclosure": {
+      "Annual_Reports": ["Annual_Reports"],
+      "Financial_Statements": ["Financial_Statements"],
+      "SEC_Filings": ["10-K", "10-Q", "S-1"],
+      "Tearsheet": ["Tearsheet"],
+      "Transcripts": ["AGM Transcripts", "Conference Transcripts", "Earnings Call Transcripts"]
+    },
+    "News": {
+      "Company": ["Management_Change", "Product_Launch"],
+      "Industry": ["Energy", "Healthcare", "Information_Technology", "Real_Estate", "Regulation", "Supply_Chain"],
+      "Macroeconomic": ["Employment", "Geopolitics", "Interest_Rates"]
+    },
+    "Recommendations": {
+      "Analyst_Recommendations": ["Buy", "Hold", "Sell"],
+      "Strategic_Recommendations": ["M&A Rationale", "Product Strategy"]
+    }
+  }
