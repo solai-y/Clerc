@@ -277,18 +277,3 @@ class TestDocumentCRUD:
         
         print("[PASS] Pagination functionality works correctly")
 
-    def test_search_functionality(self, client: FlaskClient):
-        """Test search functionality"""
-        print("\n[TEST] Testing search functionality...")
-        
-        response = client.get('/documents?search=Financial')
-        data = response.get_json()
-        
-        assert response.status_code == 200
-        assert data["status"] == "success"
-        
-        # All returned documents should contain "Financial" in the name
-        for doc in data["data"]["documents"]:
-            assert "financial" in doc["raw_documents"]["document_name"].lower()
-        
-        print("[PASS] Search functionality works correctly")

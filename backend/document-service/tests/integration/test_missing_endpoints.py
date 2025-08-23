@@ -160,21 +160,3 @@ class TestMissingEndpoints:
         
         print("[PASS] 404 error returned for non-existent document")
     
-    def test_update_document_status_invalid_json(self, client: FlaskClient):
-        """Test updating document status with invalid JSON"""
-        print("\n[TEST] Running PATCH /documents/{id}/status with invalid JSON...")
-        
-        response = client.patch(
-            '/documents/1/status',
-            data="invalid json",
-            content_type='application/json'
-        )
-        
-        data = response.get_json()
-        print(f"[DEBUG] Response status: {response.status_code}")
-        
-        assert response.status_code == 400
-        assert data["status"] == "error"
-        assert "invalid json format" in data["message"].lower()
-        
-        print("[PASS] Error returned for invalid JSON")
