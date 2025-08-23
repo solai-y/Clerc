@@ -288,7 +288,7 @@ class TestDocumentCRUD:
         assert data["status"] == "success"
         
         # All returned documents should contain "Financial" in the name
-        for doc in data["data"]:
+        for doc in data["data"]["documents"]:
             assert "financial" in doc["document_name"].lower()
         
         print("[PASS] Search functionality works correctly")
