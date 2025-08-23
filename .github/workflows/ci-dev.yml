@@ -34,7 +34,7 @@ jobs:
           pytest -s tests/integration -v
 
       # Run s3-service integration tests
-      - name: Run categories-service tests
+      - name: Run s3-service tests
         working-directory: backend/s3-service
         run: |
           pip install -r requirements.txt
