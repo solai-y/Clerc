@@ -110,9 +110,9 @@ def predict():
             return jsonify({"error":"File too large"}), 413
         if "pdf" not in request.files:
             return jsonify({"error":"No file uploaded under field 'pdf'"}), 400
-        f = request.files["pdf"]
-        if "pdf" not in (f.mimetype or "").lower():
-            return jsonify({"error":f"Unsupported content type: {f.mimetype}"}), 415
+        f = request.files.get("file") or request.files.get("pdf")
+        if not f:
+            return jsonify({"error": "No file provided (expected field 'file' or 'pdf')"}), 400
 
         _ensure_model(); _ensure_hierarchy()
         text = _extract_text(f.read())

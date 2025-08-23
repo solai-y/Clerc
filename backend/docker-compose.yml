@@ -26,13 +26,22 @@ services:
     volumes:
       - ../models:/models:ro
       - ./ai-service/shared:/app/shared:ro
+    # 🔽 run Flask with WSGI worker, binding to 5004
+    command: >
+      gunicorn app:app
+      --bind 0.0.0.0:5004
+      --workers 2
+      --timeout 120
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/ai/v1/health"]
+      # 🔽 point healthcheck to 5004 now
+      test: ["CMD", "curl", "-fsS", "http://localhost:5004/ai/v1/health"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 10s
     restart: unless-stopped
+
+
 
   nginx:
     image: nginx:latest

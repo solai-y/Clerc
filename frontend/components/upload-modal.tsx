@@ -105,6 +105,77 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   }
 
 
+
+  type PredictTag = { tag: string; score: number }
+  type PredictResult = {
+    filename: string
+    tags?: PredictTag[]
+    probs?: PredictTag[]      // tolerate alternate keys
+    top5?: PredictTag[]       // "
+    user_labels?: string[]
+    ocr_used: boolean
+    processing_ms: number
+  }
+  type PredictResponse = {
+    threshold_pct?: number
+    results: PredictResult[]
+    errors?: string[]
+    request_id?: string
+  }
+
+  async function predictTags(file: File, thresholdPct = 30) {
+    const fd = new FormData();
+    fd.append("pdf", file, file.name);              // field name must be 'pdf'
+    fd.append("threshold_pct", String(thresholdPct));
+  
+    const res = await fetch("http://localhost/ai/v1/predict", {
+      method: "POST",
+      body: fd,
+    });
+  
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`Predict: invalid JSON (status ${res.status})`);
+    }
+  
+    console.log("🔍 predict JSON:", json);
+  
+    if (!res.ok) {
+      const msg = json?.error || JSON.stringify(json);
+      throw new Error(`Predict ${res.status}: ${msg}`);
+    }
+  
+    // Normalize shapes:
+    // 1) { results: [...] }  OR  2) { filename, tags: [...] }
+    let first: any = null;
+    let results: any[] = [];
+  
+    if (Array.isArray(json?.results) && json.results.length) {
+      first = json.results[0];
+      results = json.results;
+    } else if (Array.isArray(json?.tags)) {
+      first = {
+        filename: json.filename ?? file.name,
+        tags: json.tags,                 // [{tag, score}, ...]
+        ocr_used: json.ocr_used ?? false,
+        processing_ms: json.processing_ms,
+      };
+      results = [first];
+    }
+  
+    if (!first) {
+      return { results: [], first: null, raw: json };
+    }
+  
+    return { results, first, raw: json };
+  }
+  
+  
+
+
+
   const handleFileUpload = async (file: File) => {
     const maxSize = 80 * 1024 * 1024 // 80 MB in bytes
     if (file.size > maxSize) {
@@ -132,56 +203,36 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
 
       setUploadProgress(70)
 
-      // Step 2: Simulate /v1/predict (instead of generateAITags)
+      // Step 2: call the real AI model
       setUploadProgress(75)
 
-      // fake network delay so progress feels real
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      const predict = await predictTags(file, 60)
+      console.log("🤖 /ai/v1/predict response:", predict)
 
-      const predictJson = {
-        threshold_pct: 60,
-        results: [
-          {
-            filename: file.name,
-            tags: [
-              { tag: "news", score: 0.92 },
-              { tag: "Recommendations", score: 0.81 }
-            ],
-            user_labels: ["Discovery Event", "FY2024"],
-            ocr_used: true,
-            processing_ms: 842
-          }
-        ],
-        errors: [],
-        saved_training: true,
-        saved_count: 1,
-        request_id: "req_01HZ..."
-      }
-
-      console.log("🔮 Simulated V1 Predict API response:", predictJson)
-
-      const first = predictJson.results?.[0]
+      const first = predict.results?.[0]
       if (!first) {
         throw new Error("No prediction results returned")
       }
 
-      setUploadProgress(100)
+      // be tolerant of alternate payload shapes
+      const rawTags: PredictTag[] = first.tags ?? first.probs ?? first.top5 ?? []
+      setUploadProgress(90)
 
-      // Build Document from simulated API
+
+
       const newDocument: Document = {
         id: Date.now().toString(),
         name: file.name,
         uploadDate: new Date().toISOString().split("T")[0],
         tags: (first.tags || []).map((t: any) => t.tag),
         subtags: {
-          ...(first.user_labels ? { "User Labels": first.user_labels } : {}),
-          "Model Tags (w/ confidence)": first.tags.map(
-            (t: any) => `${t.tag} (${Math.round(t.score * 100)}%)`
-          )
+          "Model Tags (w/ confidence)": (first.tags || []).map(
+            (t: any) => `${t.tag} (${Math.round((t.score ?? 0) * 100)}%)`
+          ),
         },
         size: formatFileSize(file.size),
-        status: "pending",
-      }
+      };
+      
 
       // Complete the upload
       setTimeout(() => {
