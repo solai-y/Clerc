@@ -175,6 +175,6 @@ class TestMissingEndpoints:
         
         assert response.status_code == 400
         assert data["status"] == "error"
-        assert "validation error" in data["message"].lower()
+        assert "invalid json format" in data["message"].lower()
         
         print("[PASS] Error returned for invalid JSON")
