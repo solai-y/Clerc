@@ -3,7 +3,7 @@ import requests
 def test_e2e_endpoint():
     print("\n[TEST] Running E2E test for GET /e2e endpoint...")
 
-    url = "http://localhost:5002/e2e"
+    url = "http://localhost/s3/e2e"
     print(f"[INFO] Sending GET request to {url}")
 
     try:
@@ -28,10 +28,10 @@ def test_e2e_endpoint():
         raise
 
     try:
-        assert data.get("message") == "Categories service is reachable"
+        assert data.get("message") == "S3 service is reachable"
         print("[PASS] Message key matches expected value.")
     except AssertionError:
-        print(f"[FAIL] Expected message 'Categories service is reachable', got '{data.get('message')}'")
+        print(f"[FAIL] Expected message 'S3 service is reachable', got '{data.get('message')}'")
         raise
 
     print("[SUCCESS] E2E test for GET /e2e endpoint completed successfully.")
