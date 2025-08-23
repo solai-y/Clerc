@@ -108,10 +108,10 @@ python e2e/test_full_crud_e2e.py
 ## Test Configuration
 
 ### Environment Variables
-- `SERVICE_URL`: Base URL for E2E tests (default: http://localhost:5003)
+- `SERVICE_URL`: Base URL for E2E tests (default: http://localhost:5002)
 
 ### Prerequisites
-1. **Service Running**: Document service must be running on port 5003
+1. **Service Running**: Document service must be running on port 5002
 2. **Database Access**: Service needs access to Supabase database
 3. **Test Data**: Some tests expect existing documents in the database
 
@@ -160,7 +160,7 @@ The tests expect:
 
 1. **Service Not Running**
    ```
-   Error: connect ECONNREFUSED 127.0.0.1:5003
+   Error: connect ECONNREFUSED 127.0.0.1:5002
    ```
    **Solution**: Start the document service:
    ```bash

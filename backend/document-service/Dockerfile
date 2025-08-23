@@ -27,11 +27,11 @@ ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 # Expose port
-EXPOSE 5003
+EXPOSE 5002
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:5003/health || exit 1
+    CMD curl -f http://localhost:5002/health || exit 1
 
 # Run application
 CMD ["python", "app.py"]

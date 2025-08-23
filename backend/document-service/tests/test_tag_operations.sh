@@ -70,11 +70,11 @@ echo -e "\n🌐 END-TO-END TESTS"
 echo "==================="
 
 # Check if service is running
-if curl -s http://localhost:5003/health > /dev/null 2>&1; then
+if curl -s http://localhost:5002/health > /dev/null 2>&1; then
     echo "✅ Document service is running"
     
     # Check if tag endpoints are available
-    if curl -s http://localhost:5003/ | grep -q "tags"; then
+    if curl -s http://localhost:5002/ | grep -q "tags"; then
         echo "✅ Tag endpoints are available"
         run_test "Tag Operations E2E Tests" "python e2e/test_tag_operations_e2e.py"
     else
@@ -87,7 +87,7 @@ if curl -s http://localhost:5003/health > /dev/null 2>&1; then
         PASSED=$((PASSED + 1))  # Don't fail the suite, just skip
     fi
 else
-    echo -e "${YELLOW}⚠️  Document service is not running on localhost:5003${NC}"
+    echo -e "${YELLOW}⚠️  Document service is not running on localhost:5002${NC}"
     echo "Skipping E2E tests. Start the service first:"
     echo "  cd ../.. && python app.py"
     PASSED=$((PASSED + 1))  # Don't fail the suite, just skip

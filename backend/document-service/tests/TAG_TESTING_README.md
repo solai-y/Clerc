@@ -189,7 +189,7 @@ The integration and E2E tests expect:
 ### Environment Variables
 ```bash
 # Optional: Override default service URL for E2E tests
-export SERVICE_URL=http://localhost:5003
+export SERVICE_URL=http://localhost:5002
 ```
 
 ## Continuous Integration
@@ -238,8 +238,8 @@ test_tag_operations:
 
 4. **Port Conflicts**:
    ```bash
-   # Check if port 5003 is available
-   lsof -i :5003
+   # Check if port 5002 is available
+   lsof -i :5002
    ```
 
 ### Test Output Examples

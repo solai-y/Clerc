@@ -93,7 +93,7 @@ Frontend (Port 3001)
     ↓ API calls to /api/documents and /api/categories
 Next.js Proxy (next.config.mjs)
     ↓ Rewrites to backend services
-Document Service (Port 5003) + Categories Service (Port 5002)
+Document Service (Port 5002)
     ↓ Database queries
 Supabase Database
     ↓ Real document and category data
@@ -120,7 +120,7 @@ const { documents, loading, error } = useDocuments({
 
 ## 🛠️ API Endpoints Used
 
-- **GET** `/api/documents` → Document service (`localhost:5003/documents`)
+- **GET** `/api/documents` → Document service (`localhost:5002/documents`)
 - **GET** `/api/documents?search=term` → Search documents
 - **GET** `/api/categories` → Categories service (`localhost:5002/categories`)
 - **POST** `/api/documents` → Create document (ready for future use)

@@ -4,7 +4,7 @@ import time
 import threading
 from typing import List, Dict, Any
 
-BASE_URL = "http://localhost:5003"
+BASE_URL = "http://localhost:5002"
 
 class TestTagOperationsE2E:
     """End-to-end tests for tag operations via HTTP requests"""

@@ -17,7 +17,7 @@ frontend/
 ### **🔄 For Local Development (Current Setup)**
 
 Currently working with:
-- **Document Service**: `http://localhost:5003`
+- **Document Service**: `http://localhost:5002`
 - **Frontend**: `http://localhost:3000`
 
 No changes needed - everything is already configured!

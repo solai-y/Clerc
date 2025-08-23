@@ -2,7 +2,7 @@ import requests
 import json
 import os
 
-BASE_URL = os.environ.get('SERVICE_URL', 'http://localhost:5003')
+BASE_URL = os.environ.get('SERVICE_URL', 'http://localhost:5002')
 
 class TestMissingEndpointsE2E:
     """End-to-end tests for previously untested endpoints"""

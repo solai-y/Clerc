@@ -3,7 +3,7 @@ import requests
 def test_e2e_endpoint():
     print("\n[TEST] Running E2E test for GET /e2e endpoint...")
 
-    url = "http://localhost:5003/e2e"
+    url = "http://localhost:5002/e2e"
     print(f"[INFO] Sending GET request to {url}")
 
     try:
@@ -62,7 +62,7 @@ def test_e2e_endpoint():
 def test_health_endpoint():
     print("\n[TEST] Running E2E test for GET /health endpoint...")
 
-    url = "http://localhost:5003/health"
+    url = "http://localhost:5002/health"
     print(f"[INFO] Sending GET request to {url}")
 
     try:

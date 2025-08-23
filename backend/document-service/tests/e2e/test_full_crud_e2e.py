@@ -2,7 +2,7 @@ import requests
 import json
 import time
 
-BASE_URL = "http://localhost:5003"
+BASE_URL = "http://localhost:5002"
 
 class TestDocumentServiceE2E:
     """End-to-end tests for Document Service via HTTP requests"""

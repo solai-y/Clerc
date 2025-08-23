@@ -26,7 +26,9 @@
       "Bash(./test_tag_operations.sh:*)",
       "Bash(lsof:*)",
       "Bash(docker exec:*)",
-      "Bash(docker inspect:*)"
+      "Bash(docker inspect:*)",
+      "Bash(docker port:*)",
+      "Bash(find:*)"
     ],
     "deny": []
   }

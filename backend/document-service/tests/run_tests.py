@@ -31,7 +31,7 @@ def main():
                        default='all', help='Type of tests to run')
     parser.add_argument('--verbose', '-v', action='store_true', 
                        help='Verbose output')
-    parser.add_argument('--service-url', default='http://localhost:5003',
+    parser.add_argument('--service-url', default='http://localhost:5002',
                        help='Service URL for E2E tests')
     
     args = parser.parse_args()

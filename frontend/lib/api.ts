@@ -5,7 +5,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost'
 const DOCUMENT_SERVICE_URL = `${API_BASE_URL}/documents`
 
 // For direct service access during development (if nginx is not being used)
-const DIRECT_DOCUMENT_SERVICE_URL = process.env.NEXT_PUBLIC_DOCUMENT_SERVICE_URL || 'http://localhost:5003'
+const DIRECT_DOCUMENT_SERVICE_URL = process.env.NEXT_PUBLIC_DOCUMENT_SERVICE_URL || 'http://localhost:5002'
 
 // Types from backend - actual processed documents structure
 export interface BackendProcessedDocument {

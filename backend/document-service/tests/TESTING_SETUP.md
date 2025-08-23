@@ -140,7 +140,7 @@ docker-compose up -d postgres
 
 ### Issue 4: Service Not Running (E2E Tests)
 ```
-Connection refused to localhost:5003
+Connection refused to localhost:5002
 ```
 
 **Solution**: Start the Document Service
@@ -225,7 +225,7 @@ Optional environment variables for testing:
 
 ```bash
 # Override service URL for E2E tests
-export SERVICE_URL=http://localhost:5003
+export SERVICE_URL=http://localhost:5002
 
 # Set log level for tests
 export LOG_LEVEL=DEBUG
@@ -256,9 +256,9 @@ Before reporting issues, check:
 
 - [ ] Flask is installed (`pip list | grep -i flask`)
 - [ ] Database is running and accessible
-- [ ] Document Service is running (`curl http://localhost:5003/health`)
+- [ ] Document Service is running (`curl http://localhost:5002/health`)
 - [ ] Service has been restarted after code changes
-- [ ] No port conflicts (port 5003 is available)
+- [ ] No port conflicts (port 5002 is available)
 - [ ] Environment variables are set correctly
 
 ## Getting Help

@@ -121,5 +121,5 @@ def root():
     }, "Document service API")
 
 if __name__ == '__main__':
-    logger.info("Starting document service on port 5003")
-    app.run(host='0.0.0.0', port=5003, debug=False)
+    logger.info("Starting document service on port 5002")
+    app.run(host='0.0.0.0', port=5002, debug=False)
