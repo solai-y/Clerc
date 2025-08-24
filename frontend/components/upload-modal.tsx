@@ -1,13 +1,24 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Upload, FileText, CheckCircle } from "lucide-react"
-import { Document } from "@/lib/api"
+import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react"
+
+export interface Document {
+  id: string
+  name: string
+  uploadDate: string
+  tags: string[]
+  subtags: { [tagId: string]: string[] }
+  size: string
+  status: string
+  // optional for tag confirmation flow
+  modelGeneratedTags?: { tag: string; score?: number; isConfirmed?: boolean }[]
+  userAddedTags?: string[]
+}
 
 interface UploadModalProps {
   isOpen: boolean
@@ -15,11 +26,13 @@ interface UploadModalProps {
   onUploadComplete: (document: Document) => void
 }
 
-export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
+function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -34,112 +47,118 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
-
     const files = Array.from(e.dataTransfer.files)
     if (files.length > 0) {
-      handleFileUpload(files[0])
+      const file = files[0]
+      if (file.size > 80 * 1024 * 1024) {
+        setUploadError("File size exceeds 80 MB limit.")
+        return
+      }
+      handleFileUpload(file)
     }
   }, [])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (files && files.length > 0) {
-      handleFileUpload(files[0])
+      const file = files[0]
+      if (file.size > 80 * 1024 * 1024) {
+        setUploadError("File size exceeds 80 MB limit.")
+        return
+      }
+      handleFileUpload(file)
     }
   }
 
-  const generateAITags = (fileName: string): { tags: string[] } => {
-    // Simulate AI tagging based on filename
-    const name = fileName.toLowerCase()
-    const tags: string[] = []
+  const handleBrowseClick = () => fileInputRef.current?.click()
 
-    if (name.includes("financial") || name.includes("finance")) {
-      tags.push("Financial Report")
+  const uploadToS3 = async (file: File): Promise<{ success: boolean; url?: string; error?: string }> => {
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const response = await fetch("http://localhost/s3/upload", { method: "POST", body: formData })
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Upload failed" }))
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+      }
+      const result = await response.json()
+      return { success: true, url: result.s3_url }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : "Unknown upload error" }
     }
-    if (name.includes("risk")) {
-      tags.push("Risk Management")
-    }
-    if (name.includes("investment")) {
-      tags.push("Investment")
-    }
-    if (name.includes("market")) {
-      tags.push("Market Analysis")
-    }
-    if (name.includes("compliance")) {
-      tags.push("Compliance")
-    }
-    if (
-      name.includes("quarterly") ||
-      name.includes("q1") ||
-      name.includes("q2") ||
-      name.includes("q3") ||
-      name.includes("q4")
-    ) {
-      tags.push("Quarterly")
-    }
-    if (name.includes("annual")) {
-      tags.push("Annual")
-    }
-    if (name.includes("strategy")) {
-      tags.push("Strategy")
-    }
-    if (name.includes("portfolio")) {
-      tags.push("Portfolio")
-    }
-
-    // Add some default tags if none found
-    if (tags.length === 0) {
-      tags.push("Document", "Unclassified")
-    }
-
-    return { tags }
   }
 
   const handleFileUpload = async (file: File) => {
+    if (file.size > 80 * 1024 * 1024) {
+      setUploadError("File size exceeds 80 MB limit.")
+      return
+    }
+
     setUploadedFile(file)
     setIsUploading(true)
     setUploadProgress(0)
+    setUploadError(null)
 
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval)
-          // Simulate AI processing and create document
-          setTimeout(() => {
-            const aiResult = generateAITags(file.name)
-            const newDocument: Document = {
-              id: Date.now().toString(),
-              name: file.name,
-              uploadDate: new Date().toISOString().split("T")[0],
-              tags: aiResult.tags,
-              size: formatFileSize(file.size),
-              type: file.type || 'application/pdf',
-              link: '',
-              company: null,
-              companyName: null,
-              uploaded_by: null,
-              status: 'uploaded',
-              modelGeneratedTags: aiResult.tags.map(tag => ({
-                tag,
-                score: Math.random() * 0.5 + 0.5, // Random confidence between 0.5-1.0
-                isConfirmed: false
-              })),
-              userAddedTags: []
-            }
-            onUploadComplete(newDocument)
-            setIsUploading(false)
-            setUploadProgress(0)
-            setUploadedFile(null)
-          }, 1000)
-          return 100
-        }
-        return prev + 10
-      })
-    }, 200)
+    try {
+      setUploadProgress(10)
+      const s3Result = await uploadToS3(file)
+      if (!s3Result.success) throw new Error(s3Result.error || "Failed to upload to S3")
+      setUploadProgress(70)
+
+      // Simulate /v1/predict
+      setUploadProgress(75)
+      await new Promise((r) => setTimeout(r, 1200))
+      const predictJson = {
+        results: [
+          {
+            filename: file.name,
+            tags: [
+              { tag: "news", score: 0.92 },
+              { tag: "Recommendations", score: 0.81 },
+            ],
+            user_labels: ["Discovery Event", "FY2024"],
+          },
+        ],
+      }
+      const first = predictJson.results?.[0]
+      if (!first) throw new Error("No prediction results returned")
+      setUploadProgress(100)
+
+      const newDocument: Document = {
+        id: Date.now().toString(),
+        name: file.name,
+        uploadDate: new Date().toISOString().split("T")[0],
+        tags: (first.tags || []).map((t: any) => t.tag),
+        subtags: {
+          ...(first.user_labels ? { "User Labels": first.user_labels } : {}),
+          "Model Tags (w/ confidence)": first.tags.map(
+            (t: any) => `${t.tag} (${Math.round(t.score * 100)}%)`
+          ),
+        },
+        size: formatFileSize(file.size),
+        status: "pending",
+        modelGeneratedTags: (first.tags ?? []).map((t: any) => ({
+          tag: t.tag,
+          score: t.score,
+          isConfirmed: true,
+        })),
+        userAddedTags: first.user_labels ?? [],
+      }
+
+      setTimeout(() => {
+        onUploadComplete(newDocument)
+        setIsUploading(false)
+        setUploadProgress(0)
+        setUploadedFile(null)
+      }, 400)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed")
+      setIsUploading(false)
+      setUploadProgress(0)
+    }
   }
 
-  const formatFileSize = (bytes: number): string => {
+  const formatFileSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes"
     const k = 1024
     const sizes = ["Bytes", "KB", "MB", "GB"]
@@ -152,6 +171,14 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
       onClose()
       setUploadedFile(null)
       setUploadProgress(0)
+      setUploadError(null)
+    }
+  }
+
+  const handleRetry = () => {
+    if (uploadedFile) {
+      setUploadError(null)
+      handleFileUpload(uploadedFile)
     }
   }
 
@@ -166,7 +193,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
         </DialogHeader>
 
         <div className="space-y-4">
-          {!isUploading && !uploadedFile && (
+          {!isUploading && !uploadedFile && !uploadError && (
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
                 isDragOver ? "border-red-500 bg-red-50" : "border-gray-300 hover:border-red-400 hover:bg-gray-50"
@@ -179,17 +206,16 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
               <p className="text-lg font-medium text-gray-900 mb-2">Drop your document here</p>
               <p className="text-sm text-gray-500 mb-4">or click to browse files</p>
               <input
+                ref={fileInputRef}
                 type="file"
                 onChange={handleFileSelect}
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.txt"
                 className="hidden"
                 id="file-upload"
               />
-              <label htmlFor="file-upload">
-                <Button variant="outline" className="cursor-pointer bg-transparent">
-                  Browse Files
-                </Button>
-              </label>
+              <Button variant="outline" onClick={handleBrowseClick} className="cursor-pointer">
+                Browse Files
+              </Button>
               <p className="text-xs text-gray-400 mt-2">Supported formats: PDF, DOC, DOCX, XLS, XLSX, TXT</p>
             </div>
           )}
@@ -207,7 +233,11 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">
-                    {uploadProgress < 100 ? "Uploading..." : "Processing with AI..."}
+                    {uploadProgress < 70
+                      ? "Uploading to S3..."
+                      : uploadProgress < 100
+                      ? "Processing with AI..."
+                      : "Complete!"}
                   </span>
                   <span className="text-gray-900">{uploadProgress}%</span>
                 </div>
@@ -222,6 +252,34 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
               )}
             </div>
           )}
+
+          {uploadError && (
+            <div className="space-y-4">
+              <div className="flex items-center space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
+                <AlertCircle className="w-8 h-8 text-red-600" />
+                <div className="flex-1">
+                  <p className="font-medium text-red-900">Upload Failed</p>
+                  <p className="text-sm text-red-700">{uploadError}</p>
+                </div>
+              </div>
+
+              <div className="flex space-x-2">
+                <Button variant="outline" onClick={handleRetry} className="flex-1">
+                  Try Again
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setUploadError(null)
+                    setUploadedFile(null)
+                  }}
+                  className="flex-1"
+                >
+                  Choose Different File
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end space-x-2 pt-4">
@@ -233,3 +291,6 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
     </Dialog>
   )
 }
+
+export default UploadModal
+export { UploadModal }

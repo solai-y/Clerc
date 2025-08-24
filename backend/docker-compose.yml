@@ -6,6 +6,13 @@ services:
       - "5001:5001"
     env_file:
       - .env
+      
+  s3-service:
+    build: ./s3-service
+    ports:
+      - "5003:5003"
+    env_file:
+      - .env
 
   document-service:
     build: ./document-service
@@ -13,7 +20,7 @@ services:
       - "5002:5002"
     env_file:
       - .env
-      
+
   nginx:
     image: nginx:latest
     ports:
@@ -22,4 +29,5 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - company-service
+      - s3-service
       - document-service
