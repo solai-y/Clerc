@@ -33,9 +33,9 @@ jobs:
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
-      # Run categories-service integration tests
-      - name: Run categories-service tests
-        working-directory: backend/categories-service
+      # Run document-service integration tests
+      - name: Run document-service tests
+        working-directory: backend/document-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
@@ -48,9 +48,9 @@ jobs:
           pip install -r requirements.txt
           pytest -s tests/e2e -v
 
-      # Run categories-service E2E tests
-      - name: Run categories-service E2E tests
-        working-directory: backend/categories-service
+      # Run document-service E2E tests
+      - name: Run document-service E2E tests
+        working-directory: backend/document-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/e2e -v
@@ -86,7 +86,15 @@ jobs:
         - name: Deploy on EC2
           run: |
             ssh -A -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
-              cd /home/ubuntu/backend &&
-              docker-compose down &&
-              docker-compose up --build -d
+              set -e
+              cd /home/ubuntu/backend
+              export COMPOSE_PROJECT_NAME=backend
+
+              # Clean up
+              docker-compose down --remove-orphans || true
+              docker ps --filter network=${COMPOSE_PROJECT_NAME}_default -q | xargs -r docker rm -f || true
+              docker network rm ${COMPOSE_PROJECT_NAME}_default || true
+
+              # Bring services up
+              docker-compose up -d --build --remove-orphans
             "
