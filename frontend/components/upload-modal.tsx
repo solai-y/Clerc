@@ -1,20 +1,23 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useCallback, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react'
+import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react"
 
-interface Document {
+export interface Document {
   id: string
   name: string
   uploadDate: string
   tags: string[]
   subtags: { [tagId: string]: string[] }
   size: string
+  status: string
+  // optional for tag confirmation flow
+  modelGeneratedTags?: { tag: string; score?: number; isConfirmed?: boolean }[]
+  userAddedTags?: string[]
 }
 
 interface UploadModalProps {
@@ -23,7 +26,7 @@ interface UploadModalProps {
   onUploadComplete: (document: Document) => void
 }
 
-export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
+function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
@@ -44,7 +47,6 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
-
     const files = Array.from(e.dataTransfer.files)
     if (files.length > 0) {
       const file = files[0]
@@ -55,7 +57,6 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
       handleFileUpload(file)
     }
   }, [])
-  
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -69,105 +70,60 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
     }
   }
 
-  const handleBrowseClick = () => {
-    fileInputRef.current?.click()
-  }
+  const handleBrowseClick = () => fileInputRef.current?.click()
 
   const uploadToS3 = async (file: File): Promise<{ success: boolean; url?: string; error?: string }> => {
     try {
       const formData = new FormData()
-      formData.append('file', file)
-
-      const response = await fetch('http://localhost/s3/upload', {
-        method: 'POST',
-        body: formData,
-      })
-
+      formData.append("file", file)
+      const response = await fetch("http://localhost/s3/upload", { method: "POST", body: formData })
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Upload failed' }))
-        console.error("❌ PDF upload failed with status:", response.status, errorData)
+        const errorData = await response.json().catch(() => ({ error: "Upload failed" }))
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
       }
-
       const result = await response.json()
-      console.log("✅ PDF upload successful")
-      console.log("📦 S3 Upload API JSON response:", result)
-
-      // Extract s3_url from response
       return { success: true, url: result.s3_url }
     } catch (error) {
-      console.error('S3 upload error:', error)
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown upload error' 
-      }
+      return { success: false, error: error instanceof Error ? error.message : "Unknown upload error" }
     }
   }
 
-
   const handleFileUpload = async (file: File) => {
-    const maxSize = 80 * 1024 * 1024 // 80 MB in bytes
-    if (file.size > maxSize) {
+    if (file.size > 80 * 1024 * 1024) {
       setUploadError("File size exceeds 80 MB limit.")
       return
     }
-    
+
     setUploadedFile(file)
     setIsUploading(true)
     setUploadProgress(0)
     setUploadError(null)
 
     try {
-      // Step 1: Upload to S3 (0-70% progress)
       setUploadProgress(10)
-      
       const s3Result = await uploadToS3(file)
-      
-      if (!s3Result.success) {
-        throw new Error(s3Result.error || 'Failed to upload to S3')
-      }
-      // Store the S3 URL in a variable (state)
-      const s3Link = s3Result.url
-      console.log("🌐 Stored S3 Link:", s3Link)
-
+      if (!s3Result.success) throw new Error(s3Result.error || "Failed to upload to S3")
       setUploadProgress(70)
 
-      // Step 2: Simulate /v1/predict (instead of generateAITags)
+      // Simulate /v1/predict
       setUploadProgress(75)
-
-      // fake network delay so progress feels real
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
+      await new Promise((r) => setTimeout(r, 1200))
       const predictJson = {
-        threshold_pct: 60,
         results: [
           {
             filename: file.name,
             tags: [
               { tag: "news", score: 0.92 },
-              { tag: "Recommendations", score: 0.81 }
+              { tag: "Recommendations", score: 0.81 },
             ],
             user_labels: ["Discovery Event", "FY2024"],
-            ocr_used: true,
-            processing_ms: 842
-          }
+          },
         ],
-        errors: [],
-        saved_training: true,
-        saved_count: 1,
-        request_id: "req_01HZ..."
       }
-
-      console.log("🔮 Simulated V1 Predict API response:", predictJson)
-
       const first = predictJson.results?.[0]
-      if (!first) {
-        throw new Error("No prediction results returned")
-      }
-
+      if (!first) throw new Error("No prediction results returned")
       setUploadProgress(100)
 
-      // Build Document from simulated API
       const newDocument: Document = {
         id: Date.now().toString(),
         name: file.name,
@@ -177,29 +133,32 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
           ...(first.user_labels ? { "User Labels": first.user_labels } : {}),
           "Model Tags (w/ confidence)": first.tags.map(
             (t: any) => `${t.tag} (${Math.round(t.score * 100)}%)`
-          )
+          ),
         },
         size: formatFileSize(file.size),
         status: "pending",
+        modelGeneratedTags: (first.tags ?? []).map((t: any) => ({
+          tag: t.tag,
+          score: t.score,
+          isConfirmed: true,
+        })),
+        userAddedTags: first.user_labels ?? [],
       }
 
-      // Complete the upload
       setTimeout(() => {
         onUploadComplete(newDocument)
         setIsUploading(false)
         setUploadProgress(0)
         setUploadedFile(null)
-      }, 500)
-
-    } catch (error) {
-      console.error('Upload failed:', error)
-      setUploadError(error instanceof Error ? error.message : 'Upload failed')
+      }, 400)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed")
       setIsUploading(false)
       setUploadProgress(0)
     }
   }
 
-  const formatFileSize = (bytes: number): string => {
+  const formatFileSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes"
     const k = 1024
     const sizes = ["Bytes", "KB", "MB", "GB"]
@@ -274,12 +233,11 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">
-                  {uploadProgress < 70 
-                      ? "Uploading to S3..." 
-                      : uploadProgress < 100 
-                      ? "Processing with AI..." 
-                      : "Complete!"
-                    }
+                    {uploadProgress < 70
+                      ? "Uploading to S3..."
+                      : uploadProgress < 100
+                      ? "Processing with AI..."
+                      : "Complete!"}
                   </span>
                   <span className="text-gray-900">{uploadProgress}%</span>
                 </div>
@@ -294,6 +252,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
               )}
             </div>
           )}
+
           {uploadError && (
             <div className="space-y-4">
               <div className="flex items-center space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
@@ -303,17 +262,13 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
                   <p className="text-sm text-red-700">{uploadError}</p>
                 </div>
               </div>
-              
+
               <div className="flex space-x-2">
-                <Button 
-                  variant="outline" 
-                  onClick={handleRetry}
-                  className="flex-1"
-                >
+                <Button variant="outline" onClick={handleRetry} className="flex-1">
                   Try Again
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setUploadError(null)
                     setUploadedFile(null)
@@ -336,3 +291,6 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
     </Dialog>
   )
 }
+
+export default UploadModal
+export { UploadModal }
