@@ -82,6 +82,10 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
       }
       const result = await response.json()
+      console.log("✅ PDF upload successful")
+      console.log("📦 JSON response:", result)
+      console.log("📦 S3 Upload API JSON response:", result)
+
       return { success: true, url: result.s3_url }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : "Unknown upload error" }
