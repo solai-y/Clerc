@@ -1,28 +1,26 @@
-/** @type {import('next').NextConfig} */
+// next.config.mjs
+
+const isLocalDev = (process.env.VERCEL !== '1') && process.env.NODE_ENV === 'development';
+
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  images: {
-    unoptimized: true,
-  },
   async rewrites() {
     return [
       {
-      source: '/api/documents/:path*',
-      has: [{ type: 'header', key: 'host', value: 'localhost:3000' }],
-      destination: 'http://localhost:5002/documents/:path*',
+        // Frontend calls /api/documents → rewritten server-side
+        source: '/api/documents/:path*',
+        destination: isLocalDev
+          ? 'http://localhost:5002/documents/:path*'
+          : 'http://44.200.148.190/documents/:path*',
       },
       {
-        source: '/api/documents/:path*',
-        // fallback for everything else (Vercel preview/prod)
-        destination: 'http://44.200.148.190/documents/:path*',
+        // Frontend calls /api/documents → rewritten server-side
+        source: '/api/s3/:path*',
+        destination: isLocalDev
+          ? 'http://localhost:5002/s3/:path*'
+          : 'http://44.200.148.190/s3/:path*',
       },
-    ]
+    ];
   },
-}
+};
 
-export default nextConfig
+export default nextConfig;
