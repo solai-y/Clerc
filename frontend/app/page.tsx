@@ -3,7 +3,8 @@
 import { useState, useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
+// Badge was imported but unused; remove if not needed
+// import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Upload, Search, Filter, AlertCircle, RefreshCw, TestTube } from "lucide-react"
@@ -16,7 +17,7 @@ import { useDocuments } from "@/hooks/use-documents"
 import { apiClient } from "@/lib/api"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
-// Local UI-facing document type (avoid clashing with DOM Document or API Document)
+// Local UI-facing document type (avoid clashing with DOM or API types)
 type UIDocument = {
   id: string
   name: string
@@ -24,7 +25,6 @@ type UIDocument = {
   tags: string[]
   size: string
   status: string
-  // optional UI fields you’re using in this page
   subtags?: { [tagId: string]: string[] }
   type?: string
   link?: string
@@ -53,9 +53,7 @@ export default function HomePage() {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm)
-    }, 500)
+    const timer = setTimeout(() => setDebouncedSearchTerm(searchTerm), 500)
     return () => clearTimeout(timer)
   }, [searchTerm])
 
@@ -75,48 +73,53 @@ export default function HomePage() {
     updateDocument,
     deleteDocument,
   } = useDocuments({
-    search: debouncedSearchTerm || undefined, // Use debounced search term
-    limit: itemsPerPage, // 15 documents per page
-    offset: (currentPage - 1) * itemsPerPage, // Calculate offset based on current page
+    search: debouncedSearchTerm || undefined,
+    limit: itemsPerPage,
+    offset: (currentPage - 1) * itemsPerPage,
   })
 
   // Apply client-side filtering for tags and sorting (search is handled server-side)
-  const filteredAndSortedDocuments = useMemo<UIDocument[]>(() => {
-    const filtered = documents.filter((doc) => {
+  const filteredAndSortedDocuments = useMemo(() => {
+    const docs = documents as unknown as UIDocument[]
+
+    const filtered = docs.filter((doc) => {
       const matchesTag = !filterTag || doc.tags.includes(filterTag)
       return matchesTag
     })
 
-    return filtered.sort((a, b) => {
+    const sorted = filtered.sort((a, b) => {
       let comparison = 0
       switch (sortBy) {
         case "name":
           comparison = a.name.localeCompare(b.name)
           break
         case "date":
-          comparison = new Date(a.uploadDate).getTime() - new Date(b.uploadDate).getTime()
+          comparison =
+            new Date(a.uploadDate).getTime() - new Date(b.uploadDate).getTime()
           break
-        case "size":
-          {
-            const aSize = Number.parseFloat(a.size)
-            const bSize = Number.parseFloat(b.size)
-            comparison = aSize - bSize
-          }
+        case "size": {
+          const aSize = Number.parseFloat(a.size)
+          const bSize = Number.parseFloat(b.size)
+          comparison = aSize - bSize
           break
+        }
       }
       return sortOrder === "asc" ? comparison : -comparison
     })
+
+    return sorted
   }, [documents, sortBy, sortOrder, filterTag])
 
   const availableTags = useMemo(() => {
+    const docs = documents as unknown as UIDocument[]
     const tags = new Set<string>()
-    documents.forEach((doc) => doc.tags.forEach((tag) => tags.add(tag)))
+    docs.forEach((doc) => doc.tags.forEach((tag) => tags.add(tag)))
     return Array.from(tags).sort()
   }, [documents])
 
   const handleSort = (column: "name" | "date" | "size") => {
     if (sortBy === column) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
     } else {
       setSortBy(column)
       setSortOrder("asc")
@@ -125,7 +128,6 @@ export default function HomePage() {
 
   const handleUploadComplete = async (newDocument: UIDocument) => {
     try {
-      // If needed, create via API here, then update local state.
       await refetch()
       setConfirmTagsDocument(newDocument)
       setIsUploadModalOpen(false)
@@ -238,7 +240,7 @@ export default function HomePage() {
     if (name.includes("report")) {
       tags.push({ tag: "Report", score: 0.85 })
     }
-    if (name.includes("quarterly") || name.includes("q1") || name.includes("q2") || name.includes("q3") || name.includes("q4")) {
+    if (name.includes("quarterly") || name.includes("q1") || "q2" || "q3" || "q4") {
       tags.push({ tag: "Quarterly", score: 0.78 })
     }
     if (name.includes("annual")) {
@@ -404,7 +406,7 @@ export default function HomePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {loading && documents.length === 0 ? (
+            {loading && (documents as unknown as UIDocument[]).length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <RefreshCw className="w-8 h-8 mx-auto mb-4 animate-spin text-gray-300" />
                 <p>Loading documents...</p>
@@ -412,7 +414,7 @@ export default function HomePage() {
             ) : (
               <>
                 <DocumentTable
-                  documents={filteredAndSortedDocuments}
+                  documents={filteredAndSortedDocuments as UIDocument[]}
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={handleSort}
@@ -465,7 +467,7 @@ export default function HomePage() {
       <UploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
-        // wrapper keeps the prop as (doc) => void while letting us run async logic
+        // keep prop as (doc) => void while doing async logic
         onUploadComplete={(uiDoc) => { void handleUploadComplete(uiDoc as UIDocument); }}
       />
 
