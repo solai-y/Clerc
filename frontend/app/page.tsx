@@ -13,8 +13,27 @@ import { DocumentDetailsModal } from "@/components/document-details-modal"
 import { DocumentTable } from "@/components/document-table"
 import { DocumentPagination } from "@/components/document-pagination"
 import { useDocuments } from "@/hooks/use-documents"
-import { Document, apiClient } from "@/lib/api"
+import { apiClient } from "@/lib/api"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+
+// Local UI-facing document type (avoid clashing with DOM Document or API Document)
+type UIDocument = {
+  id: string
+  name: string
+  uploadDate: string
+  tags: string[]
+  size: string
+  status: string
+  // optional UI fields you’re using in this page
+  subtags?: { [tagId: string]: string[] }
+  type?: string
+  link?: string
+  company?: number
+  companyName?: string | null
+  uploaded_by?: number
+  modelGeneratedTags?: { tag: string; score?: number; isConfirmed?: boolean }[]
+  userAddedTags?: string[]
+}
 
 export default function HomePage() {
   // Local state for UI
@@ -22,8 +41,8 @@ export default function HomePage() {
   const [sortBy, setSortBy] = useState<"name" | "date" | "size">("date")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
-  const [confirmTagsDocument, setConfirmTagsDocument] = useState<Document | null>(null)
-  const [detailsDocument, setDetailsDocument] = useState<Document | null>(null)
+  const [confirmTagsDocument, setConfirmTagsDocument] = useState<UIDocument | null>(null)
+  const [detailsDocument, setDetailsDocument] = useState<UIDocument | null>(null)
   const [filterTag, setFilterTag] = useState<string>("")
   
   // Pagination state
@@ -36,8 +55,7 @@ export default function HomePage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm)
-    }, 500) // 500ms debounce
-
+    }, 500)
     return () => clearTimeout(timer)
   }, [searchTerm])
 
@@ -63,10 +81,9 @@ export default function HomePage() {
   })
 
   // Apply client-side filtering for tags and sorting (search is handled server-side)
-  const filteredAndSortedDocuments = useMemo(() => {
+  const filteredAndSortedDocuments = useMemo<UIDocument[]>(() => {
     const filtered = documents.filter((doc) => {
       const matchesTag = !filterTag || doc.tags.includes(filterTag)
-      // Only tag filtering is applied
       return matchesTag
     })
 
@@ -80,9 +97,11 @@ export default function HomePage() {
           comparison = new Date(a.uploadDate).getTime() - new Date(b.uploadDate).getTime()
           break
         case "size":
-          const aSize = Number.parseFloat(a.size)
-          const bSize = Number.parseFloat(b.size)
-          comparison = aSize - bSize
+          {
+            const aSize = Number.parseFloat(a.size)
+            const bSize = Number.parseFloat(b.size)
+            comparison = aSize - bSize
+          }
           break
       }
       return sortOrder === "asc" ? comparison : -comparison
@@ -95,7 +114,6 @@ export default function HomePage() {
     return Array.from(tags).sort()
   }, [documents])
 
-
   const handleSort = (column: "name" | "date" | "size") => {
     if (sortBy === column) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc")
@@ -105,15 +123,14 @@ export default function HomePage() {
     }
   }
 
-  const handleUploadComplete = async (newDocument: Document) => {
+  const handleUploadComplete = async (newDocument: UIDocument) => {
     try {
-      // In a real implementation, this would create the document via API
-      // For now, we'll just refetch to get the latest data
+      // If needed, create via API here, then update local state.
       await refetch()
       setConfirmTagsDocument(newDocument)
       setIsUploadModalOpen(false)
     } catch (err) {
-      console.error('Error after upload:', err)
+      console.error("Error after upload:", err)
     }
   }
 
@@ -123,10 +140,9 @@ export default function HomePage() {
     userAddedTags: string[]
   ) => {
     try {
-      // Check if this came from our test button (real unprocessed documents)
       const isTestFlow = confirmTagsDocument !== null
       
-      console.log('✅ Processing document tags:', {
+      console.log("✅ Processing document tags:", {
         documentId,
         confirmedTags,
         userAddedTags,
@@ -135,45 +151,39 @@ export default function HomePage() {
       })
 
       const documentIdNum = parseInt(documentId)
-      
+
       if (isTestFlow) {
-        // For test flow: First create processed document entry, then update tags
         try {
-          // Step 1: Create processed document with AI suggested tags
-          const mockAITags = confirmTagsDocument?.modelGeneratedTags.map(tag => ({
-            tag: tag.tag,
-            score: tag.score
-          })) || []
+          const mockAITags =
+            confirmTagsDocument?.modelGeneratedTags?.map(tag => ({
+              tag: tag.tag,
+              score: tag.score
+            })) || []
           
           await apiClient.createProcessedDocument({
             document_id: documentIdNum,
             suggested_tags: mockAITags,
-            model_id: 1, // Mock model ID
-            threshold_pct: 70 // Mock threshold
+            model_id: 1,
+            threshold_pct: 70
           })
           
-          console.log('✅ Created processed document entry')
+          console.log("✅ Created processed document entry")
           
-          // Step 2: Update with confirmed tags
           await apiClient.updateDocumentTags(documentIdNum, {
             confirmed_tags: confirmedTags,
             user_added_labels: userAddedTags
           })
           
-          console.log('✅ Updated document tags')
+          console.log("✅ Updated document tags")
           
-          // Refresh the document list to show the newly processed document
           await refetch()
-          
           setConfirmTagsDocument(null)
-          
         } catch (error) {
-          console.error('❌ Error in test flow:', error)
-          alert('❌ Error processing document!\n\n' + (error as Error).message)
+          console.error("❌ Error in test flow:", error)
+          alert("❌ Error processing document!\n\n" + (error as Error).message)
           throw error
         }
       } else {
-        // Regular flow: Document already exists in processed_documents
         await apiClient.updateDocumentTags(documentIdNum, {
           confirmed_tags: confirmedTags,
           user_added_labels: userAddedTags
@@ -183,12 +193,12 @@ export default function HomePage() {
         setConfirmTagsDocument(null)
       }
     } catch (err) {
-      console.error('Error updating tags:', err)
+      console.error("Error updating tags:", err)
       throw err
     }
   }
 
-  // Create mock processed document for testing
+  // Helpers for test flow
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return "0 B"
     const k = 1024
@@ -198,11 +208,9 @@ export default function HomePage() {
   }
 
   const generateMockAITags = (fileName: string) => {
-    // Generate AI tags based on filename
     const name = fileName.toLowerCase()
     const tags: { tag: string; score: number }[] = []
 
-    // Document type detection
     if (name.includes("financial") || name.includes("finance")) {
       tags.push({ tag: "Financial Report", score: 0.92 })
     }
@@ -230,127 +238,57 @@ export default function HomePage() {
     if (name.includes("report")) {
       tags.push({ tag: "Report", score: 0.85 })
     }
-    
-    // Time period detection
     if (name.includes("quarterly") || name.includes("q1") || name.includes("q2") || name.includes("q3") || name.includes("q4")) {
       tags.push({ tag: "Quarterly", score: 0.78 })
     }
     if (name.includes("annual")) {
       tags.push({ tag: "Annual", score: 0.75 })
     }
-
-    // Add some default tags if none found
     if (tags.length === 0) {
-      tags.push({ tag: "Document", score: 0.70 })
-      tags.push({ tag: "Unclassified", score: 0.60 })
+      tags.push({ tag: "Document", score: 0.7 })
+      tags.push({ tag: "Unclassified", score: 0.6 })
     }
-
     return tags
-  }
-
-  const createMockProcessedDocument = (): Document => {
-    // Create various test scenarios
-    const testScenarios = [
-      {
-        name: "Test_Invoice_2024_Q1.pdf",
-        tags: [
-          { tag: "invoice", score: 0.92 },
-          { tag: "financial", score: 0.87 },
-          { tag: "business", score: 0.74 },
-          { tag: "payment", score: 0.68 },
-          { tag: "accounting", score: 0.61 }
-        ]
-      },
-      {
-        name: "Contract_Agreement_Legal.pdf", 
-        tags: [
-          { tag: "contract", score: 0.95 },
-          { tag: "legal", score: 0.89 },
-          { tag: "agreement", score: 0.82 },
-          { tag: "terms", score: 0.71 },
-          { tag: "business", score: 0.65 }
-        ]
-      },
-      {
-        name: "Marketing_Report_Q4.pdf",
-        tags: [
-          { tag: "marketing", score: 0.91 },
-          { tag: "report", score: 0.88 },
-          { tag: "analytics", score: 0.76 },
-          { tag: "quarterly", score: 0.69 },
-          { tag: "strategy", score: 0.62 }
-        ]
-      }
-    ]
-
-    // Randomly select a scenario
-    const scenario = testScenarios[Math.floor(Math.random() * testScenarios.length)]
-
-    return {
-      id: Math.floor(Date.now() / 1000).toString(), // Generate integer-like ID
-      name: scenario.name,
-      uploadDate: new Date().toISOString().split('T')[0],
-      tags: [], // Will be populated based on confirmed tags
-      size: `${(Math.random() * 3 + 1).toFixed(1)} MB`,
-      type: "PDF",
-      link: `/documents/${scenario.name}`,
-      company: 1,
-      companyName: "Test Company Inc.",
-      uploaded_by: 1,
-      status: "pending_review",
-      modelGeneratedTags: scenario.tags.map(tag => ({
-        tag: tag.tag,
-        score: tag.score,
-        isConfirmed: true // AI tags are selected by default
-      })),
-      userAddedTags: [] // Initially empty
-    }
   }
 
   const handleTestProcessedDocument = async () => {
     try {
-      // Get a real unprocessed document from the database
       const response = await apiClient.getUnprocessedDocuments(1)
       
       if (response.count === 0) {
-        alert('⚠️ No unprocessed documents found!\n\nAll raw documents have already been processed.')
+        alert("⚠️ No unprocessed documents found!\n\nAll raw documents have already been processed.")
         return
       }
       
       const rawDoc = response.unprocessed_documents[0]
-      
-      // Transform raw document into a format suitable for tag confirmation
-      // Generate mock AI tags for this real document
       const mockAITags = generateMockAITags(rawDoc.document_name)
       
-      const testDoc: Document = {
+      const testDoc: UIDocument = {
         id: rawDoc.document_id.toString(),
         name: rawDoc.document_name,
-        uploadDate: rawDoc.upload_date?.split('T')[0] || new Date().toISOString().split('T')[0],
-        tags: [], // Will be populated based on confirmed tags
-        size: rawDoc.file_size ? formatFileSize(rawDoc.file_size) : 'Unknown',
-        type: rawDoc.document_type || 'PDF',
-        link: rawDoc.link || '',
+        uploadDate: rawDoc.upload_date?.split("T")[0] || new Date().toISOString().split("T")[0],
+        tags: [],
+        size: rawDoc.file_size ? formatFileSize(rawDoc.file_size) : "Unknown",
+        type: rawDoc.document_type || "PDF",
+        link: rawDoc.link || "",
         company: rawDoc.company,
-        companyName: null, // We don't have company name from raw document
+        companyName: null,
         uploaded_by: rawDoc.uploaded_by,
         status: "pending_review",
         modelGeneratedTags: mockAITags.map(tag => ({
           tag: tag.tag,
           score: tag.score,
-          isConfirmed: true // AI tags are selected by default
+          isConfirmed: true
         })),
-        userAddedTags: [] // Initially empty
+        userAddedTags: []
       }
       
       setConfirmTagsDocument(testDoc)
-      
     } catch (error) {
-      console.error('Failed to get unprocessed document:', error)
-      alert('❌ Failed to get unprocessed document!\n\nError: ' + (error as Error).message)
+      console.error("Failed to get unprocessed document:", error)
+      alert("❌ Failed to get unprocessed document!\n\nError: " + (error as Error).message)
     }
   }
-
 
   return (
     <div className="min-h-screen bg-white">
@@ -359,9 +297,9 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <h1 className="text-5xl font-bold text-red-600" style={{ marginLeft: '1rem' }}>Clerc.</h1>
-                <div className="h-6 w-px bg-gray-300 mx-4"></div>
-                <h1 className="text-xl font-bold text-gray-900">Document AI</h1>
+              <h1 className="text-5xl font-bold text-red-600" style={{ marginLeft: "1rem" }}>Clerc.</h1>
+              <div className="h-6 w-px bg-gray-300 mx-4"></div>
+              <h1 className="text-xl font-bold text-gray-900">Document AI</h1>
             </div>
           </div>
         </div>
@@ -388,7 +326,6 @@ export default function HomePage() {
             </AlertDescription>
           </Alert>
         )}
-
 
         {/* Search and Filters */}
         <Card className="mb-6">
@@ -428,7 +365,6 @@ export default function HomePage() {
                     ))}
                   </SelectContent>
                 </Select>
-
               </div>
             </div>
           </CardContent>
@@ -526,11 +462,11 @@ export default function HomePage() {
         </Button>
       </div>
 
-      {/* Upload Modal */}
       <UploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
-        onUploadComplete={handleUploadComplete}
+        // wrapper keeps the prop as (doc) => void while letting us run async logic
+        onUploadComplete={(uiDoc) => { void handleUploadComplete(uiDoc as UIDocument); }}
       />
 
       {/* Confirm Tags Modal */}
