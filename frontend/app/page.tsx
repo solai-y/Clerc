@@ -3,8 +3,6 @@
 import { useState, useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-// Badge was imported but unused; remove if not needed
-// import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Upload, Search, Filter, AlertCircle, RefreshCw, TestTube } from "lucide-react"
@@ -156,15 +154,16 @@ export default function HomePage() {
 
       if (isTestFlow) {
         try {
-          const mockAITags =
-            confirmTagsDocument?.modelGeneratedTags?.map(tag => ({
-              tag: tag.tag,
-              score: tag.score
-            })) || []
-          
+          // STRICT array: ensure score is a number (default to 0.7 if missing)
+          const mockAITagsStrict: { tag: string; score: number }[] =
+            (confirmTagsDocument?.modelGeneratedTags ?? []).map(t => ({
+              tag: t.tag,
+              score: typeof t.score === "number" ? t.score : 0.7,
+            }))
+
           await apiClient.createProcessedDocument({
             document_id: documentIdNum,
-            suggested_tags: mockAITags,
+            suggested_tags: mockAITagsStrict,
             model_id: 1,
             threshold_pct: 70
           })
@@ -240,7 +239,13 @@ export default function HomePage() {
     if (name.includes("report")) {
       tags.push({ tag: "Report", score: 0.85 })
     }
-    if (name.includes("quarterly") || name.includes("q1") || "q2" || "q3" || "q4") {
+    if (
+      name.includes("quarterly") ||
+      name.includes("q1") ||
+      name.includes("q2") ||
+      name.includes("q3") ||
+      name.includes("q4")
+    ) {
       tags.push({ tag: "Quarterly", score: 0.78 })
     }
     if (name.includes("annual")) {
