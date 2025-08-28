@@ -76,83 +76,79 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
   const uploadToS3 = async (
     file: File
   ): Promise<{ success: boolean; url?: string; error?: string }> => {
-    const endpoint = "/s3/upload"; // ✅ relative path (no http://...); works locally & on Vercel
+    const endpoint = "/s3/upload"; // ✅ relative path (rewrites handle backend)
     const formData = new FormData();
     formData.append("file", file);
-
-    // Timeout guard (optional)
+  
+    // Optional: client-side guard
+    if (!file || file.size === 0) {
+      return { success: false, error: "No file selected or file is empty" };
+    }
+  
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60_000); // 60s
-
+  
     try {
-      console.log(
-        `📤 [UploadToS3] Starting upload: ${file.name} size: ${file.size}`
-      );
-
+      console.log(`📤 [UploadToS3] Start: "${file.name}" (${file.size} bytes)`);
+  
       const res = await fetch(endpoint, {
         method: "POST",
         body: formData,
-        // cache: "no-store" avoids any caching issues
         cache: "no-store",
         signal: controller.signal,
       });
-
-      // HTTP-level error
+  
       if (!res.ok) {
-        let serverMsg = "Upload failed";
+        // Try to extract error text/JSON
+        let serverMsg = "";
         try {
-          const errJson = await res.json();
-          serverMsg = errJson?.error || serverMsg;
+          const j = await res.json();
+          serverMsg = j?.error || j?.message || "";
         } catch {
-          // If server didn't send JSON, try text for clues
           try {
-            const errText = await res.text();
-            if (errText) serverMsg = errText.slice(0, 300);
+            serverMsg = (await res.text())?.slice(0, 300) || "";
           } catch {}
         }
-        console.error(
-          `💥 [UploadToS3] HTTP ${res.status} ${res.statusText} — ${serverMsg}`
-        );
-        return {
-          success: false,
-          error: `${serverMsg} (HTTP ${res.status})`,
-        };
+        const msg = serverMsg || `Upload failed (HTTP ${res.status})`;
+        console.error(`💥 [UploadToS3] ${msg}`);
+        return { success: false, error: msg };
       }
-
-      // Success — try to parse JSON
+  
+      // Success — parse JSON or fallback to text
       let data: any = null;
       const ct = res.headers.get("content-type") || "";
       if (ct.includes("application/json")) {
         data = await res.json();
       } else {
-        // if backend returns text/plain, try to parse anyway
         const text = await res.text();
         try {
           data = JSON.parse(text);
         } catch {
-          console.warn(
-            "⚠️ [UploadToS3] Non-JSON response from server:",
-            text?.slice(0, 300)
-          );
+          console.warn("⚠️ [UploadToS3] Non-JSON response:", text?.slice(0, 300));
+          data = { raw: text };
         }
       }
-
-      const s3Url = data?.s3_url || data?.url;
+  
+      const s3Url = data?.s3_url ?? data?.url;
       if (!s3Url) {
-        console.warn("⚠️ [UploadToS3] Upload succeeded but no URL in response:", data);
+        console.warn("⚠️ [UploadToS3] No URL in response payload:", data);
       } else {
-        console.log(`✅ [UploadToS3] Uploaded OK → ${s3Url}`);
+        console.log(`✅ [UploadToS3] Success → ${s3Url}`);
       }
-
+  
       return { success: true, url: s3Url };
-    } catch (err) {
-      const message =
-        err instanceof DOMException && err.name === "AbortError"
-          ? "Upload timed out"
-          : err instanceof Error
-          ? err.message
-          : "Unknown upload error";
-      console.error("🔥 [UploadToS3] Exception caught:", err);
+    } catch (err: any) {
+      let message = "Unknown upload error";
+      if (err?.name === "AbortError") {
+        message = "Upload timed out";
+      } else if (err instanceof TypeError) {
+        message =
+          "Network error: request blocked or failed (check rewrites & backend reachability)";
+      } else if (err instanceof Error && err.message) {
+        message = err.message;
+      }
+  
+      console.error("🔥 [UploadToS3] Exception:", err);
       return { success: false, error: message };
     } finally {
       clearTimeout(timeoutId);

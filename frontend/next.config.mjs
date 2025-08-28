@@ -4,12 +4,10 @@
 const isVercel = !!process.env.VERCEL; // true on Vercel (preview/prod)
 const isProd = process.env.VERCEL_ENV === "production";
 
-// Where your backend (Nginx on EC2) lives.
-// On Vercel, set BACKEND_ORIGIN in Project Settings → Environment Variables, e.g. "http://44.200.148.190"
-// Locally, we default to http://localhost to hit your docker/nginx.
-const BACKEND_ORIGIN =
-  process.env.BACKEND_ORIGIN ||
-  (isVercel ? "http://44.200.148.190" : "http://localhost");
+
+  // rewrites mapping /documents, /s3, /company -> BACKEND_ORIGIN (you already have this pattern)
+const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN || (process.env.VERCEL ? "https://clercbackend.clerc.uk" : "http://localhost");
+
 
 const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
