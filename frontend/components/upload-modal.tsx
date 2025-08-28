@@ -72,21 +72,92 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
 
   const handleBrowseClick = () => fileInputRef.current?.click()
 
-  const uploadToS3 = async (file: File): Promise<{ success: boolean; url?: string; error?: string }> => {
+  // Upload to S3 via your Nginx backend, using Next.js rewrites
+  const uploadToS3 = async (
+    file: File
+  ): Promise<{ success: boolean; url?: string; error?: string }> => {
+    const endpoint = "/s3/upload"; // ✅ relative path (no http://...); works locally & on Vercel
+    const formData = new FormData();
+    formData.append("file", file);
+
+    // Timeout guard (optional)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60_000); // 60s
+
     try {
-      const formData = new FormData()
-      formData.append("file", file)
-      const response = await fetch("http://localhost/s3/upload", { method: "POST", body: formData })
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Upload failed" }))
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+      console.log(
+        `📤 [UploadToS3] Starting upload: ${file.name} size: ${file.size}`
+      );
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        body: formData,
+        // cache: "no-store" avoids any caching issues
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+      // HTTP-level error
+      if (!res.ok) {
+        let serverMsg = "Upload failed";
+        try {
+          const errJson = await res.json();
+          serverMsg = errJson?.error || serverMsg;
+        } catch {
+          // If server didn't send JSON, try text for clues
+          try {
+            const errText = await res.text();
+            if (errText) serverMsg = errText.slice(0, 300);
+          } catch {}
+        }
+        console.error(
+          `💥 [UploadToS3] HTTP ${res.status} ${res.statusText} — ${serverMsg}`
+        );
+        return {
+          success: false,
+          error: `${serverMsg} (HTTP ${res.status})`,
+        };
       }
-      const result = await response.json()
-      return { success: true, url: result.s3_url }
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : "Unknown upload error" }
+
+      // Success — try to parse JSON
+      let data: any = null;
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        data = await res.json();
+      } else {
+        // if backend returns text/plain, try to parse anyway
+        const text = await res.text();
+        try {
+          data = JSON.parse(text);
+        } catch {
+          console.warn(
+            "⚠️ [UploadToS3] Non-JSON response from server:",
+            text?.slice(0, 300)
+          );
+        }
+      }
+
+      const s3Url = data?.s3_url || data?.url;
+      if (!s3Url) {
+        console.warn("⚠️ [UploadToS3] Upload succeeded but no URL in response:", data);
+      } else {
+        console.log(`✅ [UploadToS3] Uploaded OK → ${s3Url}`);
+      }
+
+      return { success: true, url: s3Url };
+    } catch (err) {
+      const message =
+        err instanceof DOMException && err.name === "AbortError"
+          ? "Upload timed out"
+          : err instanceof Error
+          ? err.message
+          : "Unknown upload error";
+      console.error("🔥 [UploadToS3] Exception caught:", err);
+      return { success: false, error: message };
+    } finally {
+      clearTimeout(timeoutId);
     }
-  }
+  };
 
   const handleFileUpload = async (file: File) => {
     if (file.size > 80 * 1024 * 1024) {
