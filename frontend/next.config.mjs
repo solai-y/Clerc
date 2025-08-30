@@ -21,15 +21,27 @@ const nextConfig = {
   images: { unoptimized: true },
 
   async rewrites() {
-    return [
-      // --- No /api prefix (recommended; matches your current fetch('/documents?...')) ---
+    const rewrites = [
+      // --- Match /documents with or without paths ---
+      { source: "/documents", destination: `${BACKEND_ORIGIN}/documents` },
       { source: "/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },
-      { source: "/s3/:path*",        destination: `${BACKEND_ORIGIN}/s3/:path*` },
-      { source: "/company/:path*",   destination: `${BACKEND_ORIGIN}/company/:path*` },
+      
+      // --- Other services ---
+      { source: "/s3", destination: `${BACKEND_ORIGIN}/s3` },
+      { source: "/s3/:path*", destination: `${BACKEND_ORIGIN}/s3/:path*` },
+      { source: "/company", destination: `${BACKEND_ORIGIN}/company` },
+      { source: "/company/:path*", destination: `${BACKEND_ORIGIN}/company/:path*` },
 
-      // --- Backward-compat (you already had /api/documents) ---
+      // --- Backward-compat ---
       { source: "/api/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },
     ];
+    
+    console.log("Next.js Rewrites:");
+    rewrites.forEach(rewrite => {
+      console.log(`- ${rewrite.source} -> ${rewrite.destination}`);
+    });
+    
+    return rewrites;
   },
 };
 
