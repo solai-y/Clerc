@@ -27,6 +27,9 @@ services:
       - ../models:/models:ro
       - ./ai-service/shared:/app/shared:ro
     # 🔽 run Flask with WSGI worker, binding to 5004
+    # publish 5004 on the host  ⬇️
+    ports:
+      - "5004:5004"
     command: >
       gunicorn app:app
       --bind 0.0.0.0:5004
