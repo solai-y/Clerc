@@ -58,6 +58,9 @@ jobs:
       # Run s3-service E2E tests
       - name: Run s3-service E2E tests
         working-directory: backend/s3-service
+        run: |
+          pip install -r requirements.txt
+          pytest -s tests/e2e -v
         
       # Run document-service E2E tests
       - name: Run document-service E2E tests
