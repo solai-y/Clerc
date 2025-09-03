@@ -28,7 +28,8 @@
       "Bash(docker exec:*)",
       "Bash(docker inspect:*)",
       "Bash(docker port:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "WebFetch(domain:clerc-git-cors-fix-3-solaiys-projects.vercel.app)"
     ],
     "deny": []
   }

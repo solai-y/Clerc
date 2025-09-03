@@ -72,21 +72,88 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
 
   const handleBrowseClick = () => fileInputRef.current?.click()
 
-  const uploadToS3 = async (file: File): Promise<{ success: boolean; url?: string; error?: string }> => {
-    try {
-      const formData = new FormData()
-      formData.append("file", file)
-      const response = await fetch("http://localhost/s3/upload", { method: "POST", body: formData })
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Upload failed" }))
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-      }
-      const result = await response.json()
-      return { success: true, url: result.s3_url }
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : "Unknown upload error" }
+  // Upload to S3 via your Nginx backend, using Next.js rewrites
+  const uploadToS3 = async (
+    file: File
+  ): Promise<{ success: boolean; url?: string; error?: string }> => {
+    const endpoint = "/s3/upload"; // ✅ relative path (rewrites handle backend)
+    const formData = new FormData();
+    formData.append("file", file);
+  
+    // Optional: client-side guard
+    if (!file || file.size === 0) {
+      return { success: false, error: "No file selected or file is empty" };
     }
-  }
+  
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60_000); // 60s
+  
+    try {
+      console.log(`📤 [UploadToS3] Start: "${file.name}" (${file.size} bytes)`);
+  
+      const res = await fetch(endpoint, {
+        method: "POST",
+        body: formData,
+        cache: "no-store",
+        signal: controller.signal,
+      });
+  
+      if (!res.ok) {
+        // Try to extract error text/JSON
+        let serverMsg = "";
+        try {
+          const j = await res.json();
+          serverMsg = j?.error || j?.message || "";
+        } catch {
+          try {
+            serverMsg = (await res.text())?.slice(0, 300) || "";
+          } catch {}
+        }
+        const msg = serverMsg || `Upload failed (HTTP ${res.status})`;
+        console.error(`💥 [UploadToS3] ${msg}`);
+        return { success: false, error: msg };
+      }
+  
+      // Success — parse JSON or fallback to text
+      let data: any = null;
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        try {
+          data = JSON.parse(text);
+        } catch {
+          console.warn("⚠️ [UploadToS3] Non-JSON response:", text?.slice(0, 300));
+          data = { raw: text };
+        }
+      }
+  
+      const s3Url = data?.s3_url ?? data?.url;
+      if (!s3Url) {
+        console.warn("⚠️ [UploadToS3] No URL in response payload:", data);
+      } else {
+        console.log(`✅ [UploadToS3] Success → ${s3Url}`);
+      }
+  
+      return { success: true, url: s3Url };
+    } catch (err: any) {
+      let message = "Unknown upload error";
+      if (err?.name === "AbortError") {
+        message = "Upload timed out";
+      } else if (err instanceof TypeError) {
+        message =
+          "Network error: request blocked or failed (check rewrites & backend reachability)";
+      } else if (err instanceof Error && err.message) {
+        message = err.message;
+      }
+  
+      console.error("🔥 [UploadToS3] Exception:", err);
+      return { success: false, error: message };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
 
   const handleFileUpload = async (file: File) => {
     if (file.size > 80 * 1024 * 1024) {
