@@ -29,7 +29,8 @@
       "Bash(docker inspect:*)",
       "Bash(docker port:*)",
       "Bash(find:*)",
-      "WebFetch(domain:clerc-git-cors-fix-3-solaiys-projects.vercel.app)"
+      "WebFetch(domain:clerc-git-cors-fix-3-solaiys-projects.vercel.app)",
+      "WebFetch(domain:kzmoa184ztu9hkm1o7r6.lite.vusercontent.net)"
     ],
     "deny": []
   }
