@@ -60,7 +60,6 @@ class TestDocumentServiceE2E:
             "document_type": "PDF",
             "link": "https://test.com/e2e-document.pdf",
             "uploaded_by": 1,
-            "company": 1,
         }
         
         create_response = requests.post(
@@ -102,7 +101,6 @@ class TestDocumentServiceE2E:
             "document_type": "PDF",
             "link": "https://test.com/e2e-document-updated.pdf",
             "uploaded_by": 1,
-            "company": 1,
         }
         
         update_response = requests.put(
@@ -249,7 +247,6 @@ class TestDocumentServiceE2E:
                 "document_type": "PDF",
                 "link": f"https://test.com/concurrent-{name_suffix}.pdf",
                 "uploaded_by": 1,
-                "company": 1
             }
             
             response = requests.post(

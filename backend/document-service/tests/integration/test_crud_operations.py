@@ -27,7 +27,6 @@ class TestDocumentCRUD:
             "document_type": "PDF",
             "link": "https://test.com/document.pdf",
             "uploaded_by": 1,
-            "company": 1,
             "categories": [1, 2, 3]
         }
         
@@ -138,7 +137,6 @@ class TestDocumentCRUD:
             "document_type": "PDF",
             "link": "https://test.com/original.pdf",
             "uploaded_by": 1,
-            "company": 1,
             "categories": [1]
         }
         
@@ -157,7 +155,6 @@ class TestDocumentCRUD:
             "document_type": "PDF",
             "link": "https://test.com/updated.pdf",
             "uploaded_by": 1,
-            "company": 1,
             "categories": [1, 2]
         }
         
@@ -184,8 +181,7 @@ class TestDocumentCRUD:
             "document_name": "Update Non-existent",
             "document_type": "PDF",
             "link": "https://test.com/test.pdf",
-            "uploaded_by": 1,
-            "company": 1
+            "uploaded_by": 1
         }
         
         response = client.put(
@@ -212,8 +208,7 @@ class TestDocumentCRUD:
             "document_name": "Document to Delete",
             "document_type": "PDF",
             "link": "https://test.com/delete.pdf",
-            "uploaded_by": 1,
-            "company": 1
+            "uploaded_by": 1
         }
         
         create_response = client.post(
