@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react"
+import { apiClient } from "@/lib/api"
 
 export interface Document {
   id: string
@@ -192,7 +193,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     setUploadError(null)
 
     try {
-      // Step 1: Upload to S3 (0-70% progress)
+      // Step 1: Upload to S3 (0-30% progress)
       setUploadProgress(10)
       
       const s3Result = await uploadToS3(file)
@@ -200,43 +201,77 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       if (!s3Result.success) {
         throw new Error(s3Result.error || 'Failed to upload to S3')
       }
-      // Store the S3 URL in a variable (state)
+      
       const s3Link = s3Result.url
       console.log("🌐 Stored S3 Link:", s3Link)
+      setUploadProgress(30)
 
-      setUploadProgress(70)
+      // Step 2: Create raw_documents entry in Supabase (30-50% progress)
+      console.log("📝 Creating raw document entry in database...")
+      const rawDocumentData = {
+        document_name: file.name,
+        document_type: file.type.toUpperCase() || "PDF",
+        link: s3Link || "",
+        file_size: file.size,
+        status: "uploaded"
+      }
+      
+      const rawDocResponse = await apiClient.createRawDocument(rawDocumentData)
+      const documentId = rawDocResponse.document_id
+      console.log("✅ Created raw document with ID:", documentId)
+      setUploadProgress(50)
 
-      // Step 2: call the real AI model
-      setUploadProgress(75)
-
+      // Step 3: Run AI processing (50-80% progress)
+      setUploadProgress(60)
+      console.log("🤖 Processing with AI...")
+      
       const predict = await predictTags(file, 60)
-      console.log("🤖 /ai/v1/predict response:", predict)
+      console.log("🤖 AI processing response:", predict)
 
       const first = predict.results?.[0]
       if (!first) {
         throw new Error("No prediction results returned")
       }
 
-      // be tolerant of alternate payload shapes
       const rawTags: PredictTag[] = first.tags ?? first.probs ?? first.top5 ?? []
+      setUploadProgress(80)
+
+      // Step 4: Create processed_documents entry in Supabase (80-90% progress)
+      console.log("📊 Creating processed document entry...")
+      const processedDocumentData = {
+        document_id: documentId,
+        suggested_tags: rawTags,
+        threshold_pct: 60,
+        ocr_used: first.ocr_used || false,
+        processing_ms: first.processing_ms || null
+      }
+      
+      const processedDocResponse = await apiClient.createProcessedDocument(processedDocumentData)
+      console.log("✅ Created processed document entry:", processedDocResponse)
       setUploadProgress(90)
 
-
-
+      // Step 5: Create frontend document object with real database data
       const newDocument: Document = {
-        id: Date.now().toString(),
+        id: documentId.toString(),
         name: file.name,
         uploadDate: new Date().toISOString().split("T")[0],
-        tags: (first.tags || []).map((t: any) => t.tag),
+        tags: rawTags.map((t: any) => t.tag),
         subtags: {
-          "Model Tags (w/ confidence)": (first.tags || []).map(
+          "Model Tags (w/ confidence)": rawTags.map(
             (t: any) => `${t.tag} (${Math.round((t.score ?? 0) * 100)}%)`
           ),
         },
         size: formatFileSize(file.size),
         status: "Success",
+        modelGeneratedTags: rawTags.map((t: any) => ({
+          tag: t.tag,
+          score: t.score,
+          isConfirmed: false
+        })),
+        userAddedTags: []
       };
       
+      setUploadProgress(100)
 
       // Complete the upload
       setTimeout(() => {
@@ -329,10 +364,14 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">
-                  {uploadProgress < 70 
+                  {uploadProgress < 30 
                       ? "Uploading to S3..." 
-                      : uploadProgress < 100 
+                      : uploadProgress < 50
+                      ? "Creating document record..."
+                      : uploadProgress < 80 
                       ? "Processing with AI..." 
+                      : uploadProgress < 100
+                      ? "Saving AI results..."
                       : "Complete!"
                     }
                   </span>

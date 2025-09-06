@@ -12,7 +12,6 @@ class DocumentModel:
         self.link = self._sanitize_string(data.get('link', ''))
         self.upload_date = self._validate_date(data.get('upload_date'))
         self.uploaded_by = self._validate_integer(data.get('uploaded_by'))
-        self.company = self._validate_integer(data.get('company'))
         self.file_size = self._validate_integer(data.get('file_size'))
         self.file_hash = self._sanitize_string(data.get('file_hash', ''))
         self.status = self._sanitize_string(data.get('status', 'uploaded'))
@@ -68,11 +67,7 @@ class DocumentModel:
         if not self.link:
             errors.append("Link is required")
         
-        if self.uploaded_by is None:
-            errors.append("Uploaded by user ID is required")
-        
-        if self.company is None:
-            errors.append("Company ID is required")
+        # uploaded_by and company are now optional since login isn't implemented yet
         
         # Validate status values
         valid_statuses = ['uploaded', 'processing', 'processed', 'failed']
@@ -88,7 +83,6 @@ class DocumentModel:
             'document_type': self.document_type,
             'link': self.link,
             'uploaded_by': self.uploaded_by,
-            'company': self.company,
             'status': self.status
         }
         

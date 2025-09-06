@@ -123,23 +123,35 @@ export default function HomePage() {
     userAddedTags: string[]
   ) => {
     try {
-      // Check if this came from our test button (real unprocessed documents)
-      const isTestFlow = confirmTagsDocument !== null
-      
-      console.log('✅ Processing document tags:', {
+      console.log('✅ Confirming document tags:', {
         documentId,
         confirmedTags,
         userAddedTags,
-        totalTags: confirmedTags.length + userAddedTags.length,
-        isTestFlow
+        totalTags: confirmedTags.length + userAddedTags.length
       })
 
       const documentIdNum = parseInt(documentId)
       
-      if (isTestFlow) {
-        // For test flow: First create processed document entry, then update tags
+      // Update the processed document with confirmed tags
+      // (processed_documents entry should already exist from upload flow)
+      await apiClient.updateDocumentTags(documentIdNum, {
+        confirmed_tags: confirmedTags,
+        user_added_labels: userAddedTags
+      })
+      
+      console.log('✅ Successfully updated document tags')
+      
+      // Refresh the document list to show updated tags
+      await refetch()
+      setConfirmTagsDocument(null)
+      
+    } catch (err) {
+      console.error('❌ Error updating document tags:', err)
+      // If the processed document doesn't exist, try to create it first (fallback)
+      if (err instanceof Error && err.message.includes('No processed document found')) {
+        console.log('🔄 Processed document not found, creating it first...')
         try {
-          // Step 1: Create processed document with AI suggested tags
+          // Create processed document entry as fallback
           const mockAITags = confirmTagsDocument?.modelGeneratedTags.map(tag => ({
             tag: tag.tag,
             score: tag.score
@@ -148,43 +160,26 @@ export default function HomePage() {
           await apiClient.createProcessedDocument({
             document_id: documentIdNum,
             suggested_tags: mockAITags,
-            model_id: 1, // Mock model ID
-            threshold_pct: 70 // Mock threshold
+            threshold_pct: 60
           })
           
-          console.log('✅ Created processed document entry')
-          
-          // Step 2: Update with confirmed tags
+          // Now update with confirmed tags
           await apiClient.updateDocumentTags(documentIdNum, {
             confirmed_tags: confirmedTags,
             user_added_labels: userAddedTags
           })
           
-          console.log('✅ Updated document tags')
-          
-          // Refresh the document list to show the newly processed document
+          console.log('✅ Created processed document and updated tags (fallback)')
           await refetch()
-          
           setConfirmTagsDocument(null)
           
-        } catch (error) {
-          console.error('❌ Error in test flow:', error)
-          alert('❌ Error processing document!\n\n' + (error as Error).message)
-          throw error
+        } catch (fallbackError) {
+          console.error('❌ Fallback also failed:', fallbackError)
+          throw fallbackError
         }
       } else {
-        // Regular flow: Document already exists in processed_documents
-        await apiClient.updateDocumentTags(documentIdNum, {
-          confirmed_tags: confirmedTags,
-          user_added_labels: userAddedTags
-        })
-        
-        await refetch()
-        setConfirmTagsDocument(null)
+        throw err
       }
-    } catch (err) {
-      console.error('Error updating tags:', err)
-      throw err
     }
   }
 
