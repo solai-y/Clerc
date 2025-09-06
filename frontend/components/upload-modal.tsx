@@ -80,7 +80,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch('http://localhost/s3/upload', {
+      const response = await fetch('/s3/upload', {
         method: 'POST',
         body: formData,
       })
@@ -131,7 +131,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     fd.append("pdf", file, file.name);              // field name must be 'pdf'
     fd.append("threshold_pct", String(thresholdPct));
   
-    const res = await fetch("http://localhost/ai/v1/predict", {
+    const res = await fetch("/ai/v1/predict", {
       method: "POST",
       body: fd,
     });

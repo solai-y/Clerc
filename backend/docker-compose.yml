@@ -24,13 +24,13 @@ services:
     build:
       context: ./ai-service
     environment:
-      HIER_BUNDLE_PATH: /models/hier_bundle.joblib
+      HIER_BUNDLE_PATH: /app/models/hier_bundle.joblib
       HIER_PATH: /app/shared/tag_hierarchy.json
       ENABLE_OCR: "1"
       MAX_UPLOAD_MB: "50"
       PYTHONUNBUFFERED: "1"
     volumes:
-      - ../models:/models:ro
+      - ./ai-service/models:/app/models:ro
       - ./ai-service/shared:/app/shared:ro
     # 🔽 run Flask with WSGI worker, binding to 5004
     # publish 5004 on the host  ⬇️
