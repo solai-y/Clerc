@@ -28,10 +28,17 @@ def test_e2e_endpoint():
         raise
 
     try:
+<<<<<<<< HEAD:backend/s3-service/tests/e2e/test_e2e.py
         assert data.get("message") == "S3 service is reachable"
         print("[PASS] Message key matches expected value.")
     except AssertionError:
         print(f"[FAIL] Expected message 'S3 service is reachable', got '{data.get('message')}'")
+========
+        assert data.get("message") == "Document service is reachable"
+        print("[PASS] Message key matches expected value.")
+    except AssertionError:
+        print(f"[FAIL] Expected message 'Document service is reachable', got '{data.get('message')}'")
+>>>>>>>> dev:backend/document-service/tests/e2e/test_nginx_e2e.py
         raise
 
     print("[SUCCESS] E2E test for GET /e2e endpoint completed successfully.")

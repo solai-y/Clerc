@@ -16,6 +16,10 @@ jobs:
         run: |
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> backend/.env
           echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" >> backend/.env
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> backend/.env
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> backend/.env
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> backend/.env
+          echo "S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}" >> backend/.env
 
       #! START BACKEND
       # Start backend services with Docker Compose v2 syntax
@@ -39,6 +43,20 @@ jobs:
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
+        
+      # Run document-service integration tests
+      - name: Run document-service tests
+        working-directory: backend/document-service
+        run: |
+          pip install -r requirements.txt
+          pytest -s tests/integration -v
+
+      # Run ai-service integration tests
+      - name: Run ai-service tests
+        working-directory: backend/ai-service
+        run: |
+          pip install -r requirements.txt
+          pytest -s tests/integration -v
 
       #! E2E TESTS
       # Run company-service E2E tests
@@ -51,6 +69,20 @@ jobs:
       # Run s3-service E2E tests
       - name: Run s3-service E2E tests
         working-directory: backend/s3-service
+        run: |
+          pip install -r requirements.txt
+          pytest -s tests/e2e -v
+        
+      # Run document-service E2E tests
+      - name: Run document-service E2E tests
+        working-directory: backend/document-service
+        run: |
+          pip install -r requirements.txt
+          pytest -s tests/e2e -v
+
+      # Run ai-service E2E tests
+      - name: Run ai-service E2E tests
+        working-directory: backend/ai-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/e2e -v
@@ -81,6 +113,10 @@ jobs:
             ssh -A -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
               echo 'SUPABASE_URL=${{ secrets.SUPABASE_URL }}' > /home/ubuntu/backend/.env
               echo 'SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}' >> /home/ubuntu/backend/.env
+              echo 'AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}' >> /home/ubuntu/backend/.env
+              echo 'AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}' >> /home/ubuntu/backend/.env
+              echo 'AWS_REGION=${{ secrets.AWS_REGION }}' >> /home/ubuntu/backend/.env
+              echo 'S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}' >> /home/ubuntu/backend/.env
             "
 
         - name: Deploy on EC2

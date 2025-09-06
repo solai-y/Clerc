@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(python:*)",
+      "Bash(docker-compose:*)",
+      "Bash(curl:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker logs:*)",
+      "Bash(python run_tests.py:*)",
+      "Bash(python3 run_tests.py:*)",
+      "Bash(python3:*)",
+      "Bash(chmod:*)",
+      "Bash(./run_container_tests.sh:*)",
+      "Bash(bash:*)",
+      "Bash(claude doctor)",
+      "Bash(pip3 install:*)",
+      "Bash(rm:*)",
+      "Bash(grep:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run dev:*)",
+      "Bash(node:*)",
+      "Bash(./test_tag_operations.sh:*)",
+      "Bash(lsof:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker port:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:clerc-git-cors-fix-3-solaiys-projects.vercel.app)"
+    ],
+    "deny": []
+  }
+}

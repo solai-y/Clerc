@@ -1,20 +1,23 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useCallback, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react'
+import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react"
 
-interface Document {
+export interface Document {
   id: string
   name: string
   uploadDate: string
   tags: string[]
   subtags: { [tagId: string]: string[] }
   size: string
+  status: string
+  // optional for tag confirmation flow
+  modelGeneratedTags?: { tag: string; score?: number; isConfirmed?: boolean }[]
+  userAddedTags?: string[]
 }
 
 interface UploadModalProps {
@@ -23,7 +26,7 @@ interface UploadModalProps {
   onUploadComplete: (document: Document) => void
 }
 
-export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
+function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
@@ -44,7 +47,6 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
-
     const files = Array.from(e.dataTransfer.files)
     if (files.length > 0) {
       const file = files[0]
@@ -101,6 +103,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown upload error' 
       }
+      handleFileUpload(file)
     }
   }
 
@@ -231,6 +234,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
           ),
         },
         size: formatFileSize(file.size),
+        status: "Success",
       };
       
 
@@ -250,7 +254,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
     }
   }
 
-  const formatFileSize = (bytes: number): string => {
+  const formatFileSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes"
     const k = 1024
     const sizes = ["Bytes", "KB", "MB", "GB"]
@@ -387,3 +391,6 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
     </Dialog>
   )
 }
+
+export default UploadModal
+export { UploadModal }
