@@ -1,4 +1,4 @@
-name: CI for dev Branch
+name: CI/CD for dev Branch
 
 on:
   pull_request:
@@ -22,7 +22,6 @@ jobs:
           echo "S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}" >> backend/.env
 
       #! START BACKEND
-      # Start backend services with Docker Compose v2 syntax
       - name: Start backend services
         run: |
           cd backend
@@ -30,28 +29,24 @@ jobs:
           sleep 10  # Wait for services to initialize
 
       #! INTEGRATION TESTS
-      # Run company-service integration tests
       - name: Run company-service tests
         working-directory: backend/company-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
-      # Run s3-service integration tests
       - name: Run s3-service tests
         working-directory: backend/s3-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
-        
-      # Run document-service integration tests
+
       - name: Run document-service tests
         working-directory: backend/document-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
-      # Run ai-service integration tests
       - name: Run ai-service tests
         working-directory: backend/ai-service
         run: |
@@ -59,78 +54,75 @@ jobs:
           pytest -s tests/integration -v
 
       #! E2E TESTS
-      # Run company-service E2E tests
       - name: Run company-service E2E tests
         working-directory: backend/company-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/e2e -v
 
-      # Run s3-service E2E tests
       - name: Run s3-service E2E tests
         working-directory: backend/s3-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/e2e -v
-        
-      # Run document-service E2E tests
+
       - name: Run document-service E2E tests
         working-directory: backend/document-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/e2e -v
 
-      # Run ai-service E2E tests
       - name: Run ai-service E2E tests
         working-directory: backend/ai-service
         run: |
           pip install -r requirements.txt
           pytest -s tests/e2e -v
-        
-      # Tear down services with Docker Compose v2 syntax
+
       - name: Tear down services
         if: always()
         run: cd backend && docker compose down
 
   deploy:
-      needs: build-and-test
-      runs-on: ubuntu-latest
-      steps:
-        - name: Checkout code
-          uses: actions/checkout@v4
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-        - name: Set up SSH
-          uses: webfactory/ssh-agent@v0.8.0
-          with:
-            ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-        - name: Sync backend to EC2
-          run: |
-            rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" backend/ ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/backend/
+      - name: Sync backend to EC2
+        run: |
+          rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" backend/ ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/backend/
 
-        - name: Create .env on EC2
-          run: |
-            ssh -A -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
-              echo 'SUPABASE_URL=${{ secrets.SUPABASE_URL }}' > /home/ubuntu/backend/.env
-              echo 'SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}' >> /home/ubuntu/backend/.env
-              echo 'AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}' >> /home/ubuntu/backend/.env
-              echo 'AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}' >> /home/ubuntu/backend/.env
-              echo 'AWS_REGION=${{ secrets.AWS_REGION }}' >> /home/ubuntu/backend/.env
-              echo 'S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}' >> /home/ubuntu/backend/.env
-            "
+      - name: Create .env on EC2
+        run: |
+          ssh -A -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
+            echo 'SUPABASE_URL=${{ secrets.SUPABASE_URL }}' > /home/ubuntu/backend/.env
+            echo 'SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}' >> /home/ubuntu/backend/.env
+            echo 'AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}' >> /home/ubuntu/backend/.env
+            echo 'AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}' >> /home/ubuntu/backend/.env
+            echo 'AWS_REGION=${{ secrets.AWS_REGION }}' >> /home/ubuntu/backend/.env
+            echo 'S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}' >> /home/ubuntu/backend/.env
+          "
 
-        - name: Deploy on EC2
-          run: |
-            ssh -A -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
-              set -e
-              cd /home/ubuntu/backend
-              export COMPOSE_PROJECT_NAME=backend
+      - name: Upload deployment script to EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "cat > /home/ubuntu/deploy.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          cd /home/ubuntu/backend
+          export COMPOSE_PROJECT_NAME=backend
+          docker compose down --remove-orphans || true
+          docker ps --filter network=${COMPOSE_PROJECT_NAME}_default -q | xargs -r docker rm -f || true
+          docker network rm ${COMPOSE_PROJECT_NAME}_default || true
+          docker compose up -d --build --remove-orphans
+          EOF"
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "chmod +x /home/ubuntu/deploy.sh"
 
-              # Clean up
-              docker-compose down --remove-orphans || true
-              docker ps --filter network=${COMPOSE_PROJECT_NAME}_default -q | xargs -r docker rm -f || true
-              docker network rm ${COMPOSE_PROJECT_NAME}_default || true
-
-              # Bring services up
-              docker-compose up -d --build --remove-orphans
-            "
+      - name: Run deployment script on EC2
+        run: |
+          ssh -A -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "/home/ubuntu/deploy.sh"
