@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Tag, Plus, X, CheckCircle, Loader2, Brain, Eye, EyeOff, FileText } from "lucide-react"
 import { Document } from "@/lib/api"
+import { useToast } from "@/hooks/use-toast"
 
 interface ConfirmTagsModalProps {
   document: Document
@@ -25,12 +26,13 @@ interface ConfirmTagsModalProps {
 }
 
 export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsModalProps) {
+  const { toast } = useToast()
   const modelGeneratedTags = useMemo(
     () => document.modelGeneratedTags ?? [],
     [document.modelGeneratedTags]
   )
   const initialConfirmed = useMemo(
-    () => new Set(modelGeneratedTags.filter(t => t?.isConfirmed).map(t => t.tag)),
+    () => new Set(modelGeneratedTags.map(t => t.tag)),
     [modelGeneratedTags]
   )
   const initialUserAdded = useMemo(
@@ -45,7 +47,7 @@ export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsMo
   const [showDocumentPreview, setShowDocumentPreview] = useState(false)
 
   useEffect(() => {
-    setConfirmedModelTags(new Set(modelGeneratedTags.filter(t => t?.isConfirmed).map(t => t.tag)))
+    setConfirmedModelTags(new Set(modelGeneratedTags.map(t => t.tag)))
     setUserAddedTags(initialUserAdded)
   }, [modelGeneratedTags, initialUserAdded])
 
@@ -70,7 +72,7 @@ export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsMo
   }
 
   const hasChanges = useMemo(() => {
-    const originallyConfirmed = new Set(modelGeneratedTags.filter(t => t?.isConfirmed).map(t => t.tag))
+    const originallyConfirmed = new Set(modelGeneratedTags.map(t => t.tag))
     if (confirmedModelTags.size !== originallyConfirmed.size) return true
 
     for (const tag of confirmedModelTags) {
@@ -97,9 +99,24 @@ export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsMo
         : modelGeneratedTags.map(t => t.tag)
 
       await onConfirm(document.id, finalConfirmedTags, userAddedTags)
+      
+      // Show success notification
+      toast({
+        title: "Success!",
+        description: `Document tags have been updated successfully. ${finalConfirmedTags.length + userAddedTags.length} tags applied.`,
+        variant: "default",
+      })
+      
       onClose()
     } catch (error) {
       console.error("Error confirming tags:", error)
+      
+      // Show error notification
+      toast({
+        title: "Error",
+        description: "Failed to update document tags. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
     }
