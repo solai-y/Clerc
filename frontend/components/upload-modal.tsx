@@ -108,8 +108,6 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     }
   }
 
-
-
   type PredictTag = { tag: string; score: number }
   type PredictResult = {
     filename: string
