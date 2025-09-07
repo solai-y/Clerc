@@ -139,29 +139,13 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     try {
       json = await res.json();
     } catch {
-      // Better error messages for common server issues
-      if (res.status === 502) {
-        throw new Error(`AI service is temporarily unavailable. Please try again later or contact support if the issue persists.`);
-      } else if (res.status === 503) {
-        throw new Error(`AI service is currently under maintenance. Please try again in a few minutes.`);
-      } else if (res.status >= 500) {
-        throw new Error(`AI service encountered an internal error. Please try again later.`);
-      }
-      throw new Error(`AI processing failed with status ${res.status}. Please try again.`);
+      throw new Error(`Predict: invalid JSON (status ${res.status})`);
     }
   
     console.log("🔍 predict JSON:", json);
   
     if (!res.ok) {
       const msg = json?.error || JSON.stringify(json);
-      // Handle specific server error codes
-      if (res.status === 502) {
-        throw new Error(`AI service is temporarily unavailable. Please try again later.`);
-      } else if (res.status === 503) {
-        throw new Error(`AI service is under maintenance. Please try again shortly.`);
-      } else if (res.status >= 500) {
-        throw new Error(`AI service error: ${msg}`);
-      }
       throw new Error(`Predict ${res.status}: ${msg}`);
     }
   
