@@ -29,7 +29,6 @@ class TestTagOperationsIntegration:
             "document_type": "PDF",
             "link": "https://test.com/integration-test.pdf",
             "uploaded_by": 1,
-            "company": 1
         }
         
         raw_doc_response = client.post(
@@ -143,7 +142,6 @@ class TestTagOperationsIntegration:
             "document_type": "PDF",
             "link": "https://test.com/tag-removal-test.pdf",
             "uploaded_by": 1,
-            "company": 1
         }
         
         raw_response = client.post('/documents', data=json.dumps(raw_doc_data), content_type='application/json')
@@ -202,7 +200,6 @@ class TestTagOperationsIntegration:
             "document_type": "PDF",
             "link": "https://test.com/special-chars.pdf",
             "uploaded_by": 1,
-            "company": 1
         }
         
         raw_response = client.post('/documents', data=json.dumps(raw_doc_data), content_type='application/json')
@@ -251,7 +248,6 @@ class TestTagOperationsIntegration:
             "document_type": "PDF",
             "link": "https://test.com/concurrent.pdf",
             "uploaded_by": 1,
-            "company": 1
         }
         
         raw_response = client.post('/documents', data=json.dumps(raw_doc_data), content_type='application/json')
@@ -321,7 +317,6 @@ class TestTagOperationsIntegration:
             "document_type": "PDF",
             "link": "https://test.com/no-processed.pdf",
             "uploaded_by": 1,
-            "company": 1
         }
         
         raw_response = client.post('/documents', data=json.dumps(raw_doc_data), content_type='application/json')
@@ -348,7 +343,6 @@ class TestTagOperationsIntegration:
             "document_type": "PDF",
             "link": "https://test.com/invalid-data.pdf",
             "uploaded_by": 1,
-            "company": 1
         }
         
         raw_response = client.post('/documents', data=json.dumps(raw_doc_data), content_type='application/json')
@@ -387,7 +381,6 @@ class TestTagOperationsIntegration:
             "document_type": "PDF",
             "link": "https://test.com/persistence.pdf",
             "uploaded_by": 1,
-            "company": 1
         }
         
         raw_response = client.post('/documents', data=json.dumps(raw_doc_data), content_type='application/json')

@@ -20,7 +20,6 @@ class TestDocumentModel:
             "document_type": "PDF",
             "link": "https://test.com/doc.pdf",
             "uploaded_by": 1,
-            "company": 2,
             "upload_date": "2025-01-01T00:00:00+00:00",
             "status": "uploaded"
         }
@@ -32,7 +31,6 @@ class TestDocumentModel:
         assert doc.document_type == "PDF"
         assert doc.link == "https://test.com/doc.pdf"
         assert doc.uploaded_by == 1
-        assert doc.company == 2
         assert doc.status == "uploaded"
         
         print("[PASS] DocumentModel created successfully with valid data")
@@ -45,8 +43,7 @@ class TestDocumentModel:
             "document_name": "  Test Document with <script>alert('xss')</script>  ",
             "document_type": "PDF\"malicious",
             "link": "https://test.com/doc.pdf'injection",
-            "uploaded_by": 1,
-            "company": 1
+            "uploaded_by": 1
         }
         
         doc = DocumentModel(data)
@@ -66,8 +63,7 @@ class TestDocumentModel:
             "document_name": "Valid Document",
             "document_type": "PDF",
             "link": "https://valid.com/doc.pdf",
-            "uploaded_by": 1,
-            "company": 1
+            "uploaded_by": 1
         }
         
         doc = DocumentModel(data)
@@ -87,7 +83,7 @@ class TestDocumentModel:
             "document_name": "",  # Empty name
             "document_type": "",  # Empty type
             "link": "",  # Empty link
-            # Missing uploaded_by and company
+            # Missing uploaded_by
         }
         
         doc = DocumentModel(data)
@@ -101,8 +97,7 @@ class TestDocumentModel:
         assert "Document name is required" in error_messages
         assert "Document type is required" in error_messages
         assert "Link is required" in error_messages
-        assert "Uploaded by user ID is required" in error_messages
-        assert "Company ID is required" in error_messages
+        # uploaded_by and company are now optional
         
         print(f"[PASS] Validation correctly failed with {len(errors)} errors")
     
@@ -116,7 +111,6 @@ class TestDocumentModel:
             "document_type": "PDF",
             "link": "https://test.com/doc.pdf",
             "uploaded_by": 1,
-            "company": 1,
             "status": "invalid_status"
         }
         
@@ -145,7 +139,6 @@ class TestDocumentModel:
             "document_type": "PDF",
             "link": "https://test.com/doc.pdf",
             "uploaded_by": 1,
-            "company": 1,
             "upload_date": "2025-01-01T00:00:00+00:00",
             "status": "uploaded"
         }
@@ -156,7 +149,7 @@ class TestDocumentModel:
         result = doc.to_dict(include_id=False)
         
         print(f"[DEBUG] Actual keys: {set(result.keys())}")
-        expected_keys = {"document_name", "document_type", "link", "uploaded_by", "company", "status"}
+        expected_keys = {"document_name", "document_type", "link", "uploaded_by", "status"}
         print(f"[DEBUG] Expected keys: {expected_keys}")
         
         # Check that all required keys are present (but allow extra keys like upload_date)
@@ -178,19 +171,17 @@ class TestDocumentModel:
             "document_name": "Test",
             "document_type": "PDF",
             "link": "https://test.com/doc.pdf",
-            "uploaded_by": "not_an_integer",
-            "company": "also_not_an_integer"
+            "uploaded_by": "not_an_integer"
         }
         
         doc = DocumentModel(data)
         
         # Integer fields should be None if invalid
         assert doc.uploaded_by is None
-        assert doc.company is None
         
-        # This should fail validation
+        # This should still be valid since uploaded_by is optional
         is_valid, errors = doc.validate()
-        assert is_valid is False
+        assert is_valid is True
         
         print("[PASS] Integer validation works correctly")
     
@@ -204,7 +195,6 @@ class TestDocumentModel:
             "document_type": "PDF",
             "link": "https://test.com/doc.pdf",
             "uploaded_by": 1,
-            "company": 1,
             "upload_date": "2025-01-01T00:00:00+00:00"
         }
         
@@ -228,8 +218,7 @@ class TestDocumentModel:
             "document_name": long_string,
             "document_type": "PDF",
             "link": "https://test.com/doc.pdf",
-            "uploaded_by": 1,
-            "company": 1
+            "uploaded_by": 1
         }
         
         doc = DocumentModel(data)

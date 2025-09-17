@@ -31,7 +31,6 @@ class TestTagOperationsE2E:
             "document_type": "PDF",
             "link": f"https://test.com/e2e-tag-test-{name_suffix}.pdf",
             "uploaded_by": 1,
-            "company": 1
         }
         
         raw_response = requests.post(

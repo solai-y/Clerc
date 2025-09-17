@@ -39,20 +39,15 @@ class DatabaseService:
     def get_total_documents_count(self, search: Optional[str] = None, status: Optional[str] = None, company_id: Optional[int] = None) -> tuple[int, Optional[str]]:
         """Get total count of processed documents with optional filters"""
         try:
-            # For search and company filters, we need to join with raw_documents
-            if search or company_id:
-                query = self.supabase.table('processed_documents').select("process_id, raw_documents!document_id(document_name, company)", count="exact")
-                if search:
-                    # This is more complex with joins, may need to adjust based on Supabase capabilities
-                    pass  # Will implement search filtering in the main query
-            else:
-                query = self.supabase.table('processed_documents').select("process_id", count="exact")
-                if company_id:
-                    # Will implement company filtering in the main query  
-                    pass
+            # Build base query for counting processed documents
+            query = self.supabase.table('processed_documents').select("process_id", count="exact")
             
+            # Apply filters
             if status:
                 query = query.eq('status', status)
+            
+            if company_id:
+                query = query.eq('company', company_id)  # Company is now in processed_documents
             
             response = query.execute()
             total_count = response.count if response.count is not None else 0
@@ -74,7 +69,6 @@ class DatabaseService:
                     document_type,
                     link,
                     uploaded_by,
-                    company,
                     upload_date,
                     file_size,
                     file_hash,
@@ -90,13 +84,13 @@ class DatabaseService:
             
             response = query.execute()
             
-            # Fetch company names for documents that have company IDs
+            # Fetch company names for processed documents that have company IDs
             if response.data:
-                # Get unique company IDs
+                # Get unique company IDs from processed_documents.company (not raw_documents)
                 company_ids = set()
                 for doc in response.data:
-                    if doc.get('raw_documents', {}).get('company'):
-                        company_ids.add(doc['raw_documents']['company'])
+                    if doc.get('company'):
+                        company_ids.add(doc['company'])
                 
                 # Fetch company information if we have company IDs
                 company_names = {}
@@ -107,8 +101,8 @@ class DatabaseService:
                 
                 # Add company names to the documents
                 for doc in response.data:
-                    if doc.get('raw_documents', {}).get('company'):
-                        company_id = doc['raw_documents']['company']
+                    if doc.get('company'):
+                        company_id = doc['company']
                         doc['raw_documents']['companies'] = {
                             'company_id': company_id,
                             'company_name': company_names.get(company_id, 'Unknown Company')
@@ -216,7 +210,6 @@ class DatabaseService:
                     document_type,
                     link,
                     uploaded_by,
-                    company,
                     upload_date,
                     file_size,
                     file_hash,
@@ -270,15 +263,27 @@ class DatabaseService:
             return [], error_msg
     
     def get_documents_by_company(self, company_id: int, limit: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
-        """Get documents by company ID"""
+        """Get processed documents by company ID (company is now in processed_documents)"""
         try:
-            query = self.supabase.table('raw_documents').select("*").eq('company', company_id)
+            query = self.supabase.table('processed_documents').select("""
+                *,
+                raw_documents!document_id(
+                    document_name,
+                    document_type,
+                    link,
+                    uploaded_by,
+                    upload_date,
+                    file_size,
+                    file_hash,
+                    status
+                )
+            """).eq('company', company_id)
             
             if limit:
                 query = query.limit(limit)
             
             response = query.execute()
-            self.logger.info(f"Retrieved {len(response.data)} documents for company {company_id}")
+            self.logger.info(f"Retrieved {len(response.data)} processed documents for company {company_id}")
             return response.data, None
         except Exception as e:
             error_msg = f"Failed to get documents by company: {str(e)}"
@@ -324,6 +329,7 @@ class DatabaseService:
                 'user_removed_tags': [],  # Empty array
                 'user_reviewed': False,
                 'user_id': document_data.get('user_id'),
+                'company': document_data.get('company'),  # Optional company field
                 'ocr_used': document_data.get('ocr_used', False),
                 'processing_ms': document_data.get('processing_ms'),
                 'errors': document_data.get('errors'),

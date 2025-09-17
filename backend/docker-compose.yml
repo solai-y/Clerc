@@ -5,6 +5,13 @@ services:
       - "5001:5001"
     env_file:
       - .env
+
+  document-service:
+    build: ./document-service
+    ports:
+      - "5002:5002"
+    env_file:
+      - .env
       
   s3-service:
     build: ./s3-service
@@ -13,12 +20,14 @@ services:
     env_file:
       - .env
 
-  document-service:
-    build: ./document-service
-    ports:
-      - "5002:5002"
+  ai-service:
+    build: ./ai-service
+    ports: 
+      - "5004:5004"
     env_file:
       - .env
+
+
 
   nginx:
     image: nginx:latest
@@ -30,3 +39,4 @@ services:
       - company-service
       - s3-service
       - document-service
+      - ai-service
