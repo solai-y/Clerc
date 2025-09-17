@@ -4,7 +4,6 @@ __pycache__
 Clerc.pem
 .venv
 *.pem
-.env
 backend/ai-service/models_hier/
 
 # macOS
