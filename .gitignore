@@ -5,6 +5,7 @@ Clerc.pem
 .venv
 *.pem
 .env
+backend/ai-service/models_hier/
 
 # macOS
 .DS_Store
