@@ -39,6 +39,16 @@ services:
       - AWS_REGION=${AWS_REGION2}
       - CLAUDE_MODEL_ID=${CLAUDE_MODEL_ID}
 
+  prediction-service:
+    build: ./prediction-service
+    ports:
+      - "5006:5006"
+    depends_on:
+      - ai-service
+      - llm-service
+    env_file:
+      - .env
+
   nginx:
     image: nginx:latest
     ports:
@@ -51,3 +61,4 @@ services:
       - document-service
       - ai-service
       - llm-service
+      - prediction-service

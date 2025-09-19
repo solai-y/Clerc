@@ -185,11 +185,33 @@ class APIClient {
     ocr_used?: boolean;
     processing_ms?: number;
     company?: number;
+    explanations?: Array<{
+      level: string;
+      tag: string;
+      confidence: number;
+      reasoning?: string;
+      source: string;
+    }>;
+    prediction_response?: any;
   }): Promise<any> {
     return this.fetchWithErrorHandling<any>(apiUrl("/documents/processed"), {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  async getDocumentExplanations(documentId: number): Promise<Array<{
+    explanation_id: number;
+    document_id: number;
+    classification_level: string;
+    predicted_tag: string;
+    confidence: number;
+    reasoning: string;
+    source_service: string;
+    service_response: any;
+    created_at: string;
+  }>> {
+    return this.fetchWithErrorHandling<Array<any>>(apiUrl(`/documents/${documentId}/explanations`));
   }
 }
 

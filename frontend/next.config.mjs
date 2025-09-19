@@ -33,6 +33,8 @@ const nextConfig = {
       { source: "/company/:path*", destination: `${BACKEND_ORIGIN}/company/:path*` },
       { source: "/ai", destination: `${BACKEND_ORIGIN}/ai` },
       { source: "/ai/:path*", destination: `${BACKEND_ORIGIN}/ai/:path*` },
+      { source: "/predict", destination: `${BACKEND_ORIGIN}/predict` },
+      { source: "/predict/:path*", destination: `${BACKEND_ORIGIN}/predict/:path*` },
 
       // --- Backward-compat ---
       { source: "/api/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },

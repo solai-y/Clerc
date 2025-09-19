@@ -310,7 +310,7 @@ class DatabaseService:
             return False, error_msg
     
     def create_processed_document(self, document_data: Dict[str, Any]) -> tuple[Optional[Dict], Optional[str]]:
-        """Create a new processed document entry with empty tag fields"""
+        """Create a new processed document entry with empty tag fields and explanations"""
         try:
             # Validate required fields
             required_fields = ['document_id']
@@ -343,7 +343,17 @@ class DatabaseService:
             
             if response.data:
                 created_doc = response.data[0]
-                self.logger.info(f"Created processed document with process_id: {created_doc.get('process_id')}")
+                process_id = created_doc.get('process_id')
+                self.logger.info(f"Created processed document with process_id: {process_id}")
+                
+                # Create explanations if provided
+                explanations = document_data.get('explanations', [])
+                if explanations:
+                    explanation_error = self.create_explanations(process_id, explanations)
+                    if explanation_error:
+                        self.logger.warning(f"Failed to create explanations: {explanation_error}")
+                        # Don't fail the whole operation, just log the warning
+                
                 return created_doc, None
             else:
                 error_msg = "Failed to create processed document - no data returned"
@@ -433,5 +443,71 @@ class DatabaseService:
             
         except Exception as e:
             error_msg = f"Failed to get unprocessed documents: {str(e)}"
+            self.logger.error(error_msg)
+            return [], error_msg
+    
+    def create_explanations(self, process_id: int, explanations: List[Dict[str, Any]]) -> Optional[str]:
+        """Create explanation records for a processed document"""
+        try:
+            explanation_records = []
+            for explanation in explanations:
+                record = {
+                    'process_id': process_id,
+                    'classification_level': explanation['level'],
+                    'predicted_tag': explanation['tag'],
+                    'confidence': explanation['confidence'],
+                    'reasoning': explanation.get('reasoning'),
+                    'source_service': explanation['source'],
+                    'service_response': explanation.get('full_response', {})
+                }
+                explanation_records.append(record)
+            
+            if explanation_records:
+                response = self.supabase.table('explanations').insert(explanation_records).execute()
+                if response.data:
+                    self.logger.info(f"Created {len(response.data)} explanation records for process_id {process_id}")
+                    return None
+                else:
+                    return "Failed to create explanation records - no data returned"
+            
+            return None
+            
+        except Exception as e:
+            error_msg = f"Failed to create explanations: {str(e)}"
+            self.logger.error(error_msg)
+            return error_msg
+    
+    def get_explanations_for_document(self, document_id: int) -> tuple[List[Dict], Optional[str]]:
+        """Get all explanations for a specific document by joining with processed_documents"""
+        try:
+            # Join explanations with processed_documents to get explanations by document_id
+            response = self.supabase.table('explanations').select("""
+                explanation_id,
+                process_id,
+                classification_level,
+                predicted_tag,
+                confidence,
+                reasoning,
+                source_service,
+                service_response,
+                created_at,
+                processed_documents!inner(document_id)
+            """).eq('processed_documents.document_id', document_id).order('classification_level').execute()
+            
+            if response.data:
+                # Flatten the response to remove nested processed_documents
+                explanations = []
+                for item in response.data:
+                    explanation = {k: v for k, v in item.items() if k != 'processed_documents'}
+                    explanation['document_id'] = item['processed_documents']['document_id']
+                    explanations.append(explanation)
+                
+                self.logger.info(f"Retrieved {len(explanations)} explanations for document {document_id}")
+                return explanations, None
+            else:
+                return [], None
+                
+        except Exception as e:
+            error_msg = f"Failed to get explanations for document {document_id}: {str(e)}"
             self.logger.error(error_msg)
             return [], error_msg
