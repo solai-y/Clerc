@@ -27,7 +27,17 @@ services:
     env_file:
       - .env
 
-
+  llm-service:
+    build: ./llm-service
+    ports:
+      - "5005:5005"
+    env_file:
+      - .env
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID2}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY2}
+      - AWS_REGION=${AWS_REGION2}
+      - CLAUDE_MODEL_ID=${CLAUDE_MODEL_ID}
 
   nginx:
     image: nginx:latest
@@ -40,3 +50,4 @@ services:
       - s3-service
       - document-service
       - ai-service
+      - llm-service
