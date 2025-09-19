@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react"
 import { apiClient } from "@/lib/api"
+import { EnhancedConfirmTagsModal } from "./enhanced-confirm-tags-modal"
 
 export interface Document {
   id: string
@@ -33,6 +34,10 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [pendingDocument, setPendingDocument] = useState<Document | null>(null)
+  const [predictionData, setPredictionData] = useState<any>(null)
+  const [explanationData, setExplanationData] = useState<any[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -227,18 +232,20 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       // Extract tags from prediction response
       const extractedTags: PredictTag[] = []
       const explanations: any[] = []
+      const processedTags = new Set<string>() // Prevent duplicates
       
       // Process prediction results for each level
       if (predictionResponse.prediction) {
         for (const level of ['primary', 'secondary', 'tertiary']) {
           const levelPred = predictionResponse.prediction[level]
-          if (levelPred) {
+          if (levelPred && !processedTags.has(levelPred.pred)) {
+            processedTags.add(levelPred.pred)
             extractedTags.push({
               tag: levelPred.pred,
               score: levelPred.confidence
             })
             
-            // Store explanation data
+            // Store explanation data for each level (including duplicates for hierarchical context)
             if (levelPred.reasoning) {
               explanations.push({
                 level: level,
@@ -300,12 +307,16 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       
       setUploadProgress(100)
 
-      // Complete the upload
+      // Store data for confirmation modal
+      setPendingDocument(newDocument)
+      setPredictionData(predictionResponse)
+      setExplanationData(explanations)
+      
+      // Complete upload processing and show confirmation modal
       setTimeout(() => {
-        onUploadComplete(newDocument)
         setIsUploading(false)
         setUploadProgress(0)
-        setUploadedFile(null)
+        setShowConfirmModal(true)
       }, 500)
 
     } catch (error) {
@@ -322,6 +333,48 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     const sizes = ["Bytes", "KB", "MB", "GB"]
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+  }
+
+  const handleConfirmTags = async (documentId: string, confirmedTags: string[], userAddedTags: string[]) => {
+    if (pendingDocument) {
+      // Update the document with confirmed tags
+      const finalDocument: Document = {
+        ...pendingDocument,
+        tags: [...confirmedTags, ...userAddedTags],
+        modelGeneratedTags: pendingDocument.modelGeneratedTags?.map(tag => ({
+          ...tag,
+          isConfirmed: confirmedTags.includes(tag.tag)
+        })),
+        userAddedTags: userAddedTags
+      }
+      
+      // Update the backend with confirmed tags
+      try {
+        await apiClient.updateDocumentTags(parseInt(documentId), {
+          confirmed_tags: confirmedTags,
+          user_added_labels: userAddedTags
+        })
+      } catch (error) {
+        console.error('Failed to update tags in backend:', error)
+        // Still proceed with frontend update
+      }
+      
+      onUploadComplete(finalDocument)
+      setShowConfirmModal(false)
+      setPendingDocument(null)
+      setPredictionData(null)
+      setExplanationData([])
+      setUploadedFile(null)
+    }
+  }
+
+  const handleCloseConfirmModal = () => {
+    setShowConfirmModal(false)
+    // Reset upload modal state
+    setPendingDocument(null)
+    setPredictionData(null)
+    setExplanationData([])
+    setUploadedFile(null)
   }
 
   const handleClose = () => {
@@ -341,6 +394,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
   }
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
@@ -455,6 +509,18 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Enhanced Tag Confirmation Modal */}
+    {showConfirmModal && pendingDocument && (
+      <EnhancedConfirmTagsModal
+        document={pendingDocument}
+        predictions={predictionData}
+        explanations={explanationData}
+        onConfirm={handleConfirmTags}
+        onClose={handleCloseConfirmModal}
+      />
+    )}
+    </>
   )
 }
 

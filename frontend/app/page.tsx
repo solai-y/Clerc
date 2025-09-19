@@ -110,7 +110,7 @@ export default function HomePage() {
       // In a real implementation, this would create the document via API
       // For now, we'll just refetch to get the latest data
       await refetch()
-      setConfirmTagsDocument(newDocument)
+      // No longer need to show confirm tags modal since it's handled in the enhanced upload flow
       setIsUploadModalOpen(false)
     } catch (err) {
       console.error('Error after upload:', err)
