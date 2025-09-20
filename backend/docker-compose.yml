@@ -5,6 +5,13 @@ services:
       - "5001:5001"
     env_file:
       - .env
+
+  document-service:
+    build: ./document-service
+    ports:
+      - "5002:5002"
+    env_file:
+      - .env
       
   s3-service:
     build: ./s3-service
@@ -13,12 +20,24 @@ services:
     env_file:
       - .env
 
-  document-service:
-    build: ./document-service
-    ports:
-      - "5002:5002"
+  ai-service:
+    build: ./ai-service
+    ports: 
+      - "5004:5004"
     env_file:
       - .env
+
+  llm-service:
+    build: ./llm-service
+    ports:
+      - "5005:5005"
+    env_file:
+      - .env
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID2}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY2}
+      - AWS_REGION=${AWS_REGION2}
+      - CLAUDE_MODEL_ID=${CLAUDE_MODEL_ID}
 
   nginx:
     image: nginx:latest
@@ -30,3 +49,5 @@ services:
       - company-service
       - s3-service
       - document-service
+      - ai-service
+      - llm-service

@@ -3,3 +3,9 @@ __pycache__
 .pytest_cache
 Clerc.pem
 .venv
+*.pem
+backend/ai-service/models_hier/
+
+# macOS
+.DS_Store
+

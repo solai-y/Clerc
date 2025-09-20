@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react"
+import { apiClient } from "@/lib/api"
 
 export interface Document {
   id: string
@@ -57,6 +58,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       handleFileUpload(file)
     }
   }, [])
+  
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -70,156 +72,216 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     }
   }
 
-  const handleBrowseClick = () => fileInputRef.current?.click()
+  const handleBrowseClick = () => {
+    fileInputRef.current?.click()
+  }
 
-  // Upload to S3 via your Nginx backend, using Next.js rewrites
-  const uploadToS3 = async (
-    file: File
-  ): Promise<{ success: boolean; url?: string; error?: string }> => {
-    const endpoint = "/s3/upload"; // ✅ relative path (rewrites handle backend)
-    const formData = new FormData();
-    formData.append("file", file);
-  
-    // Optional: client-side guard
-    if (!file || file.size === 0) {
-      return { success: false, error: "No file selected or file is empty" };
-    }
-  
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60_000); // 60s
-  
+  const uploadToS3 = async (file: File): Promise<{ success: boolean; url?: string; error?: string }> => {
     try {
-      console.log(`📤 [UploadToS3] Start: "${file.name}" (${file.size} bytes)`);
-  
-      const res = await fetch(endpoint, {
-        method: "POST",
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch('/s3/upload', {
+        method: 'POST',
         body: formData,
-        cache: "no-store",
-        signal: controller.signal,
-      });
-  
-      if (!res.ok) {
-        // Try to extract error text/JSON
-        let serverMsg = "";
-        try {
-          const j = await res.json();
-          serverMsg = j?.error || j?.message || "";
-        } catch {
-          try {
-            serverMsg = (await res.text())?.slice(0, 300) || "";
-          } catch {}
-        }
-        const msg = serverMsg || `Upload failed (HTTP ${res.status})`;
-        console.error(`💥 [UploadToS3] ${msg}`);
-        return { success: false, error: msg };
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Upload failed' }))
+        console.error("❌ PDF upload failed with status:", response.status, errorData)
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
       }
-  
-      // Success — parse JSON or fallback to text
-      let data: any = null;
-      const ct = res.headers.get("content-type") || "";
-      if (ct.includes("application/json")) {
-        data = await res.json();
-      } else {
-        const text = await res.text();
-        try {
-          data = JSON.parse(text);
-        } catch {
-          console.warn("⚠️ [UploadToS3] Non-JSON response:", text?.slice(0, 300));
-          data = { raw: text };
-        }
+
+      const result = await response.json()
+      console.log("✅ PDF upload successful")
+      console.log("📦 S3 Upload API JSON response:", result)
+
+      // Extract s3_url from response
+      return { success: true, url: result.s3_url }
+    } catch (error) {
+      console.error('S3 upload error:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown upload error' 
       }
-  
-      const s3Url = data?.s3_url ?? data?.url;
-      if (!s3Url) {
-        console.warn("⚠️ [UploadToS3] No URL in response payload:", data);
-      } else {
-        console.log(`✅ [UploadToS3] Success → ${s3Url}`);
-      }
-  
-      return { success: true, url: s3Url };
-    } catch (err: any) {
-      let message = "Unknown upload error";
-      if (err?.name === "AbortError") {
-        message = "Upload timed out";
-      } else if (err instanceof TypeError) {
-        message =
-          "Network error: request blocked or failed (check rewrites & backend reachability)";
-      } else if (err instanceof Error && err.message) {
-        message = err.message;
-      }
-  
-      console.error("🔥 [UploadToS3] Exception:", err);
-      return { success: false, error: message };
-    } finally {
-      clearTimeout(timeoutId);
+      handleFileUpload(file)
     }
-  };
+  }
+
+  type PredictTag = { tag: string; score: number }
+  type PredictResult = {
+    filename: string
+    tags?: PredictTag[]
+    probs?: PredictTag[]      // tolerate alternate keys
+    top5?: PredictTag[]       // "
+    user_labels?: string[]
+    ocr_used: boolean
+    processing_ms: number
+  }
+  type PredictResponse = {
+    threshold_pct?: number
+    results: PredictResult[]
+    errors?: string[]
+    request_id?: string
+  }
+
+  async function predictTags(file: File, thresholdPct = 30) {
+    const fd = new FormData();
+    fd.append("pdf", file, file.name);              // field name must be 'pdf'
+    fd.append("threshold_pct", String(thresholdPct));
+  
+    const res = await fetch("/ai/v1/predict", {
+      method: "POST",
+      body: fd,
+    });
+  
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`Predict: invalid JSON (status ${res.status})`);
+    }
+  
+    console.log("🔍 predict JSON:", json);
+  
+    if (!res.ok) {
+      const msg = json?.error || JSON.stringify(json);
+      throw new Error(`Predict ${res.status}: ${msg}`);
+    }
+  
+    // Normalize shapes:
+    // 1) { results: [...] }  OR  2) { filename, tags: [...] }
+    let first: any = null;
+    let results: any[] = [];
+  
+    if (Array.isArray(json?.results) && json.results.length) {
+      first = json.results[0];
+      results = json.results;
+    } else if (Array.isArray(json?.tags)) {
+      first = {
+        filename: json.filename ?? file.name,
+        tags: json.tags,                 // [{tag, score}, ...]
+        ocr_used: json.ocr_used ?? false,
+        processing_ms: json.processing_ms,
+      };
+      results = [first];
+    }
+  
+    if (!first) {
+      return { results: [], first: null, raw: json };
+    }
+  
+    return { results, first, raw: json };
+  }
+  
+  
+
+
 
   const handleFileUpload = async (file: File) => {
-    if (file.size > 80 * 1024 * 1024) {
+    const maxSize = 80 * 1024 * 1024 // 80 MB in bytes
+    if (file.size > maxSize) {
       setUploadError("File size exceeds 80 MB limit.")
       return
     }
-
+    
     setUploadedFile(file)
     setIsUploading(true)
     setUploadProgress(0)
     setUploadError(null)
 
     try {
+      // Step 1: Upload to S3 (0-30% progress)
       setUploadProgress(10)
+      
       const s3Result = await uploadToS3(file)
-      if (!s3Result.success) throw new Error(s3Result.error || "Failed to upload to S3")
-      setUploadProgress(70)
-
-      // Simulate /v1/predict
-      setUploadProgress(75)
-      await new Promise((r) => setTimeout(r, 1200))
-      const predictJson = {
-        results: [
-          {
-            filename: file.name,
-            tags: [
-              { tag: "news", score: 0.92 },
-              { tag: "Recommendations", score: 0.81 },
-            ],
-            user_labels: ["Discovery Event", "FY2024"],
-          },
-        ],
+      
+      if (!s3Result.success) {
+        throw new Error(s3Result.error || 'Failed to upload to S3')
       }
-      const first = predictJson.results?.[0]
-      if (!first) throw new Error("No prediction results returned")
-      setUploadProgress(100)
+      
+      const s3Link = s3Result.url
+      console.log("🌐 Stored S3 Link:", s3Link)
+      setUploadProgress(30)
 
+      // Step 2: Create raw_documents entry in Supabase (30-50% progress)
+      console.log("📝 Creating raw document entry in database...")
+      const rawDocumentData = {
+        document_name: file.name,
+        document_type: file.type.toUpperCase() || "PDF",
+        link: s3Link || "",
+        file_size: file.size,
+        status: "uploaded"
+      }
+      
+      const rawDocResponse = await apiClient.createRawDocument(rawDocumentData)
+      const documentId = rawDocResponse.document_id
+      console.log("✅ Created raw document with ID:", documentId)
+      setUploadProgress(50)
+
+      // Step 3: Run AI processing (50-80% progress)
+      setUploadProgress(60)
+      console.log("🤖 Processing with AI...")
+      
+      const predict = await predictTags(file, 60)
+      console.log("🤖 AI processing response:", predict)
+
+      const first = predict.results?.[0]
+      if (!first) {
+        throw new Error("No prediction results returned")
+      }
+
+      const rawTags: PredictTag[] = first.tags ?? first.probs ?? first.top5 ?? []
+      setUploadProgress(80)
+
+      // Step 4: Create processed_documents entry in Supabase (80-90% progress)
+      console.log("📊 Creating processed document entry...")
+      const processedDocumentData = {
+        document_id: documentId,
+        suggested_tags: rawTags,
+        threshold_pct: 60,
+        ocr_used: first.ocr_used || false,
+        processing_ms: first.processing_ms || null
+      }
+      
+      const processedDocResponse = await apiClient.createProcessedDocument(processedDocumentData)
+      console.log("✅ Created processed document entry:", processedDocResponse)
+      setUploadProgress(90)
+
+      // Step 5: Create frontend document object with real database data
       const newDocument: Document = {
-        id: Date.now().toString(),
+        id: documentId.toString(),
         name: file.name,
         uploadDate: new Date().toISOString().split("T")[0],
-        tags: (first.tags || []).map((t: any) => t.tag),
+        tags: rawTags.map((t: any) => t.tag),
         subtags: {
-          ...(first.user_labels ? { "User Labels": first.user_labels } : {}),
-          "Model Tags (w/ confidence)": first.tags.map(
-            (t: any) => `${t.tag} (${Math.round(t.score * 100)}%)`
+          "Model Tags (w/ confidence)": rawTags.map(
+            (t: any) => `${t.tag} (${Math.round((t.score ?? 0) * 100)}%)`
           ),
         },
         size: formatFileSize(file.size),
-        status: "pending",
-        modelGeneratedTags: (first.tags ?? []).map((t: any) => ({
+        status: "Success",
+        modelGeneratedTags: rawTags.map((t: any) => ({
           tag: t.tag,
           score: t.score,
-          isConfirmed: true,
+          isConfirmed: false
         })),
-        userAddedTags: first.user_labels ?? [],
-      }
+        userAddedTags: []
+      };
+      
+      setUploadProgress(100)
 
+      // Complete the upload
       setTimeout(() => {
         onUploadComplete(newDocument)
         setIsUploading(false)
         setUploadProgress(0)
         setUploadedFile(null)
-      }, 400)
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed")
+      }, 500)
+
+    } catch (error) {
+      console.error('Upload failed:', error)
+      setUploadError(error instanceof Error ? error.message : 'Upload failed')
       setIsUploading(false)
       setUploadProgress(0)
     }
@@ -300,11 +362,16 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">
-                    {uploadProgress < 70
-                      ? "Uploading to S3..."
+                  {uploadProgress < 30 
+                      ? "Uploading to S3..." 
+                      : uploadProgress < 50
+                      ? "Creating document record..."
+                      : uploadProgress < 80 
+                      ? "Processing with AI..." 
                       : uploadProgress < 100
-                      ? "Processing with AI..."
-                      : "Complete!"}
+                      ? "Saving AI results..."
+                      : "Complete!"
+                    }
                   </span>
                   <span className="text-gray-900">{uploadProgress}%</span>
                 </div>
@@ -319,7 +386,6 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
               )}
             </div>
           )}
-
           {uploadError && (
             <div className="space-y-4">
               <div className="flex items-center space-x-3 p-4 bg-red-50 rounded-lg border border-red-200">
@@ -329,13 +395,17 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
                   <p className="text-sm text-red-700">{uploadError}</p>
                 </div>
               </div>
-
+              
               <div className="flex space-x-2">
-                <Button variant="outline" onClick={handleRetry} className="flex-1">
+                <Button 
+                  variant="outline" 
+                  onClick={handleRetry}
+                  className="flex-1"
+                >
                   Try Again
                 </Button>
-                <Button
-                  variant="outline"
+                <Button 
+                  variant="outline" 
                   onClick={() => {
                     setUploadError(null)
                     setUploadedFile(null)

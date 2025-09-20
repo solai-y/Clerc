@@ -29,12 +29,12 @@ export interface BackendProcessedDocument {
   request_id: string | null;
   status: string;
   user_reviewed: boolean | null;
+  company: number | null; // Company is now in processed_documents
   raw_documents: {
     document_name: string;
     document_type: string;
     link: string;
     uploaded_by: number | null;
-    company: number | null;
     upload_date: string;
     file_size: number | null;
     file_hash: string | null;
@@ -162,11 +162,29 @@ class APIClient {
     );
   }
 
+  async createRawDocument(data: {
+    document_name: string;
+    document_type: string;
+    link: string;
+    uploaded_by?: number;
+    file_size?: number;
+    file_hash?: string;
+    status?: string;
+  }): Promise<any> {
+    return this.fetchWithErrorHandling<any>(apiUrl("/documents"), {
+      method: "POST", 
+      body: JSON.stringify(data),
+    });
+  }
+
   async createProcessedDocument(data: {
     document_id: number;
     suggested_tags?: Array<{ tag: string; score: number }>;
     model_id?: number;
     threshold_pct?: number;
+    ocr_used?: boolean;
+    processing_ms?: number;
+    company?: number;
   }): Promise<any> {
     return this.fetchWithErrorHandling<any>(apiUrl("/documents/processed"), {
       method: "POST",
@@ -230,7 +248,7 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     size: sizeEstimate,
     type: processedDoc.raw_documents?.document_type || "PDF",
     link: processedDoc.raw_documents?.link || "",
-    company: processedDoc.raw_documents?.company,
+    company: processedDoc.company, // Company is now in processed_documents
     companyName: processedDoc.raw_documents?.companies?.company_name || null,
     uploaded_by: processedDoc.raw_documents?.uploaded_by,
     status: processedDoc.status || "processed",
