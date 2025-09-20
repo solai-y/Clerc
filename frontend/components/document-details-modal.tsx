@@ -4,17 +4,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Progress } from "@/components/ui/progress"
 import { useState, useEffect } from "react"
 import { apiClient } from "@/lib/api"
-import { 
-  FileText, 
-  Calendar, 
-  Tag, 
-  Building, 
-  User, 
-  Download, 
+import {
+  FileText,
+  Calendar,
+  Tag,
+  Building,
+  User,
+  Download,
   ExternalLink,
   Clock,
   CheckCircle,
@@ -26,7 +27,10 @@ import {
   X,
   MessageSquare,
   Brain,
-  Cpu
+  Cpu,
+  TrendingUp,
+  Eye,
+  Settings
 } from "lucide-react"
 
 interface Document {
@@ -65,21 +69,27 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
     created_at: string;
   }>>([])
   const [loadingExplanations, setLoadingExplanations] = useState(false)
+  const [activeTab, setActiveTab] = useState("tags")
 
   useEffect(() => {
     const fetchExplanations = async () => {
       setLoadingExplanations(true)
       try {
+        console.log("🔍 Fetching explanations for document:", document.id)
         const explanationData = await apiClient.getDocumentExplanations(parseInt(document.id))
-        setExplanations(explanationData)
+        console.log("📊 Explanation data received:", explanationData)
+        setExplanations(explanationData || [])
       } catch (error) {
-        console.error("Failed to fetch explanations:", error)
+        console.error("❌ Failed to fetch explanations:", error)
+        setExplanations([]) // Set empty array on error
       } finally {
         setLoadingExplanations(false)
       }
     }
 
-    fetchExplanations()
+    if (document.id) {
+      fetchExplanations()
+    }
   }, [document.id])
 
   const formatDate = (dateString: string) => {
@@ -136,390 +146,462 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
     }
   }
 
+  // Process tags for hierarchy display
+  // If we have explanations, use them to separate AI vs LLM tags
+  // Otherwise, show all model tags as a fallback
+  const aiTags = explanations.length > 0
+    ? document.modelGeneratedTags.filter(tag =>
+        tag.tag && explanations.some(exp => exp.predicted_tag === tag.tag && exp.source_service === 'ai')
+      )
+    : document.modelGeneratedTags // Fallback: show all as "AI" if no explanations
+
+  const llmTags = explanations.length > 0
+    ? document.modelGeneratedTags.filter(tag =>
+        tag.tag && explanations.some(exp => exp.predicted_tag === tag.tag && exp.source_service === 'llm')
+      )
+    : [] // Only show LLM tags if we have explanation data
+
+  const primaryTag = explanations.find(exp => exp.classification_level === 'primary')
+  const secondaryTag = explanations.find(exp => exp.classification_level === 'secondary')
+  const tertiaryTag = explanations.find(exp => exp.classification_level === 'tertiary')
+
+  // Debug info
+  console.log("🏷️ Document data:", {
+    id: document.id,
+    modelGeneratedTags: document.modelGeneratedTags,
+    userAddedTags: document.userAddedTags,
+    explanationsCount: explanations.length,
+    aiTagsCount: aiTags.length,
+    llmTagsCount: llmTags.length
+  })
+
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-[95vw] w-full h-[95vh] overflow-hidden">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <FileText className="w-6 h-6" />
-            Document Details
+      <DialogContent className="max-w-6xl h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader className="shrink-0 pb-4">
+          <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
+            <FileText className="w-6 h-6 text-blue-600" />
+            Document Details - {document.name}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full overflow-hidden">
-          {/* Left Column */}
-          <div className="space-y-4 overflow-y-auto pr-2">
-            {/* Basic Information */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Basic Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-gray-500" />
-                      <span className="font-medium text-sm">Document Name</span>
-                    </div>
-                    <p className="text-sm bg-gray-50 p-2 rounded border">{document.name}</p>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Info className="w-4 h-4 text-gray-500" />
-                        <span className="font-medium text-sm">Document ID</span>
-                      </div>
-                      <p className="text-xs bg-gray-50 p-2 rounded border font-mono">{document.id}</p>
-                    </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+          <TabsList className="grid w-full grid-cols-4 shrink-0">
+            <TabsTrigger value="tags" className="flex items-center gap-2">
+              <Tag className="w-4 h-4" />
+              Tags
+            </TabsTrigger>
+            <TabsTrigger value="hierarchy" className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" />
+              Hierarchy
+            </TabsTrigger>
+            <TabsTrigger value="explanations" className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4" />
+              Explanations
+            </TabsTrigger>
+            <TabsTrigger value="document" className="flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              Document
+            </TabsTrigger>
+          </TabsList>
 
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-gray-500" />
-                        <span className="font-medium text-sm">File Type</span>
-                      </div>
-                      <Badge variant="outline" className="text-xs">
-                        {document.type || 'Unknown'}
+          <div className="flex-1 overflow-hidden">
+            {/* Tags Tab */}
+            <TabsContent value="tags" className="h-full overflow-y-auto space-y-4 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* AI Generated Tags */}
+                <Card className="border-l-4 border-l-blue-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Bot className="w-5 h-5 text-blue-600" />
+                      AI Generated Tags
+                      <Badge variant="secondary" className="ml-auto">
+                        {aiTags.length} tags
                       </Badge>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-gray-500" />
-                      <span className="font-medium text-sm">File Size</span>
-                    </div>
-                    <p className="text-sm bg-gray-50 p-2 rounded border">{document.size}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Status and Metadata */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Status & Metadata</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      {getStatusIcon(document.status)}
-                      <span className="font-medium text-sm">Processing Status</span>
-                    </div>
-                    <Badge className={`text-sm ${getStatusColor(document.status)}`}>
-                      {document.status.replace('_', ' ').toUpperCase()}
-                    </Badge>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-gray-500" />
-                      <span className="font-medium text-sm">Upload Date</span>
-                    </div>
-                    <p className="text-sm bg-gray-50 p-2 rounded border">
-                      {formatDate(document.uploadDate + 'T00:00:00')}
-                    </p>
-                  </div>
-
-                  {(document.companyName || document.uploaded_by) && (
-                    <div className="grid grid-cols-2 gap-3">
-                      {document.companyName && (
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <Building className="w-4 h-4 text-gray-500" />
-                            <span className="font-medium text-sm">Company</span>
-                          </div>
-                          <p className="text-sm bg-gray-50 p-2 rounded border">{document.companyName}</p>
-                        </div>
-                      )}
-
-                      {document.uploaded_by && (
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <User className="w-4 h-4 text-gray-500" />
-                            <span className="font-medium text-sm">Uploaded By</span>
-                          </div>
-                          <p className="text-sm bg-gray-50 p-2 rounded border">{document.uploaded_by}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Document Access */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Document Access</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {document.link ? (
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium">Document Link:</p>
-                      <div className="bg-gray-50 p-2 rounded border text-xs font-mono break-all">
-                        {document.link}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={handleDownload}
-                        size="sm"
-                        className="bg-red-600 hover:bg-red-700"
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        Download
-                      </Button>
-                      <Button
-                        onClick={handleOpenExternal}
-                        variant="outline"
-                        size="sm"
-                      >
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        Open in New Tab
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-gray-500 italic text-sm">No download link available</p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Right Column - Tags */}
-          <div className="space-y-4 overflow-y-auto pr-2">
-            {/* Model Generated Tags */}
-            <Card className="h-fit">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Bot className="w-5 h-5 text-blue-500" />
-                  AI Model Generated Tags
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {document.modelGeneratedTags.length > 0 ? (
-                    <div className="space-y-2">
-                      {document.modelGeneratedTags.map((modelTag, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 border rounded-lg">
-                          <div className="flex items-center gap-2 flex-1">
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {aiTags.map((tagData, index) => (
+                        <div key={`ai-${index}`} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                          <div className="flex items-center gap-3 flex-1">
                             <div className="flex items-center gap-1">
-                              {modelTag.isConfirmed ? (
-                                <Check className="w-4 h-4 text-green-500" />
+                              {tagData.isConfirmed ? (
+                                <CheckCircle className="w-4 h-4 text-green-500" />
                               ) : (
                                 <X className="w-4 h-4 text-gray-400" />
                               )}
-                              <Badge
-                                variant={modelTag.isConfirmed ? "default" : "secondary"}
-                                className={modelTag.isConfirmed ? 
-                                  "bg-green-50 text-green-700 hover:bg-green-100" : 
-                                  "bg-gray-50 text-gray-600"
-                                }
-                              >
-                                {modelTag.tag}
-                              </Badge>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="text-right">
-                              <div className="text-xs text-gray-500">Confidence</div>
-                              <div className="text-sm font-medium">
-                                {(modelTag.score * 100).toFixed(1)}%
+                            <div className="flex-1">
+                              <div className="font-medium">{tagData.tag}</div>
+                              <div className="text-sm text-gray-500">
+                                Confidence: {Math.round(tagData.score * 100)}%
                               </div>
                             </div>
-                            <div className="w-16">
-                              <Progress 
-                                value={modelTag.score * 100} 
-                                className="h-2"
-                              />
-                            </div>
                           </div>
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                            <Bot className="w-3 h-3 mr-1" />
+                            AI
+                          </Badge>
                         </div>
                       ))}
+                      {aiTags.length === 0 && !loadingExplanations && (
+                        <div className="text-center py-8 text-gray-500">
+                          <Bot className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                          <p>No AI-generated tags available</p>
+                        </div>
+                      )}
+                      {aiTags.length === 0 && loadingExplanations && (
+                        <div className="text-center py-8 text-gray-500">
+                          <div className="animate-pulse">
+                            <Bot className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                            <p>Loading tag information...</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <p className="text-gray-500 italic text-sm">No AI-generated tags available</p>
-                  )}
-                  <div className="text-xs text-gray-500 mt-2 p-2 bg-blue-50 rounded">
-                    <div className="flex items-center gap-1 mb-1">
-                      <Info className="w-3 h-3" />
-                      <span className="font-medium">Legend:</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-1">
-                        <Check className="w-3 h-3 text-green-500" />
-                        <span>User Confirmed</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <X className="w-3 h-3 text-gray-400" />
-                        <span>Not Confirmed</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
 
-            {/* User Added Tags */}
-            <Card className="h-fit">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <UserPlus className="w-5 h-5 text-purple-500" />
-                  User Added Tags
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {document.userAddedTags.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {document.userAddedTags.map((userTag, index) => (
-                        <Badge
-                          key={index}
-                          className="bg-purple-50 text-purple-700 hover:bg-purple-100"
-                        >
-                          {userTag}
-                        </Badge>
+                {/* LLM Generated Tags */}
+                <Card className="border-l-4 border-l-purple-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Brain className="w-5 h-5 text-purple-600" />
+                      LLM Generated Tags
+                      <Badge variant="secondary" className="ml-auto">
+                        {llmTags.length} tags
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {llmTags.map((tagData, index) => (
+                        <div key={`llm-${index}`} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                          <div className="flex items-center gap-3 flex-1">
+                            <div className="flex items-center gap-1">
+                              {tagData.isConfirmed ? (
+                                <CheckCircle className="w-4 h-4 text-green-500" />
+                              ) : (
+                                <X className="w-4 h-4 text-gray-400" />
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <div className="font-medium">{tagData.tag}</div>
+                              <div className="text-sm text-gray-500">
+                                Confidence: {Math.round(tagData.score * 100)}%
+                              </div>
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                            <Brain className="w-3 h-3 mr-1" />
+                            LLM
+                          </Badge>
+                        </div>
                       ))}
+                      {llmTags.length === 0 && !loadingExplanations && (
+                        <div className="text-center py-8 text-gray-500">
+                          <Brain className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                          <p>No LLM-generated tags available</p>
+                        </div>
+                      )}
+                      {llmTags.length === 0 && loadingExplanations && (
+                        <div className="text-center py-8 text-gray-500">
+                          <div className="animate-pulse">
+                            <Brain className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                            <p>Loading tag information...</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <p className="text-gray-500 italic text-sm">No user-added tags</p>
-                  )}
-                  <div className="text-xs text-gray-500 mt-2 p-2 bg-purple-50 rounded">
-                    <Info className="w-3 h-3 inline mr-1" />
-                    These tags were manually added by users and are automatically confirmed.
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+              </div>
 
-            {/* Combined Tags Summary */}
-            <Card className="h-fit">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Tag className="w-5 h-5 text-red-500" />
-                  Final Tags Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
+              {/* User Added Tags */}
+              <Card className="border-l-4 border-l-green-500">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <UserPlus className="w-5 h-5 text-green-600" />
+                    User Added Tags
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div className="flex flex-wrap gap-2">
-                    {document.tags.length > 0 ? (
-                      document.tags.map((tag, index) => (
+                    {document.userAddedTags.length > 0 ? (
+                      document.userAddedTags.map((tag, index) => (
                         <Badge
-                          key={index}
+                          key={`custom-${index}`}
                           variant="secondary"
-                          className="bg-red-50 text-red-700 hover:bg-red-100"
+                          className="bg-green-50 text-green-800 border-green-200"
                         >
-                          {tag}
+                          <span>{tag}</span>
                         </Badge>
                       ))
                     ) : (
-                      <p className="text-gray-500 italic text-sm">No final tags</p>
+                      <p className="text-gray-500 italic text-sm">No user-added tags</p>
                     )}
                   </div>
-                  <div className="text-xs text-gray-500 p-2 bg-gray-50 rounded">
-                    <Info className="w-3 h-3 inline mr-1" />
-                    These are the final confirmed tags (confirmed AI tags + user-added tags) displayed in the main table.
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-            {/* AI/LLM Explanations */}
-            <Card className="h-fit">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <MessageSquare className="w-5 h-5 text-indigo-500" />
-                  Classification Explanations
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {loadingExplanations ? (
-                    <div className="text-center py-4">
-                      <div className="animate-pulse text-gray-500">Loading explanations...</div>
-                    </div>
-                  ) : explanations.length > 0 ? (
-                    <div className="space-y-3">
-                      {explanations
-                        .sort((a, b) => {
-                          const levelOrder = { primary: 1, secondary: 2, tertiary: 3 }
-                          return levelOrder[a.classification_level as keyof typeof levelOrder] - 
-                                 levelOrder[b.classification_level as keyof typeof levelOrder]
-                        })
-                        .map((explanation) => (
-                          <div key={explanation.explanation_id} className="border rounded-lg p-3 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                {explanation.source_service === 'llm' ? (
-                                  <Brain className="w-4 h-4 text-purple-500" />
-                                ) : (
-                                  <Cpu className="w-4 h-4 text-blue-500" />
-                                )}
-                                <Badge
-                                  variant="outline"
-                                  className={`text-xs ${
-                                    explanation.classification_level === 'primary' 
-                                      ? 'border-red-200 text-red-700'
-                                      : explanation.classification_level === 'secondary'
-                                      ? 'border-orange-200 text-orange-700'
-                                      : 'border-green-200 text-green-700'
-                                  }`}
-                                >
-                                  {explanation.classification_level.toUpperCase()}
-                                </Badge>
-                                <Badge 
-                                  variant="secondary"
-                                  className="text-xs"
-                                >
-                                  {explanation.predicted_tag}
-                                </Badge>
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {Math.round(explanation.confidence * 100)}% confident
-                              </div>
-                            </div>
-                            
-                            {explanation.reasoning && (
-                              <div className="text-sm text-gray-700 bg-gray-50 p-2 rounded border-l-4 border-indigo-200">
-                                <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
-                                  {explanation.source_service === 'llm' ? (
-                                    <>
-                                      <Brain className="w-3 h-3" />
-                                      <span>LLM Reasoning</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Cpu className="w-3 h-3" />
-                                      <span>AI Reasoning</span>
-                                    </>
-                                  )}
-                                </div>
-                                <p className="italic">{explanation.reasoning}</p>
-                              </div>
-                            )}
+            {/* Hierarchy Tab */}
+            <TabsContent value="hierarchy" className="h-full overflow-y-auto space-y-4 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-blue-600" />
+                    Classification Hierarchy
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    {/* Primary Level */}
+                    {primaryTag && (
+                      <div className="flex items-center gap-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50">
+                        <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-sm">
+                          1
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-lg">{primaryTag.predicted_tag}</div>
+                          <div className="text-sm text-gray-600">
+                            Primary Classification • {Math.round(primaryTag.confidence * 100)}% confidence
                           </div>
-                        ))}
-                    </div>
-                  ) : (
-                    <p className="text-gray-500 italic text-sm">No explanations available</p>
-                  )}
-                  <div className="text-xs text-gray-500 mt-2 p-2 bg-indigo-50 rounded">
-                    <Info className="w-3 h-3 inline mr-1" />
-                    These explanations show the reasoning behind each classification level from our AI and LLM services.
+                        </div>
+                        <Badge className={primaryTag.source_service === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
+                          {primaryTag.source_service === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
+                          {primaryTag.source_service.toUpperCase()}
+                        </Badge>
+                      </div>
+                    )}
+
+                    {/* Arrow */}
+                    {primaryTag && secondaryTag && (
+                      <div className="flex justify-center">
+                        <div className="w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-gray-400"></div>
+                      </div>
+                    )}
+
+                    {/* Secondary Level */}
+                    {secondaryTag && (
+                      <div className="flex items-center gap-4 p-4 border-2 border-green-200 rounded-lg bg-green-50">
+                        <div className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold text-sm">
+                          2
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-lg">{secondaryTag.predicted_tag}</div>
+                          <div className="text-sm text-gray-600">
+                            Secondary Classification • {Math.round(secondaryTag.confidence * 100)}% confidence
+                          </div>
+                        </div>
+                        <Badge className={secondaryTag.source_service === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
+                          {secondaryTag.source_service === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
+                          {secondaryTag.source_service.toUpperCase()}
+                        </Badge>
+                      </div>
+                    )}
+
+                    {/* Arrow */}
+                    {secondaryTag && tertiaryTag && (
+                      <div className="flex justify-center">
+                        <div className="w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-gray-400"></div>
+                      </div>
+                    )}
+
+                    {/* Tertiary Level */}
+                    {tertiaryTag && (
+                      <div className="flex items-center gap-4 p-4 border-2 border-orange-200 rounded-lg bg-orange-50">
+                        <div className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold text-sm">
+                          3
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-lg">{tertiaryTag.predicted_tag}</div>
+                          <div className="text-sm text-gray-600">
+                            Tertiary Classification • {Math.round(tertiaryTag.confidence * 100)}% confidence
+                          </div>
+                        </div>
+                        <Badge className={tertiaryTag.source_service === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
+                          {tertiaryTag.source_service === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
+                          {tertiaryTag.source_service.toUpperCase()}
+                        </Badge>
+                      </div>
+                    )}
+
+                    {!primaryTag && !secondaryTag && !tertiaryTag && (
+                      <div className="text-center py-12 text-gray-500">
+                        <TrendingUp className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                        <p className="text-lg">No hierarchy data available</p>
+                        <p className="text-sm">The classification hierarchy will appear here when available</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Explanations Tab */}
+            <TabsContent value="explanations" className="h-full flex flex-col mt-4 data-[state=active]:flex">
+              {loadingExplanations ? (
+                <div className="text-center py-12 text-gray-500 flex-1 flex flex-col justify-center">
+                  <div className="animate-pulse">
+                    <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p className="text-base font-medium">Loading explanations...</p>
+                    <p className="text-sm">Please wait while we fetch the reasoning data</p>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              ) : explanations.length > 0 ? (
+                <div className="space-y-2 overflow-y-auto flex-1">
+                  {explanations.map((explanation, index) => (
+                    <div key={`explanation-${index}`} className="border border-indigo-200 rounded-lg p-3 bg-gradient-to-r from-indigo-50 to-purple-50">
+                      {/* Header */}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="w-4 h-4 text-indigo-600" />
+                          <span className="font-semibold text-sm">{explanation.predicted_tag}</span>
+                          <Badge variant="outline" className="text-xs px-1 py-0">
+                            {explanation.classification_level}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge className={`text-xs px-2 py-0 ${explanation.source_service === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
+                            {explanation.source_service === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
+                            {explanation.source_service.toUpperCase()}
+                          </Badge>
+                          <div className="text-xs font-medium text-gray-600">
+                            {Math.round(explanation.confidence * 100)}%
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Confidence Bar */}
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
+                        <div
+                          className="bg-indigo-600 h-1.5 rounded-full"
+                          style={{ width: `${explanation.confidence * 100}%` }}
+                        ></div>
+                      </div>
+
+                      {/* Reasoning */}
+                      <div className="text-xs leading-normal text-gray-700 bg-white/70 rounded p-2 border max-h-20 overflow-y-auto">
+                        {explanation.reasoning}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500 flex-1 flex flex-col justify-center">
+                  <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-base font-medium">No explanations available</p>
+                  <p className="text-sm">Explanations will appear here when provided by the AI models</p>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Document Tab */}
+            <TabsContent value="document" className="h-full overflow-y-auto space-y-4 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Basic Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-blue-600" />
+                      Document Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div>
+                        <div className="text-sm font-medium text-gray-600">Name</div>
+                        <div className="font-medium">{document.name}</div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-sm font-medium text-gray-600">Upload Date</div>
+                          <div>{formatDate(document.uploadDate + 'T00:00:00')}</div>
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-600">File Size</div>
+                          <div>{document.size}</div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-sm font-medium text-gray-600">Status</div>
+                          <Badge className={`text-sm ${getStatusColor(document.status)}`}>
+                            {document.status.replace('_', ' ').toUpperCase()}
+                          </Badge>
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-600">Type</div>
+                          <div>{document.type || 'Unknown'}</div>
+                        </div>
+                      </div>
+                      {document.companyName && (
+                        <div>
+                          <div className="text-sm font-medium text-gray-600">Company</div>
+                          <div>{document.companyName}</div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Document Access */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Eye className="w-5 h-5 text-green-600" />
+                      Document Access
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {document.link ? (
+                      <div className="space-y-4">
+                        <div>
+                          <div className="text-sm font-medium text-gray-600 mb-2">Actions</div>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={handleDownload}
+                              size="sm"
+                              className="bg-red-600 hover:bg-red-700"
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              Download
+                            </Button>
+                            <Button
+                              onClick={handleOpenExternal}
+                              variant="outline"
+                              size="sm"
+                            >
+                              <ExternalLink className="w-4 h-4 mr-2" />
+                              Open
+                            </Button>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-600 mb-2">Document URL</div>
+                          <div className="bg-gray-50 p-2 rounded border text-xs font-mono break-all">
+                            {document.link}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <ExternalLink className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <p>No download link available</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
           </div>
-        </div>
+        </Tabs>
 
-        <Separator className="my-4" />
+        <Separator className="shrink-0 my-4" />
 
-        <div className="flex justify-end">
+        <div className="flex justify-end shrink-0">
           <Button onClick={onClose} variant="outline">
             Close
           </Button>
