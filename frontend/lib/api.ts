@@ -213,6 +213,33 @@ class APIClient {
   }>> {
     return this.fetchWithErrorHandling<Array<any>>(apiUrl(`/documents/${documentId}/explanations`));
   }
+
+  // -------- Prediction Service Configuration Methods --------
+  async updateConfidenceThresholds(thresholds: {
+    primary?: number;
+    secondary?: number; 
+    tertiary?: number;
+  }): Promise<{ success: boolean; message: string }> {
+    return this.fetchWithErrorHandling<{ success: boolean; message: string }>(
+      apiUrl("/prediction/config/thresholds"),
+      {
+        method: "PUT",
+        body: JSON.stringify({ thresholds }),
+      }
+    );
+  }
+
+  async getConfidenceThresholds(): Promise<{
+    primary: number;
+    secondary: number;
+    tertiary: number;
+  }> {
+    return this.fetchWithErrorHandling<{
+      primary: number;
+      secondary: number;
+      tertiary: number;
+    }>(apiUrl("/prediction/config/thresholds"));
+  }
 }
 
 // ---------- Frontend types & helpers ----------

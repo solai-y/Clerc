@@ -6,17 +6,22 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Upload, Search, Filter, AlertCircle, RefreshCw } from "lucide-react"
+import { Upload, Search, Filter, AlertCircle, RefreshCw, LogIn } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
 import { ConfirmTagsModal } from "@/components/confirm-tags-modal"
 import { DocumentDetailsModal } from "@/components/document-details-modal"
 import { DocumentTable } from "@/components/document-table"
 import { DocumentPagination } from "@/components/document-pagination"
+import { UserMenu } from "@/components/auth/user-menu"
 import { useDocuments } from "@/hooks/use-documents"
+import { useAuth } from "@/contexts/auth-context"
 import { Document, apiClient } from "@/lib/api"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function HomePage() {
+  // Auth state
+  const { user, loading: authLoading } = useAuth()
+
   // Local state for UI
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState<"name" | "date" | "size">("date")
@@ -205,6 +210,15 @@ export default function HomePage() {
                 <div className="h-6 w-px bg-gray-300 mx-4"></div>
                 <h1 className="text-xl font-bold text-gray-900">Document AI</h1>
             </div>
+
+            {/* Authentication Section */}
+            <div className="flex items-center gap-4">
+              {authLoading ? (
+                <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full"></div>
+              ) : user ? (
+                <UserMenu />
+              ) : null}
+            </div>
           </div>
         </div>
       </header>
@@ -381,6 +395,7 @@ export default function HomePage() {
           onClose={() => setDetailsDocument(null)}
         />
       )}
+
     </div>
   )
 }

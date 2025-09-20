@@ -31,7 +31,14 @@
       "Bash(find:*)",
       "WebFetch(domain:clerc-git-cors-fix-3-solaiys-projects.vercel.app)",
       "WebFetch(domain:kzmoa184ztu9hkm1o7r6.lite.vusercontent.net)",
-      "Bash(docker run:*)"
+      "Bash(docker run:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(echo:*)",
+      "Bash(pkill:*)",
+      "Bash(xargs kill:*)",
+      "Bash(fuser:*)",
+      "Bash(cat:*)",
+      "Bash(dos2unix:*)"
     ],
     "deny": []
   }
