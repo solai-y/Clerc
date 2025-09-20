@@ -16,31 +16,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
 
-      if (session?.user) {
-        setUser(session.user)
-        await fetchUserProfile(session.user.id)
-        await fetchUserPreferences(session.user.id)
+        if (session?.user) {
+          setUser(session.user)
+          // Fetch profile/preferences in background without blocking loading
+          fetchUserProfile(session.user.id).catch(console.error)
+          fetchUserPreferences(session.user.id).catch(console.error)
+        }
+      } catch (error) {
+        console.error('Error getting initial session:', error)
+      } finally {
+        setLoading(false)
       }
-
-      setLoading(false)
     }
 
     getInitialSession()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state change:', event, !!session?.user)
+
         if (session?.user) {
           setUser(session.user)
-          await fetchUserProfile(session.user.id)
-          await fetchUserPreferences(session.user.id)
+          // Fetch profile/preferences in background
+          fetchUserProfile(session.user.id).catch(console.error)
+          fetchUserPreferences(session.user.id).catch(console.error)
         } else {
           setUser(null)
           setProfile(null)
           setPreferences(null)
         }
-        setLoading(false)
+
+        // Don't set loading to false here for sign out to avoid flash
+        if (event !== 'SIGNED_OUT') {
+          setLoading(false)
+        }
       }
     )
 
@@ -57,12 +69,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('Error fetching user profile:', error)
+        // Don't return, continue to set loading to false
+        setProfile(null)
         return
       }
 
       setProfile(data)
     } catch (error) {
       console.error('Error fetching user profile:', error)
+      setProfile(null)
     }
   }
 
@@ -76,12 +91,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('Error fetching user preferences:', error)
+        // Don't return, continue to set loading to false
+        setPreferences(null)
         return
       }
 
       setPreferences(data)
     } catch (error) {
       console.error('Error fetching user preferences:', error)
+      setPreferences(null)
     }
   }
 
@@ -115,7 +133,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    try {
+      // Clear local state immediately for faster UI response
+      setUser(null)
+      setProfile(null)
+      setPreferences(null)
+      setLoading(false)
+
+      // Sign out from Supabase
+      await supabase.auth.signOut()
+
+      // Redirect to login page
+      window.location.href = '/login'
+    } catch (error) {
+      console.error('Error signing out:', error)
+      // Still redirect even if there's an error
+      window.location.href = '/login'
+    }
   }
 
   const updateProfile = async (updates: Partial<UserProfile>) => {

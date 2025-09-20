@@ -24,21 +24,23 @@ export function UserMenu() {
     setIsSigningOut(true)
     try {
       await signOut()
+      // signOut now handles redirect, so we don't need to do anything else
     } catch (error) {
       console.error('Error signing out:', error)
-    } finally {
       setIsSigningOut(false)
     }
   }
 
   if (!user) return null
 
-  const displayName = profile?.full_name || user.email?.split('@')[0] || 'User'
+  // Use user.email directly and don't wait for profile
+  const displayName = profile?.full_name || user.user_metadata?.full_name || user.email?.split('@')[0] || 'User'
   const initials = displayName
     .split(' ')
     .map(name => name[0])
     .join('')
     .toUpperCase()
+    .slice(0, 2) // Limit to 2 characters
 
   return (
     <DropdownMenu>
