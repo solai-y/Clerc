@@ -397,18 +397,26 @@ class DatabaseService:
             # Mark as user reviewed and add review timestamp
             update_data['user_reviewed'] = True
             update_data['reviewed_at'] = 'now()'
-            
+
             if 'user_id' in tag_data:
                 update_data['user_id'] = tag_data['user_id']
-            
+
             if not update_data:
                 return None, "No valid tag data provided for update"
-            
+
             # Update the processed document
             response = self.supabase.table('processed_documents').update(update_data).eq('process_id', process_id).execute()
-            
+
             if response.data:
                 updated_doc = response.data[0]
+
+                # Handle explanations if provided
+                if 'explanations' in tag_data:
+                    explanation_error = self.create_explanations(process_id, tag_data['explanations'])
+                    if explanation_error:
+                        self.logger.warning(f"Failed to create explanations during tag update: {explanation_error}")
+                        # Don't fail the whole operation, just log the warning
+
                 self.logger.info(f"Updated tags for processed document {process_id} (document_id: {document_id})")
                 return updated_doc, None
             else:
@@ -451,6 +459,11 @@ class DatabaseService:
         try:
             explanation_records = []
             for explanation in explanations:
+                # Build service response with SHAP data if available
+                service_response = explanation.get('full_response', {})
+                if explanation.get('shap_data'):
+                    service_response['shap_explainability'] = explanation['shap_data']
+
                 record = {
                     'process_id': process_id,
                     'classification_level': explanation['level'],
@@ -458,7 +471,7 @@ class DatabaseService:
                     'confidence': explanation['confidence'],
                     'reasoning': explanation.get('reasoning'),
                     'source_service': explanation['source'],
-                    'service_response': explanation.get('full_response', {})
+                    'service_response': service_response
                 }
                 explanation_records.append(record)
             

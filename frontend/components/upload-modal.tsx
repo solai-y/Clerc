@@ -256,24 +256,26 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         }
       }
 
-      // Extract tags from prediction response
-      const extractedTags: PredictTag[] = []
+      // Extract tags from prediction response with enhanced metadata
+      const extractedTags: any[] = []
       const explanations: any[] = []
-      const processedTags = new Set<string>() // Prevent duplicates
-      
+      const processedTags = new Set<string>() // Prevent duplicates for UI
+
       // Process prediction results for each level
       if (predictionResponse.prediction) {
         for (const level of ['primary', 'secondary', 'tertiary']) {
           const levelPred = predictionResponse.prediction[level]
           if (levelPred && levelPred.pred) {
-            // Only add to extractedTags if it's a unique tag (for the UI display)
-            if (!processedTags.has(levelPred.pred)) {
-              processedTags.add(levelPred.pred)
-              extractedTags.push({
-                tag: levelPred.pred,
-                score: levelPred.confidence
-              })
-            }
+            // Always add to extractedTags with hierarchy and source metadata
+            extractedTags.push({
+              tag: levelPred.pred,
+              score: levelPred.confidence,
+              hierarchy_level: level,
+              source: levelPred.source || 'ai',
+              is_primary: level === 'primary',
+              is_secondary: level === 'secondary',
+              is_tertiary: level === 'tertiary'
+            })
 
             // Always store explanation data for each level - this ensures we capture both AI and LLM predictions
             const explanation = {
@@ -281,10 +283,25 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
               tag: levelPred.pred,
               confidence: levelPred.confidence,
               reasoning: levelPred.reasoning || `${levelPred.source?.toUpperCase() || 'AI'} prediction for ${level} level`,
-              source: levelPred.source || 'ai'
+              source: levelPred.source || 'ai',
+              shap_data: levelPred.ai_prediction?.key_evidence || null
             }
             console.log(`📋 Adding explanation for ${level}:`, explanation)
             explanations.push(explanation)
+
+            // Also store AI prediction separately if this is an LLM override and we have AI data
+            if (levelPred.source === 'llm' && levelPred.ai_prediction && levelPred.ai_prediction.pred) {
+              const aiExplanation = {
+                level: level,
+                tag: levelPred.ai_prediction.pred,
+                confidence: levelPred.ai_prediction.confidence,
+                reasoning: `AI model prediction (overridden by LLM)`,
+                source: 'ai',
+                shap_data: levelPred.ai_prediction.key_evidence || null
+              }
+              console.log(`📋 Adding AI explanation for ${level}:`, aiExplanation)
+              explanations.push(aiExplanation)
+            }
           }
         }
       }
@@ -330,7 +347,12 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         modelGeneratedTags: extractedTags.map((t: any) => ({
           tag: t.tag,
           score: t.score,
-          isConfirmed: false
+          isConfirmed: false,
+          hierarchy_level: t.hierarchy_level,
+          source: t.source,
+          is_primary: t.is_primary,
+          is_secondary: t.is_secondary,
+          is_tertiary: t.is_tertiary
         })),
         userAddedTags: []
       };
@@ -378,11 +400,12 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         userAddedTags: userAddedTags
       }
       
-      // Update the backend with confirmed tags
+      // Update the backend with confirmed tags and explanations
       try {
         await apiClient.updateDocumentTags(parseInt(documentId), {
           confirmed_tags: confirmedTags,
-          user_added_labels: userAddedTags
+          user_added_labels: userAddedTags,
+          explanations: explanationData
         })
       } catch (error) {
         console.error('Failed to update tags in backend:', error)

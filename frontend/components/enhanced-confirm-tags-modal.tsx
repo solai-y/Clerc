@@ -60,6 +60,19 @@ export function EnhancedConfirmTagsModal({
 }: EnhancedConfirmTagsModalProps) {
   const { toast } = useToast()
 
+  // Debug logging
+  useEffect(() => {
+    console.log("🏷️ Enhanced Confirm Tags Modal - explanations:", explanations)
+    explanations.forEach((exp, idx) => {
+      console.log(`🔍 Explanation ${idx}:`, {
+        tag: exp.tag,
+        level: exp.level,
+        source: exp.source,
+        shap_data: exp.shap_data
+      })
+    })
+  }, [explanations])
+
   // Process prediction data into enhanced tags
   const enhancedTags = useMemo<EnhancedTag[]>(() => {
     const tags: EnhancedTag[] = []
@@ -427,27 +440,47 @@ export function EnhancedConfirmTagsModal({
 
             {/* Explanations Tab */}
             <TabsContent value="explanations" className="h-full flex flex-col mt-4 data-[state=active]:flex">
-              {enhancedTags.filter(t => t.reasoning).length > 0 ? (
-                <div className="space-y-2 overflow-y-auto flex-1">
-                  {enhancedTags.map((tag, index) => (
-                    tag.reasoning && (
+              {(() => {
+                // Filter explanations to show only the correct ones:
+                // - If LLM overrode AI for a level, show only LLM explanation
+                // - Otherwise show AI explanation with SHAP
+                const filteredExplanations = explanations.filter(exp => {
+                  // Check if there's an LLM explanation for the same tag and level
+                  const hasLLMForSameLevel = explanations.some(other =>
+                    other.tag === exp.tag &&
+                    other.level === exp.level &&
+                    other.source === 'llm'
+                  );
+
+                  // If LLM exists for this tag/level, only show LLM explanation
+                  if (hasLLMForSameLevel) {
+                    return exp.source === 'llm';
+                  }
+
+                  // Otherwise show AI explanation
+                  return exp.source === 'ai';
+                });
+
+                return filteredExplanations.length > 0 ? (
+                  <div className="space-y-2 overflow-y-auto flex-1">
+                    {filteredExplanations.map((explanation, index) => (
                       <div key={`explanation-${index}`} className="border border-indigo-200 rounded-lg p-3 bg-gradient-to-r from-indigo-50 to-purple-50">
                         {/* Header */}
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <MessageSquare className="w-4 h-4 text-indigo-600" />
-                            <span className="font-semibold text-sm">{tag.tag}</span>
+                            <span className="font-semibold text-sm">{explanation.tag}</span>
                             <Badge variant="outline" className="text-xs px-1 py-0">
-                              {tag.level}
+                              {explanation.level}
                             </Badge>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge className={`text-xs px-2 py-0 ${tag.source === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
-                              {tag.source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
-                              {tag.source.toUpperCase()}
+                            <Badge className={`text-xs px-2 py-0 ${explanation.source === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
+                              {explanation.source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
+                              {explanation.source.toUpperCase()}
                             </Badge>
                             <div className="text-xs font-medium text-gray-600">
-                              {Math.round(tag.confidence * 100)}%
+                              {Math.round(explanation.confidence * 100)}%
                             </div>
                           </div>
                         </div>
@@ -456,25 +489,66 @@ export function EnhancedConfirmTagsModal({
                         <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
                           <div
                             className="bg-indigo-600 h-1.5 rounded-full"
-                            style={{ width: `${tag.confidence * 100}%` }}
+                            style={{ width: `${explanation.confidence * 100}%` }}
                           ></div>
                         </div>
 
                         {/* Reasoning */}
                         <div className="text-xs leading-normal text-gray-700 bg-white/70 rounded p-2 border max-h-20 overflow-y-auto">
-                          {tag.reasoning}
+                          {explanation.reasoning}
                         </div>
+
+                        {/* SHAP Explainability for AI predictions */}
+                        {explanation.source === 'ai' && explanation.shap_data && (
+                            <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+                              <div className="text-xs font-semibold text-blue-800 mb-1 flex items-center">
+                                <Brain className="w-3 h-3 mr-1" />
+                                SHAP Feature Importance
+                              </div>
+                              <div className="space-y-1">
+                                {/* Supporting Evidence */}
+                                {explanation.shap_data.supporting?.length > 0 && (
+                                  <div>
+                                    <div className="text-xs font-medium text-green-700">Supporting:</div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {explanation.shap_data.supporting.map((item: any, idx: number) => (
+                                        <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-800 border border-green-300">
+                                          <span className="font-mono mr-1">{item.token?.trim() || item}</span>
+                                          <span className="text-green-600 font-semibold">{item.impact ? Math.round(item.impact * 100) + '%' : ''}</span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Opposing Evidence */}
+                                {explanation.shap_data.opposing?.length > 0 && (
+                                  <div>
+                                    <div className="text-xs font-medium text-red-700">Opposing:</div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {explanation.shap_data.opposing.map((item: any, idx: number) => (
+                                        <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-800 border border-red-300">
+                                          <span className="font-mono mr-1">{item.token?.trim() || item}</span>
+                                          <span className="text-red-600 font-semibold">{item.impact ? Math.round(item.impact * 100) + '%' : ''}</span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                        )}
                       </div>
-                    )
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-gray-500 flex-1 flex flex-col justify-center">
-                  <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p className="text-base font-medium">No explanations available</p>
-                  <p className="text-sm">Explanations will appear here when provided by the AI models</p>
-                </div>
-              )}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-gray-500 flex-1 flex flex-col justify-center">
+                    <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p className="text-base font-medium">No explanations available</p>
+                    <p className="text-sm">Explanations will appear here when provided by the AI models</p>
+                  </div>
+                );
+              })()}
             </TabsContent>
 
             {/* Document Tab */}
