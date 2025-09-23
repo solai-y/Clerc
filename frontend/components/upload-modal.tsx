@@ -221,13 +221,40 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       // Extract text from file
       const documentText = await extractTextFromFile(file)
       
+      // Get current confidence thresholds from localStorage or use defaults
+      let thresholds = { primary: 0.90, secondary: 0.85, tertiary: 0.80 };
+      try {
+        const saved = localStorage.getItem('confidence_thresholds');
+        if (saved) {
+          const savedThresholds = JSON.parse(saved);
+          thresholds = { ...thresholds, ...savedThresholds };
+        }
+      } catch (error) {
+        console.warn('Failed to load saved thresholds:', error);
+      }
+
+      console.log("📊 Using confidence thresholds:", thresholds);
+
       // Call prediction service with confidence thresholds
-      const predictionResponse = await predictTags(documentText, {
-        primary: 0.90,
-        secondary: 0.85,
-        tertiary: 0.80
-      })
+      const predictionResponse = await predictTags(documentText, thresholds)
       console.log("🤖 Prediction service response:", predictionResponse)
+      console.log("🔍 Service calls:", predictionResponse.service_calls)
+      console.log("📊 Confidence analysis:", predictionResponse.confidence_analysis)
+
+      // Debug: Log each level prediction in detail
+      if (predictionResponse.prediction) {
+        for (const level of ['primary', 'secondary', 'tertiary']) {
+          const levelPred = predictionResponse.prediction[level]
+          console.log(`🔍 ${level} prediction:`, levelPred)
+          if (levelPred) {
+            console.log(`  - pred: ${levelPred.pred}`)
+            console.log(`  - confidence: ${levelPred.confidence}`)
+            console.log(`  - source: ${levelPred.source}`)
+            console.log(`  - ai_prediction:`, levelPred.ai_prediction)
+            console.log(`  - llm_prediction:`, levelPred.llm_prediction)
+          }
+        }
+      }
 
       // Extract tags from prediction response
       const extractedTags: PredictTag[] = []
@@ -238,23 +265,26 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       if (predictionResponse.prediction) {
         for (const level of ['primary', 'secondary', 'tertiary']) {
           const levelPred = predictionResponse.prediction[level]
-          if (levelPred && !processedTags.has(levelPred.pred)) {
-            processedTags.add(levelPred.pred)
-            extractedTags.push({
-              tag: levelPred.pred,
-              score: levelPred.confidence
-            })
-            
-            // Store explanation data for each level (including duplicates for hierarchical context)
-            if (levelPred.reasoning) {
-              explanations.push({
-                level: level,
+          if (levelPred && levelPred.pred) {
+            // Only add to extractedTags if it's a unique tag (for the UI display)
+            if (!processedTags.has(levelPred.pred)) {
+              processedTags.add(levelPred.pred)
+              extractedTags.push({
                 tag: levelPred.pred,
-                confidence: levelPred.confidence,
-                reasoning: levelPred.reasoning,
-                source: levelPred.source
+                score: levelPred.confidence
               })
             }
+
+            // Always store explanation data for each level - this ensures we capture both AI and LLM predictions
+            const explanation = {
+              level: level,
+              tag: levelPred.pred,
+              confidence: levelPred.confidence,
+              reasoning: levelPred.reasoning || `${levelPred.source?.toUpperCase() || 'AI'} prediction for ${level} level`,
+              source: levelPred.source || 'ai'
+            }
+            console.log(`📋 Adding explanation for ${level}:`, explanation)
+            explanations.push(explanation)
           }
         }
       }

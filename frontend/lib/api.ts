@@ -217,16 +217,16 @@ class APIClient {
   // -------- Prediction Service Configuration Methods --------
   async updateConfidenceThresholds(thresholds: {
     primary?: number;
-    secondary?: number; 
+    secondary?: number;
     tertiary?: number;
   }): Promise<{ success: boolean; message: string }> {
-    return this.fetchWithErrorHandling<{ success: boolean; message: string }>(
-      apiUrl("/prediction/config/thresholds"),
-      {
-        method: "PUT",
-        body: JSON.stringify({ thresholds }),
-      }
-    );
+    // For now, store in localStorage since backend doesn't support updating thresholds
+    try {
+      localStorage.setItem('confidence_thresholds', JSON.stringify(thresholds));
+      return { success: true, message: "Thresholds saved locally" };
+    } catch (error) {
+      throw new Error("Failed to save thresholds locally");
+    }
   }
 
   async getConfidenceThresholds(): Promise<{
@@ -234,11 +234,14 @@ class APIClient {
     secondary: number;
     tertiary: number;
   }> {
-    return this.fetchWithErrorHandling<{
-      primary: number;
-      secondary: number;
-      tertiary: number;
-    }>(apiUrl("/prediction/config/thresholds"));
+    const config = await this.fetchWithErrorHandling<{
+      default_thresholds: {
+        primary: number;
+        secondary: number;
+        tertiary: number;
+      };
+    }>(apiUrl("/prediction/config"));
+    return config.default_thresholds;
   }
 }
 
