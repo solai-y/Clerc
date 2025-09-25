@@ -11,11 +11,15 @@ from fastapi.responses import JSONResponse
 from config import Config
 from models import (
     PredictionRequest, FullPredictionResponse, HealthResponse, ConfigResponse,
-    ServiceCalls, ServiceCallInfo, ConfidenceAnalysis
+    ServiceCalls, ServiceCallInfo, ConfidenceAnalysis, UpdateThresholdsRequest,
+    ThresholdConfigResponse, ThresholdHistoryResponse, ThresholdHistoryItem,
+    TextExtractionRequest, TextExtractionResponse
 )
 from services.ai_client import AIServiceClient
 from services.llm_client import LLMServiceClient
 from services.aggregator import ResponseAggregator
+from services.database import DatabaseService
+from services.text_extraction import TextExtractionService
 from utils.confidence import ConfidenceEvaluator
 
 # Configure logging
@@ -28,26 +32,38 @@ logger = logging.getLogger(__name__)
 # Global service clients
 ai_client = None
 llm_client = None
+db_service = None
+text_extraction_service = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global ai_client, llm_client
+    global ai_client, llm_client, db_service, text_extraction_service
     
     # Startup
     logger.info("Starting Prediction Service Orchestrator...")
     try:
+        # Initialize database service first
+        db_service = DatabaseService()
+        Config.set_database_service(db_service)
+        logger.info("Database service initialized successfully")
+        
+        # Initialize other service clients
         ai_client = AIServiceClient()
         llm_client = LLMServiceClient()
-        logger.info("Service clients initialized successfully")
+        text_extraction_service = TextExtractionService()
+        logger.info("All service clients initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize service clients: {str(e)}")
-        raise
+        # Don't raise - allow service to start with fallback configuration
+        logger.warning("Service will start with fallback configuration")
     
     yield
     
     # Shutdown
     logger.info("Shutting down Prediction Service Orchestrator...")
+    if text_extraction_service:
+        await text_extraction_service.close()
 
 # Create FastAPI app
 app = FastAPI(
@@ -264,6 +280,197 @@ async def classify_document(request: PredictionRequest) -> FullPredictionRespons
             status_code=500,
             detail=f"Classification failed: {str(e)}"
         )
+
+# Text Extraction Endpoints
+
+@app.post("/extract/pdf")
+async def extract_pdf_text(request: TextExtractionRequest):
+    """
+    Extract text from PDF at given URL
+    
+    Args:
+        request: Text extraction request with PDF URL
+        
+    Returns:
+        APIResponse with extracted text and metadata
+        
+    Raises:
+        HTTPException: If text extraction fails
+    """
+    global text_extraction_service
+    
+    if not text_extraction_service:
+        raise HTTPException(
+            status_code=503,
+            detail="Text extraction service not available"
+        )
+    
+    try:
+        logger.info(f"Extracting text from PDF: {request.pdf_url}")
+        
+        # Extract text from PDF
+        extracted_text = await text_extraction_service.extract_text_from_url(request.pdf_url)
+        
+        # Count pages (approximate from page markers)
+        page_count = extracted_text.count("[Page ") if "[Page " in extracted_text else 1
+        character_count = len(extracted_text)
+        
+        logger.info(f"Successfully extracted {character_count} characters from {page_count} pages")
+        
+        return {
+            "status": "success",
+            "message": f"Successfully extracted text from PDF ({page_count} pages, {character_count} characters)",
+            "data": {
+                "text": extracted_text,
+                "page_count": page_count,
+                "character_count": character_count
+            },
+            "timestamp": str(time.time())
+        }
+        
+    except Exception as e:
+        logger.error(f"PDF text extraction failed: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"PDF text extraction failed: {str(e)}"
+        )
+
+# Configuration Management Endpoints
+
+@app.get("/config/thresholds")
+async def get_confidence_thresholds():
+    """Get current confidence thresholds"""
+    global db_service
+    
+    if not db_service:
+        # Return fallback thresholds
+        fallback_thresholds = Config.get_default_thresholds()
+        return {
+            "status": "success",
+            "message": "Retrieved confidence thresholds (fallback)",
+            "data": {
+                "primary": fallback_thresholds["primary"],
+                "secondary": fallback_thresholds["secondary"],
+                "tertiary": fallback_thresholds["tertiary"],
+                "updated_at": None,
+                "updated_by": "fallback"
+            },
+            "timestamp": str(time.time())
+        }
+    
+    try:
+        thresholds, error = db_service.get_confidence_thresholds()
+        if error:
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve thresholds: {error}")
+        
+        return {
+            "status": "success",
+            "message": "Retrieved confidence thresholds from database",
+            "data": {
+                "primary": thresholds["primary"],
+                "secondary": thresholds["secondary"],
+                "tertiary": thresholds["tertiary"],
+                "updated_at": None,  # Could be enhanced to return actual update time
+                "updated_by": None   # Could be enhanced to return actual updater
+            },
+            "timestamp": str(time.time())
+        }
+    except Exception as e:
+        logger.error(f"Error getting thresholds: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve thresholds: {str(e)}")
+
+@app.put("/config/thresholds")
+async def update_confidence_thresholds(request: UpdateThresholdsRequest):
+    """Update confidence thresholds"""
+    global db_service
+    
+    if not db_service:
+        raise HTTPException(
+            status_code=503, 
+            detail="Database service not available. Cannot update thresholds."
+        )
+    
+    try:
+        # Validate that at least one threshold is provided
+        if request.primary is None and request.secondary is None and request.tertiary is None:
+            raise HTTPException(
+                status_code=400,
+                detail="At least one threshold must be provided"
+            )
+        
+        updated_thresholds, error = db_service.update_confidence_thresholds(
+            primary=request.primary,
+            secondary=request.secondary,
+            tertiary=request.tertiary,
+            updated_by=request.updated_by
+        )
+        
+        if error:
+            raise HTTPException(status_code=400, detail=error)
+        
+        logger.info(f"Confidence thresholds updated: {updated_thresholds}")
+        return {
+            "status": "success",
+            "message": "Confidence thresholds updated successfully",
+            "data": {
+                "primary": updated_thresholds["primary"],
+                "secondary": updated_thresholds["secondary"],
+                "tertiary": updated_thresholds["tertiary"],
+                "updated_at": None,  # Could be enhanced
+                "updated_by": request.updated_by
+            },
+            "timestamp": str(time.time())
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating thresholds: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update thresholds: {str(e)}")
+
+@app.get("/config/thresholds/history", response_model=ThresholdHistoryResponse)
+async def get_threshold_history(limit: int = 10):
+    """Get threshold change history"""
+    global db_service
+    
+    if not db_service:
+        raise HTTPException(
+            status_code=503,
+            detail="Database service not available. Cannot retrieve history."
+        )
+    
+    try:
+        if limit < 1 or limit > 100:
+            raise HTTPException(
+                status_code=400,
+                detail="Limit must be between 1 and 100"
+            )
+        
+        history, error = db_service.get_threshold_history(limit=limit)
+        if error:
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve history: {error}")
+        
+        history_items = [
+            ThresholdHistoryItem(
+                primary_threshold=item["primary_threshold"],
+                secondary_threshold=item["secondary_threshold"],
+                tertiary_threshold=item["tertiary_threshold"],
+                updated_at=item["updated_at"],
+                updated_by=item["updated_by"]
+            )
+            for item in history
+        ]
+        
+        return ThresholdHistoryResponse(
+            history=history_items,
+            total_count=len(history_items)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting threshold history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve history: {str(e)}")
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

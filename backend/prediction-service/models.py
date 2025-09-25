@@ -70,3 +70,43 @@ class ConfigResponse(BaseModel):
     default_thresholds: Dict[str, float] = Field(..., description="Default confidence thresholds")
     service_urls: Dict[str, str] = Field(..., description="Downstream service URLs")
     timeouts: Dict[str, int] = Field(..., description="Service timeouts")
+
+class UpdateThresholdsRequest(BaseModel):
+    """Request model for updating confidence thresholds"""
+    primary: Optional[float] = Field(None, ge=0.0, le=1.0, description="Primary level confidence threshold")
+    secondary: Optional[float] = Field(None, ge=0.0, le=1.0, description="Secondary level confidence threshold")
+    tertiary: Optional[float] = Field(None, ge=0.0, le=1.0, description="Tertiary level confidence threshold")
+    updated_by: Optional[str] = Field("api", description="User or system making the update")
+
+class ThresholdConfigResponse(BaseModel):
+    """Response model for threshold configuration"""
+    primary: float = Field(..., description="Primary level confidence threshold")
+    secondary: float = Field(..., description="Secondary level confidence threshold")
+    tertiary: float = Field(..., description="Tertiary level confidence threshold")
+    updated_at: Optional[str] = Field(None, description="Last update timestamp")
+    updated_by: Optional[str] = Field(None, description="User who made the last update")
+
+class ThresholdHistoryItem(BaseModel):
+    """Individual threshold history item"""
+    primary_threshold: float
+    secondary_threshold: float
+    tertiary_threshold: float
+    updated_at: str
+    updated_by: str
+
+class ThresholdHistoryResponse(BaseModel):
+    """Response model for threshold history"""
+    history: List[ThresholdHistoryItem] = Field(..., description="List of threshold changes")
+    total_count: int = Field(..., description="Total number of history records")
+
+# Text Extraction Models
+
+class TextExtractionRequest(BaseModel):
+    """Request model for PDF text extraction"""
+    pdf_url: str = Field(..., description="URL to PDF file (e.g., S3 URL)")
+
+class TextExtractionResponse(BaseModel):
+    """Response model for text extraction"""
+    text: str = Field(..., description="Extracted text content")
+    page_count: int = Field(..., description="Number of pages processed")
+    character_count: int = Field(..., description="Number of characters extracted")

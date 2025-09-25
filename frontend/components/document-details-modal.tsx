@@ -49,6 +49,8 @@ interface Document {
     tag: string
     score: number
     isConfirmed: boolean
+    source?: string
+    hierarchy_level?: string
   }>
   userAddedTags: string[]
 }
@@ -67,12 +69,11 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
     reasoning: string;
     source_service: string;
     created_at: string;
-    service_response?: {
-      shap_explainability?: {
-        supporting_tokens?: Array<{ token: string; impact: number }>;
-        opposing_tokens?: Array<{ token: string; impact: number }>;
-      };
+    shap_data?: {
+      supporting?: Array<{ token: string; impact: number }>;
+      opposing?: Array<{ token: string; impact: number }>;
     };
+    service_response?: any;
   }>>([])
   const [loadingExplanations, setLoadingExplanations] = useState(false)
   const [activeTab, setActiveTab] = useState("tags")
@@ -83,74 +84,23 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
       try {
         console.log("🔍 Fetching explanations for document:", document.id)
 
-        // TEMPORARY: For testing SHAP display, use hardcoded data for document 1374
-        if (document.id === "1374") {
-          console.log("🧪 Using test SHAP data for document 1374")
-          const testExplanations = [
-            {
-              explanation_id: 24,
-              classification_level: "primary",
-              predicted_tag: "News",
-              confidence: 0.85,
-              reasoning: "This document contains news-related content about digital regulations",
-              source_service: "ai",
-              created_at: "2025-09-23T04:27:48.348857+00:00",
-              service_response: {
-                shap_explainability: {
-                  supporting_tokens: [
-                    { token: "EU", impact: 0.15 },
-                    { token: "regulation", impact: 0.12 }
-                  ],
-                  opposing_tokens: [
-                    { token: "technology", impact: -0.05 }
-                  ]
-                }
-              }
-            },
-            {
-              explanation_id: 25,
-              classification_level: "secondary",
-              predicted_tag: "Industry",
-              confidence: 0.75,
-              reasoning: "Content discusses industry implications",
-              source_service: "ai",
-              created_at: "2025-09-23T04:27:48.348857+00:00",
-              service_response: {
-                shap_explainability: {
-                  supporting_tokens: [
-                    { token: "digital", impact: 0.08 },
-                    { token: "laws", impact: 0.06 }
-                  ],
-                  opposing_tokens: [
-                    { token: "Brussels", impact: -0.03 }
-                  ]
-                }
-              }
-            },
-            {
-              explanation_id: 26,
-              classification_level: "tertiary",
-              predicted_tag: "Regulation",
-              confidence: 0.9,
-              reasoning: "Document discusses regulatory frameworks",
-              source_service: "llm",
-              created_at: "2025-09-23T04:27:48.348857+00:00",
-              service_response: {}
-            }
-          ]
-          setExplanations(testExplanations)
-          setLoadingExplanations(false)
-          return
-        }
+        // Fetch explanations from API
 
         const explanationData = await apiClient.getDocumentExplanations(parseInt(document.id))
         console.log("📊 Explanation data received:", explanationData)
         console.log("📊 Explanation data length:", explanationData?.length)
         console.log("📊 First explanation:", explanationData?.[0])
-        if (explanationData?.[0]?.service_response?.shap_explainability) {
-          console.log("🧠 SHAP data found:", explanationData[0].service_response.shap_explainability)
+
+        // Transform API data to match our expected structure
+        const transformedExplanations = (explanationData || []).map((exp: any) => ({
+          ...exp,
+          shap_data: exp.service_response?.shap_data || undefined
+        }))
+
+        if (transformedExplanations?.[0]?.shap_data) {
+          console.log("🧠 SHAP data found:", transformedExplanations[0].shap_data)
         }
-        setExplanations(explanationData || [])
+        setExplanations(transformedExplanations)
       } catch (error) {
         console.error("❌ Error fetching explanations:", error)
         console.error("❌ Error details:", {
@@ -159,19 +109,8 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
           documentId: document.id
         })
 
-        // Create mock explanations from document data as fallback
-        console.warn("⚠️ Using fallback explanations due to API error")
-        const mockExplanations = document.modelGeneratedTags?.map(tag => ({
-          explanation_id: Math.random(),
-          classification_level: tag.hierarchy_level || 'unknown',
-          predicted_tag: tag.tag,
-          confidence: tag.score,
-          reasoning: `${tag.source?.toUpperCase() || 'AI'} prediction with ${Math.round(tag.score * 100)}% confidence`,
-          source_service: tag.source || 'ai',
-          created_at: new Date().toISOString(),
-          service_response: null
-        })) || []
-        setExplanations(mockExplanations)
+        // Set empty explanations - no fallback or mock data
+        setExplanations([])
       } finally {
         setLoadingExplanations(false)
       }
@@ -236,24 +175,42 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
     }
   }
 
-  // Process tags for hierarchy display
-  // If we have explanations, use them to separate AI vs LLM tags
-  // Otherwise, show all model tags as a fallback
-  const aiTags = explanations.length > 0
-    ? document.modelGeneratedTags.filter(tag =>
-        tag.tag && explanations.some(exp => exp.predicted_tag === tag.tag && exp.source_service === 'ai')
-      )
-    : document.modelGeneratedTags // Fallback: show all as "AI" if no explanations
+  // Process tags from explanations data with fallback to document.modelGeneratedTags
+  const enhancedTags = explanations.length > 0
+    ? explanations.map(exp => ({
+        tag: exp.predicted_tag,
+        confidence: exp.confidence,
+        source: exp.source_service as 'ai' | 'llm',
+        level: exp.classification_level as 'primary' | 'secondary' | 'tertiary',
+        reasoning: exp.reasoning,
+        isConfirmed: document.modelGeneratedTags?.some(modelTag =>
+          modelTag.tag === exp.predicted_tag && modelTag.isConfirmed
+        ) || false,
+        explanation: exp
+      }))
+    : // No explanations available - return empty array instead of using fallback data
+      []
 
-  const llmTags = explanations.length > 0
-    ? document.modelGeneratedTags.filter(tag =>
-        tag.tag && explanations.some(exp => exp.predicted_tag === tag.tag && exp.source_service === 'llm')
-      )
-    : [] // Only show LLM tags if we have explanation data
+  const aiTags = enhancedTags.filter(tag => tag.source === 'ai')
+  const llmTags = enhancedTags.filter(tag => tag.source === 'llm')
 
-  const primaryTag = explanations.find(exp => exp.classification_level === 'primary')
-  const secondaryTag = explanations.find(exp => exp.classification_level === 'secondary')
-  const tertiaryTag = explanations.find(exp => exp.classification_level === 'tertiary')
+  const primaryTag = enhancedTags.find(tag => tag.level === 'primary')
+  const secondaryTag = enhancedTags.find(tag => tag.level === 'secondary')
+  const tertiaryTag = enhancedTags.find(tag => tag.level === 'tertiary')
+
+  // Filter explanations to show only relevant ones (same as enhanced confirm modal)
+  const filteredExplanations = explanations.filter(exp => {
+    const hasLLMForSameLevel = explanations.some(other =>
+      other.predicted_tag === exp.predicted_tag &&
+      other.classification_level === exp.classification_level &&
+      other.source_service === 'llm'
+    );
+
+    if (hasLLMForSameLevel) {
+      return exp.source_service === 'llm';
+    }
+    return exp.source_service === 'ai';
+  });
 
   // Debug info
   console.log("🏷️ Document data:", {
@@ -261,8 +218,11 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
     modelGeneratedTags: document.modelGeneratedTags,
     userAddedTags: document.userAddedTags,
     explanationsCount: explanations.length,
+    enhancedTagsCount: enhancedTags.length,
     aiTagsCount: aiTags.length,
-    llmTagsCount: llmTags.length
+    llmTagsCount: llmTags.length,
+    usingFallback: explanations.length === 0,
+    enhancedTags: enhancedTags
   })
 
   return (
@@ -298,6 +258,27 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
           <div className="flex-1 overflow-hidden">
             {/* Tags Tab */}
             <TabsContent value="tags" className="h-full overflow-y-auto space-y-4 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
+              {/* Show error when explanations are not available */}
+              {explanations.length === 0 && !loadingExplanations && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm text-red-800">
+                      <div className="font-semibold mb-1">Explanation Data Unavailable</div>
+                      <div className="space-y-1">
+                        <p>• Document explanations could not be loaded from the API</p>
+                        <p>• Tag source information (AI vs LLM) is not available</p>
+                        <p>• Classification hierarchy levels cannot be determined</p>
+                        <p>• SHAP explainability data is missing</p>
+                      </div>
+                      <div className="mt-2 text-xs text-red-600">
+                        Check server logs or contact system administrator to resolve explanation service issues.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* AI Generated Tags */}
                 <Card className="border-l-4 border-l-blue-500">
@@ -325,17 +306,12 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <div className="font-medium">{tagData.tag}</div>
-                                {tagData.hierarchy_level && (
-                                  <Badge variant="outline" className="text-xs px-1 py-0">
-                                    {tagData.hierarchy_level}
-                                  </Badge>
-                                )}
+                                <Badge variant="outline" className="text-xs px-1 py-0">
+                                  {tagData.level}
+                                </Badge>
                               </div>
                               <div className="text-sm text-gray-500">
-                                Confidence: {Math.round(tagData.score * 100)}%
-                                {tagData.source && (
-                                  <span className="ml-2">• Source: {tagData.source.toUpperCase()}</span>
-                                )}
+                                Confidence: {Math.round(tagData.confidence * 100)}%
                               </div>
                             </div>
                           </div>
@@ -389,17 +365,12 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <div className="font-medium">{tagData.tag}</div>
-                                {tagData.hierarchy_level && (
-                                  <Badge variant="outline" className="text-xs px-1 py-0">
-                                    {tagData.hierarchy_level}
-                                  </Badge>
-                                )}
+                                <Badge variant="outline" className="text-xs px-1 py-0">
+                                  {tagData.level}
+                                </Badge>
                               </div>
                               <div className="text-sm text-gray-500">
-                                Confidence: {Math.round(tagData.score * 100)}%
-                                {tagData.source && (
-                                  <span className="ml-2">• Source: {tagData.source.toUpperCase()}</span>
-                                )}
+                                Confidence: {Math.round(tagData.confidence * 100)}%
                               </div>
                             </div>
                           </div>
@@ -474,14 +445,14 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                           1
                         </div>
                         <div className="flex-1">
-                          <div className="font-semibold text-lg">{primaryTag.predicted_tag}</div>
+                          <div className="font-semibold text-lg">{primaryTag.tag}</div>
                           <div className="text-sm text-gray-600">
                             Primary Classification • {Math.round(primaryTag.confidence * 100)}% confidence
                           </div>
                         </div>
-                        <Badge className={primaryTag.source_service === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
-                          {primaryTag.source_service === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
-                          {primaryTag.source_service.toUpperCase()}
+                        <Badge className={primaryTag.source === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
+                          {primaryTag.source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
+                          {primaryTag.source.toUpperCase()}
                         </Badge>
                       </div>
                     )}
@@ -500,14 +471,14 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                           2
                         </div>
                         <div className="flex-1">
-                          <div className="font-semibold text-lg">{secondaryTag.predicted_tag}</div>
+                          <div className="font-semibold text-lg">{secondaryTag.tag}</div>
                           <div className="text-sm text-gray-600">
                             Secondary Classification • {Math.round(secondaryTag.confidence * 100)}% confidence
                           </div>
                         </div>
-                        <Badge className={secondaryTag.source_service === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
-                          {secondaryTag.source_service === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
-                          {secondaryTag.source_service.toUpperCase()}
+                        <Badge className={secondaryTag.source === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
+                          {secondaryTag.source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
+                          {secondaryTag.source.toUpperCase()}
                         </Badge>
                       </div>
                     )}
@@ -526,14 +497,14 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                           3
                         </div>
                         <div className="flex-1">
-                          <div className="font-semibold text-lg">{tertiaryTag.predicted_tag}</div>
+                          <div className="font-semibold text-lg">{tertiaryTag.tag}</div>
                           <div className="text-sm text-gray-600">
                             Tertiary Classification • {Math.round(tertiaryTag.confidence * 100)}% confidence
                           </div>
                         </div>
-                        <Badge className={tertiaryTag.source_service === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
-                          {tertiaryTag.source_service === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
-                          {tertiaryTag.source_service.toUpperCase()}
+                        <Badge className={tertiaryTag.source === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
+                          {tertiaryTag.source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
+                          {tertiaryTag.source.toUpperCase()}
                         </Badge>
                       </div>
                     )}
@@ -560,9 +531,9 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                     <p className="text-sm">Please wait while we fetch the reasoning data</p>
                   </div>
                 </div>
-              ) : explanations.length > 0 ? (
+              ) : filteredExplanations.length > 0 ? (
                 <div className="space-y-2 overflow-y-auto flex-1">
-                  {explanations.map((explanation, index) => (
+                  {filteredExplanations.map((explanation, index) => (
                     <div key={`explanation-${index}`} className="border border-indigo-200 rounded-lg p-3 bg-gradient-to-r from-indigo-50 to-purple-50">
                       {/* Header */}
                       <div className="flex items-center justify-between mb-2">
@@ -598,7 +569,7 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                       </div>
 
                       {/* SHAP Explainability for AI predictions */}
-                      {explanation.source_service === 'ai' && explanation.service_response?.shap_explainability && (
+                      {explanation.source_service === 'ai' && explanation.shap_data && (
                         <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
                           <div className="text-xs font-semibold text-blue-800 mb-1 flex items-center">
                             <Brain className="w-3 h-3 mr-1" />
@@ -606,14 +577,14 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                           </div>
                           <div className="space-y-1">
                             {/* Supporting Evidence */}
-                            {explanation.service_response.shap_explainability.supporting_tokens?.length > 0 && (
+                            {explanation.shap_data.supporting?.length > 0 && (
                               <div>
                                 <div className="text-xs font-medium text-green-700">Supporting:</div>
                                 <div className="flex flex-wrap gap-1">
-                                  {explanation.service_response.shap_explainability.supporting_tokens.map((item: any, idx: number) => (
+                                  {explanation.shap_data.supporting.map((item: any, idx: number) => (
                                     <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-800 border border-green-300">
-                                      <span className="font-mono mr-1">{item.token.trim()}</span>
-                                      <span className="text-green-600 font-semibold">{Math.round(item.impact * 100)}%</span>
+                                      <span className="font-mono mr-1">{item.token?.trim() || item}</span>
+                                      <span className="text-green-600 font-semibold">{item.impact ? Math.round(item.impact * 100) + '%' : ''}</span>
                                     </span>
                                   ))}
                                 </div>
@@ -621,14 +592,14 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                             )}
 
                             {/* Opposing Evidence */}
-                            {explanation.service_response.shap_explainability.opposing_tokens?.length > 0 && (
+                            {explanation.shap_data.opposing?.length > 0 && (
                               <div>
                                 <div className="text-xs font-medium text-red-700">Opposing:</div>
                                 <div className="flex flex-wrap gap-1">
-                                  {explanation.service_response.shap_explainability.opposing_tokens.map((item: any, idx: number) => (
+                                  {explanation.shap_data.opposing.map((item: any, idx: number) => (
                                     <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-800 border border-red-300">
-                                      <span className="font-mono mr-1">{item.token.trim()}</span>
-                                      <span className="text-red-600 font-semibold">{Math.round(item.impact * 100)}%</span>
+                                      <span className="font-mono mr-1">{item.token?.trim() || item}</span>
+                                      <span className="text-red-600 font-semibold">{item.impact ? Math.round(item.impact * 100) + '%' : ''}</span>
                                     </span>
                                   ))}
                                 </div>
@@ -746,6 +717,62 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Classification Summary */}
+              <Card className="mt-4">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-purple-600" />
+                    Classification Summary
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="text-2xl font-bold text-blue-600">{aiTags.length}</div>
+                      <div className="text-sm text-gray-600">AI Generated</div>
+                    </div>
+                    <div className="text-center p-3 bg-purple-50 rounded-lg border border-purple-200">
+                      <div className="text-2xl font-bold text-purple-600">{llmTags.length}</div>
+                      <div className="text-sm text-gray-600">LLM Generated</div>
+                    </div>
+                    <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
+                      <div className="text-2xl font-bold text-green-600">{document.userAddedTags?.length || 0}</div>
+                      <div className="text-sm text-gray-600">User Added</div>
+                    </div>
+                    <div className="text-center p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="text-2xl font-bold text-gray-600">{enhancedTags.length + (document.userAddedTags?.length || 0)}</div>
+                      <div className="text-sm text-gray-600">Total Tags</div>
+                    </div>
+                  </div>
+                  {explanations.length > 0 && (
+                    <div className="mt-4 pt-4 border-t">
+                      <div className="text-sm font-medium text-gray-600 mb-2">Classification Confidence</div>
+                      <div className="space-y-2">
+                        {enhancedTags.map((tag, index) => (
+                          <div key={index} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{tag.tag}</span>
+                              <Badge variant="outline" className="text-xs px-1 py-0">
+                                {tag.level}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-20 bg-gray-200 rounded-full h-2">
+                                <div
+                                  className={`h-2 rounded-full ${tag.source === 'ai' ? 'bg-blue-600' : 'bg-purple-600'}`}
+                                  style={{ width: `${tag.confidence * 100}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-xs text-gray-500 w-8">{Math.round(tag.confidence * 100)}%</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
           </div>
         </Tabs>

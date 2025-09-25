@@ -220,12 +220,34 @@ class APIClient {
     secondary?: number;
     tertiary?: number;
   }): Promise<{ success: boolean; message: string }> {
-    // For now, store in localStorage since backend doesn't support updating thresholds
+    const updateData: any = { updated_by: "frontend_user" };
+    
+    if (thresholds.primary !== undefined) updateData.primary = thresholds.primary;
+    if (thresholds.secondary !== undefined) updateData.secondary = thresholds.secondary;
+    if (thresholds.tertiary !== undefined) updateData.tertiary = thresholds.tertiary;
+    
     try {
-      localStorage.setItem('confidence_thresholds', JSON.stringify(thresholds));
-      return { success: true, message: "Thresholds saved locally" };
+      const response = await this.fetchWithErrorHandling<{
+        primary: number;
+        secondary: number;
+        tertiary: number;
+        updated_by: string;
+      }>(apiUrl("/predict/config/thresholds"), {
+        method: "PUT",
+        body: JSON.stringify(updateData),
+      });
+      
+      return {
+        success: true,
+        message: `Confidence thresholds updated successfully. Primary: ${response.primary}, Secondary: ${response.secondary}, Tertiary: ${response.tertiary}`
+      };
     } catch (error) {
-      throw new Error("Failed to save thresholds locally");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      throw new Error(
+        `Failed to update confidence thresholds: ${errorMessage}. ` +
+        `Please check that the prediction service is running and the database is accessible. ` +
+        `If the issue persists, verify the /predict/config/thresholds endpoint is properly configured.`
+      );
     }
   }
 
@@ -234,14 +256,55 @@ class APIClient {
     secondary: number;
     tertiary: number;
   }> {
-    const config = await this.fetchWithErrorHandling<{
-      default_thresholds: {
+    try {
+      const response = await this.fetchWithErrorHandling<{
         primary: number;
         secondary: number;
         tertiary: number;
+        updated_at?: string;
+        updated_by?: string;
+      }>(apiUrl("/predict/config/thresholds"));
+      
+      return {
+        primary: response.primary,
+        secondary: response.secondary,
+        tertiary: response.tertiary
       };
-    }>(apiUrl("/prediction/config"));
-    return config.default_thresholds;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      throw new Error(
+        `Failed to retrieve confidence thresholds: ${errorMessage}. ` +
+        `Please check that the prediction service is running and the database is accessible. ` +
+        `If the issue persists, verify the /predict/config/thresholds endpoint is properly configured.`
+      );
+    }
+  }
+
+  // -------- PDF Text Extraction Methods --------
+  async extractTextFromPDF(pdfUrl: string): Promise<{
+    text: string;
+    page_count: number;
+    character_count: number;
+  }> {
+    try {
+      const response = await this.fetchWithErrorHandling<{
+        text: string;
+        page_count: number;
+        character_count: number;
+      }>(apiUrl("/predict/extract/pdf"), {
+        method: "POST",
+        body: JSON.stringify({ pdf_url: pdfUrl }),
+      });
+      
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      throw new Error(
+        `Failed to extract text from PDF: ${errorMessage}. ` +
+        `Please check that the prediction service is running and the PDF is accessible. ` +
+        `If the issue persists, verify the PDF is not encrypted or image-based.`
+      );
+    }
   }
 }
 
@@ -290,15 +353,15 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
 
   const sizeEstimate = processedDoc.raw_documents?.file_size
     ? formatFileSize(processedDoc.raw_documents.file_size)
-    : estimateFileSize(processedDoc.raw_documents?.document_type || "PDF");
+    : "Size unavailable";
 
   return {
     id: processedDoc.document_id.toString(),
-    name: processedDoc.raw_documents?.document_name || "Unknown Document",
-    uploadDate: processedDoc.raw_documents?.upload_date.split("T")[0] || "",
+    name: processedDoc.raw_documents?.document_name || "[Document name unavailable]",
+    uploadDate: processedDoc.raw_documents?.upload_date.split("T")[0] || "[Date unavailable]",
     tags,
     size: sizeEstimate,
-    type: processedDoc.raw_documents?.document_type || "PDF",
+    type: processedDoc.raw_documents?.document_type || "[Type unavailable]",
     link: processedDoc.raw_documents?.link || "",
     company: processedDoc.company, // Company is now in processed_documents
     companyName: processedDoc.raw_documents?.companies?.company_name || null,
@@ -317,17 +380,6 @@ function formatFileSize(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
-function estimateFileSize(documentType: string): string {
-  const estimates: { [key: string]: string } = {
-    PDF: `${(Math.random() * 4 + 1).toFixed(1)} MB`,
-    DOCX: `${(Math.random() * 2 + 0.5).toFixed(1)} MB`,
-    XLSX: `${(Math.random() * 5 + 2).toFixed(1)} MB`,
-    DOC: `${(Math.random() * 2 + 0.5).toFixed(1)} MB`,
-    XLS: `${(Math.random() * 5 + 2).toFixed(1)} MB`,
-    TXT: `${(Math.random() * 0.5 + 0.1).toFixed(1)} MB`,
-  };
-  return estimates[documentType.toUpperCase()] || `${(Math.random() * 3 + 1).toFixed(1)} MB`;
-}
 
 // Export singleton
 export const apiClient = new APIClient();

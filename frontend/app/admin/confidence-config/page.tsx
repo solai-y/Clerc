@@ -15,46 +15,43 @@ interface ThresholdConfig {
 }
 
 export default function ConfidenceConfigPage() {
-  const [thresholds, setThresholds] = useState<ThresholdConfig>({
-    primary: 0.90,
-    secondary: 0.85,
-    tertiary: 0.80
-  });
+  const [thresholds, setThresholds] = useState<ThresholdConfig | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingInitial, setLoadingInitial] = useState(true);
   const { toast } = useToast();
 
   const handleThresholdChange = (level: keyof ThresholdConfig, value: string) => {
     const numValue = parseFloat(value);
-    if (!isNaN(numValue) && numValue >= 0 && numValue <= 1) {
-      setThresholds(prev => ({
+    if (!isNaN(numValue) && numValue >= 0 && numValue <= 1 && thresholds) {
+      setThresholds(prev => prev ? ({
         ...prev,
         [level]: numValue
-      }));
+      }) : null);
     }
   };
 
   const updateConfig = async () => {
-    setLoading(true);
-    try {
-      // Try to update via API first
-      try {
-        await apiClient.updateConfidenceThresholds(thresholds);
-        toast({
-          title: "Configuration Updated",
-          description: "Confidence thresholds have been saved to the backend.",
-        });
-      } catch (apiError) {
-        // Fallback to localStorage if API not available
-        localStorage.setItem('confidence_thresholds', JSON.stringify(thresholds));
-        toast({
-          title: "Configuration Updated (Local)",
-          description: "Thresholds saved locally. Backend API not available.",
-        });
-      }
-    } catch (error) {
+    if (!thresholds) {
       toast({
         title: "Error",
-        description: "Failed to update configuration.",
+        description: "No configuration loaded to save.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await apiClient.updateConfidenceThresholds(thresholds);
+      toast({
+        title: "Configuration Updated",
+        description: "Confidence thresholds have been saved to the database.",
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      toast({
+        title: "Failed to Update Configuration",
+        description: `Database update failed: ${errorMessage}`,
         variant: "destructive",
       });
     } finally {
@@ -64,38 +61,91 @@ export default function ConfidenceConfigPage() {
 
   const resetToDefaults = () => {
     setThresholds({
-      primary: 0.90,
-      secondary: 0.85,
-      tertiary: 0.80
+      primary: 0.85,
+      secondary: 0.80,
+      tertiary: 0.75
     });
-    localStorage.removeItem('confidence_thresholds');
     toast({
-      title: "Reset Complete",
-      description: "Thresholds reset to default values.",
+      title: "Values Reset",
+      description: "Thresholds reset to default values. Click 'Save Configuration' to persist to database.",
     });
   };
 
   useEffect(() => {
-    // Load config on mount - try API first, fallback to localStorage
+    // Load config on mount - only from database
     const loadConfig = async () => {
       try {
         const apiThresholds = await apiClient.getConfidenceThresholds();
         setThresholds(apiThresholds);
-      } catch (apiError) {
-        // Fallback to localStorage
-        const saved = localStorage.getItem('confidence_thresholds');
-        if (saved) {
-          try {
-            setThresholds(JSON.parse(saved));
-          } catch (error) {
-            console.error('Failed to parse saved thresholds:', error);
-          }
-        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+        console.error('Failed to load confidence thresholds from database:', error);
+        toast({
+          title: "Failed to Load Configuration",
+          description: `Unable to load thresholds from database: ${errorMessage}`,
+          variant: "destructive",
+        });
+        // Leave thresholds as null to show that no data was loaded
+        setThresholds(null);
+      } finally {
+        setLoadingInitial(false);
       }
     };
     
     loadConfig();
-  }, []);
+  }, [toast]);
+
+  if (loadingInitial) {
+    return (
+      <div className="container mx-auto p-6 max-w-2xl">
+        <Card>
+          <CardContent className="p-8 text-center">
+            <div className="animate-pulse">
+              <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto mb-4"></div>
+              <div className="h-4 bg-gray-200 rounded w-1/2 mx-auto"></div>
+            </div>
+            <p className="mt-4 text-gray-600">Loading configuration from database...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (thresholds === null) {
+    return (
+      <div className="container mx-auto p-6 max-w-2xl">
+        <Card>
+          <CardHeader>
+            <CardTitle>Confidence Threshold Configuration</CardTitle>
+            <CardDescription>
+              Configure when the orchestrator should fall back to LLM service based on AI confidence scores.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="p-6 border border-red-200 bg-red-50 rounded-lg text-center">
+              <p className="text-red-800 font-semibold mb-2">Configuration Not Available</p>
+              <p className="text-red-700 text-sm mb-4">
+                Unable to load confidence thresholds from the database. Please check:
+              </p>
+              <ul className="text-red-700 text-sm text-left max-w-md mx-auto space-y-1">
+                <li>• Prediction service is running</li>
+                <li>• Database connection is working</li>
+                <li>• Supabase credentials are configured</li>
+                <li>• Confidence thresholds table exists</li>
+              </ul>
+              <Button 
+                className="mt-4"
+                onClick={() => window.location.reload()}
+                variant="outline"
+              >
+                Retry Loading
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-6 max-w-2xl">
@@ -108,6 +158,11 @@ export default function ConfidenceConfigPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+            <p className="text-green-800 text-sm">
+              ✅ Configuration loaded from database successfully
+            </p>
+          </div>
           <div className="grid gap-4">
             <div className="space-y-2">
               <Label htmlFor="primary">Primary Classification Threshold</Label>
@@ -185,10 +240,11 @@ export default function ConfidenceConfigPage() {
             </div>
           </div>
 
-          <div className="p-4 border border-amber-200 bg-amber-50 rounded-lg">
-            <p className="text-sm text-amber-800">
-              <strong>Note:</strong> This configuration is stored locally. For production use, 
-              these values should be sent to the backend API and stored in the prediction service configuration.
+          <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <strong>Database Storage:</strong> Configuration is stored in the Supabase database 
+              and persisted across all prediction service instances. Changes take effect immediately 
+              for all new classification requests.
             </p>
           </div>
         </CardContent>

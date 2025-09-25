@@ -152,39 +152,20 @@ export default function HomePage() {
       
     } catch (err) {
       console.error('❌ Error updating document tags:', err)
-      // If the processed document doesn't exist, try to create it first (fallback)
-      if (err instanceof Error && err.message.includes('No processed document found')) {
-        console.log('🔄 Processed document not found, creating it first...')
-        try {
-          // Create processed document entry as fallback
-          const aiTags = confirmTagsDocument?.modelGeneratedTags.map(tag => ({
-            tag: tag.tag,
-            score: tag.score
-          })) || []
-          
-          await apiClient.createProcessedDocument({
-            document_id: documentIdNum,
-            suggested_tags: aiTags,
-            threshold_pct: 60
-          })
-          
-          // Now update with confirmed tags
-          await apiClient.updateDocumentTags(documentIdNum, {
-            confirmed_tags: confirmedTags,
-            user_added_labels: userAddedTags
-          })
-          
-          console.log('✅ Created processed document and updated tags (fallback)')
-          await refetch()
-          setConfirmTagsDocument(null)
-          
-        } catch (fallbackError) {
-          console.error('❌ Fallback also failed:', fallbackError)
-          throw fallbackError
-        }
-      } else {
-        throw err
-      }
+      
+      // Provide detailed error information instead of attempting fallback
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
+      const detailedError = new Error(
+        `Failed to update document tags: ${errorMessage}. ` +
+        `Document ID: ${documentId}. ` +
+        `Attempted to update with ${confirmedTags.length} confirmed tags and ${userAddedTags.length} user-added tags. ` +
+        `This error typically indicates that the processed document record does not exist in the database, ` +
+        `which suggests the document upload/processing workflow is incomplete. ` +
+        `Please verify that documents are properly processed before attempting tag confirmation, ` +
+        `or check the document service and database connectivity.`
+      )
+      
+      throw detailedError
     }
   }
 

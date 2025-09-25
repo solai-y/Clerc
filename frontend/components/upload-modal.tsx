@@ -162,11 +162,25 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     return json;
   }
 
-  // Extract text from file for prediction service
-  async function extractTextFromFile(file: File): Promise<string> {
-    // For now, return filename as text placeholder
-    // In production, you'd use a text extraction service
-    return `Document: ${file.name}. This is a placeholder text extraction for document classification. The document appears to be a ${file.type || 'PDF'} file with a size of ${Math.round(file.size / 1024)} KB. This sample text provides sufficient content for the machine learning models to process and classify the document into appropriate categories.`;
+  // Extract text from PDF file using prediction service
+  async function extractTextFromFile(file: File, s3Link: string): Promise<string> {
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      throw new Error(
+        `File type ${file.type || 'unknown'} is not supported. ` +
+        `Currently only PDF files are supported for text extraction. ` +
+        `Please upload a PDF file for document classification.`
+      );
+    }
+
+    try {
+      console.log("🔤 Extracting text from PDF using prediction service...");
+      const extractionResult = await apiClient.extractTextFromPDF(s3Link);
+      console.log(`✅ Extracted ${extractionResult.character_count} characters from ${extractionResult.page_count} pages`);
+      return extractionResult.text;
+    } catch (error) {
+      console.error("❌ PDF text extraction failed:", error);
+      throw error;
+    }
   }
   
   

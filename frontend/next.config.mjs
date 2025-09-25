@@ -9,6 +9,9 @@ const isEC2 = !!process.env.EC2_DEPLOYMENT; // Set this env var for EC2 deployme
 const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN ||
   (process.env.VERCEL ? "https://clercbackend.clerc.uk" : "http://localhost");
 
+// Prediction service origin - defaults to direct connection if nginx not available
+const PREDICTION_ORIGIN = process.env.PREDICTION_SERVICE_URL || `${BACKEND_ORIGIN}:5006`;
+
 // Debug logging (will show in build logs)
 console.log("Next.js Config Debug:");
 console.log("- VERCEL:", process.env.VERCEL);
@@ -16,6 +19,7 @@ console.log("- VERCEL_ENV:", process.env.VERCEL_ENV);
 console.log("- EC2_DEPLOYMENT:", process.env.EC2_DEPLOYMENT);
 console.log("- BACKEND_ORIGIN env:", process.env.BACKEND_ORIGIN);
 console.log("- Computed BACKEND_ORIGIN:", BACKEND_ORIGIN);
+console.log("- PREDICTION_ORIGIN:", PREDICTION_ORIGIN);
 console.log("- Environment detected:", { isVercel, isProd, isEC2 });
 
 
@@ -45,8 +49,8 @@ const nextConfig = {
       { source: "/company/:path*", destination: `${BACKEND_ORIGIN}/company/:path*` },
       { source: "/ai", destination: `${BACKEND_ORIGIN}/ai` },
       { source: "/ai/:path*", destination: `${BACKEND_ORIGIN}/ai/:path*` },
-      { source: "/predict", destination: `${BACKEND_ORIGIN}/predict` },
-      { source: "/predict/:path*", destination: `${BACKEND_ORIGIN}/predict/:path*` },
+      { source: "/predict", destination: `${PREDICTION_ORIGIN}` },
+      { source: "/predict/:path*", destination: `${PREDICTION_ORIGIN}/:path*` },
 
       // --- Backward-compat ---
       { source: "/api/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },
