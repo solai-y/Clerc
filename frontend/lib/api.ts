@@ -55,6 +55,8 @@ export interface GetDocumentsOptions {
   limit?: number;
   offset?: number;
   search?: string;
+  sort_by?: "name" | "date" | "size";
+  sort_order?: "asc" | "desc";
 }
 
 class APIClient {
@@ -100,6 +102,9 @@ class APIClient {
     if (options.limit) params.append("limit", String(options.limit));
     if (options.offset) params.append("offset", String(options.offset));
     if (options.search) params.append("search", options.search);
+    if (options.sort_by)     params.append("sort_by", options.sort_by);
+    if (options.sort_order)  params.append("sort_order", options.sort_order);
+
 
     const url = apiUrl(`/documents${params.toString() ? `?${params}` : ""}`);
     if (isServer) console.log("[api] GET", url);

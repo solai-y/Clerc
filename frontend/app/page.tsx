@@ -46,6 +46,11 @@ export default function HomePage() {
     setCurrentPage(1)
   }, [debouncedSearchTerm])
 
+  // reset current page when sorting is done
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [sortBy, sortOrder])
+
   // Fetch documents from API
   const {
     documents,
@@ -59,35 +64,15 @@ export default function HomePage() {
   } = useDocuments({
     search: debouncedSearchTerm || undefined, // Use debounced search term
     limit: itemsPerPage, // 15 documents per page
-    offset: (currentPage - 1) * itemsPerPage, // Calculate offset based on current page
+    offset: (currentPage - 1) * itemsPerPage,
+    sortBy, 
+    sortOrder,
   })
 
   // Apply client-side filtering for tags and sorting (search is handled server-side)
-  const filteredAndSortedDocuments = useMemo(() => {
-    const filtered = documents.filter((doc) => {
-      const matchesTag = !filterTag || doc.tags.includes(filterTag)
-      // Only tag filtering is applied
-      return matchesTag
-    })
-
-    return filtered.sort((a, b) => {
-      let comparison = 0
-      switch (sortBy) {
-        case "name":
-          comparison = a.name.localeCompare(b.name)
-          break
-        case "date":
-          comparison = new Date(a.uploadDate).getTime() - new Date(b.uploadDate).getTime()
-          break
-        case "size":
-          const aSize = Number.parseFloat(a.size)
-          const bSize = Number.parseFloat(b.size)
-          comparison = aSize - bSize
-          break
-      }
-      return sortOrder === "asc" ? comparison : -comparison
-    })
-  }, [documents, sortBy, sortOrder, filterTag])
+  const filteredDocuments = useMemo(() => {
+  return documents.filter((doc) => !filterTag || doc.tags.includes(filterTag))
+}, [documents, filterTag])
 
   const availableTags = useMemo(() => {
     const tags = new Set<string>()
@@ -289,7 +274,7 @@ export default function HomePage() {
                   ) : pagination ? (
                     `Page ${pagination.currentPage} of ${pagination.totalPages} (${pagination.totalItems} total)`
                   ) : (
-                    `${filteredAndSortedDocuments.length} documents`
+                    `${filteredDocuments.length} documents`
                   )}
                 </span>
               </div>
@@ -318,7 +303,7 @@ export default function HomePage() {
             ) : (
               <>
                 <DocumentTable
-                  documents={filteredAndSortedDocuments}
+                  documents={filteredDocuments}
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={handleSort}

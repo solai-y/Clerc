@@ -9,6 +9,8 @@ interface UseDocumentsParams {
   limit?: number
   offset?: number
   search?: string
+  sortBy?: "name" | "date" | "size"
+  sortOrder?: "asc" | "desc"
   autoFetch?: boolean
 }
 
@@ -33,7 +35,7 @@ interface UseDocumentsReturn {
 }
 
 export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsReturn {
-  const { limit, offset, search, autoFetch = true } = params
+  const { limit, offset, search, sortBy, sortOrder, autoFetch = true } = params
   
   // Documents state
   const [documents, setDocuments] = useState<Document[]>([])
@@ -49,7 +51,13 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
     
     try {
       // Fetch documents
-      const documentsResponse = await apiClient.getDocuments({ limit, offset, search })
+      const documentsResponse = await apiClient.getDocuments({
+      limit,
+      offset,
+      search,
+      sort_by: sortBy,
+      sort_order: sortOrder, 
+    })
       
       // Transform backend documents to frontend format
       const documentsData = documentsResponse?.data || []
@@ -92,7 +100,7 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
     } finally {
       setLoading(false)
     }
-  }, [limit, offset, search]) // Removed categories dependency to avoid infinite loops
+  }, [limit, offset, search, sortBy, sortOrder]) // Removed categories dependency to avoid infinite loops
 
   // Create document
   const createDocument = useCallback(async (document: Omit<BackendProcessedDocument, 'process_id' | 'processing_date'>) => {

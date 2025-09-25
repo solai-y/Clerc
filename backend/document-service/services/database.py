@@ -73,7 +73,7 @@ class DatabaseService:
                 self.logger.info(f"Filtered processed documents count (search): {total_count}")
                 return total_count, None
 
-            # No search: existing behavior, but keep other filters
+            # No search: baseline count with optional filters
             query = self.supabase.table('processed_documents').select('process_id', count='exact')
             if status:
                 query = query.eq('status', status)
@@ -90,10 +90,15 @@ class DatabaseService:
             self.logger.error(error_msg)
             return 0, error_msg
 
-    def get_all_documents(self, limit: Optional[int] = None, offset: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
+    def get_all_documents(
+        self,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        sort_by: Optional[str] = None,
+        sort_order: Optional[str] = None
+    ) -> tuple[List[Dict], Optional[str]]:
         """Get all processed documents with document info from raw_documents"""
         try:
-            # Query processed_documents as primary table and join with raw_documents for document info
             query = self.supabase.table('processed_documents').select("""
                 *,
                 raw_documents!document_id(
@@ -107,31 +112,52 @@ class DatabaseService:
                     status
                 )
             """)
-            
+
+            # Apply order before pagination
+            query = self._apply_sort(query, sort_by, sort_order)
+
+            # Pagination after ordering
             if offset is not None and limit is not None:
-                # Use range for pagination: range(start, end) where end is inclusive
                 query = query.range(offset, offset + limit - 1)
             elif limit:
                 query = query.limit(limit)
-            
+
             response = query.execute()
-            
-            # Fetch company names for processed documents that have company IDs
+
+            # Debug sample of returned order
+            try:
+                sample = response.data[:5] if response and response.data else []
+                self.logger.info(
+                    "Sort debug | sort_by=%s sort_order=%s | first=%s",
+                    sort_by, sort_order,
+                    [
+                        {
+                            "process_id": d.get("process_id"),
+                            "name": (d.get("raw_documents") or {}).get("document_name"),
+                            "date": (d.get("raw_documents") or {}).get("upload_date"),
+                            "size": (d.get("raw_documents") or {}).get("file_size"),
+                        }
+                        for d in sample
+                    ]
+                )
+            except Exception:
+                pass
+
+            # Company enrichment
             if response.data:
-                # Get unique company IDs from processed_documents.company (not raw_documents)
                 company_ids = set()
                 for doc in response.data:
                     if doc.get('company'):
                         company_ids.add(doc['company'])
-                
-                # Fetch company information if we have company IDs
+
                 company_names = {}
                 if company_ids:
-                    companies_response = self.supabase.table('companies').select('company_id, company_name').in_('company_id', list(company_ids)).execute()
+                    companies_response = self.supabase.table('companies') \
+                        .select('company_id, company_name') \
+                        .in_('company_id', list(company_ids)).execute()
                     for company in companies_response.data:
                         company_names[company['company_id']] = company['company_name']
-                
-                # Add company names to the documents
+
                 for doc in response.data:
                     if doc.get('company'):
                         company_id = doc['company']
@@ -141,14 +167,14 @@ class DatabaseService:
                         }
                     else:
                         doc['raw_documents']['companies'] = None
-            
+
             self.logger.info(f"Retrieved {len(response.data)} processed documents")
             return response.data, None
         except Exception as e:
             error_msg = f"Failed to retrieve processed documents: {str(e)}"
             self.logger.error(error_msg)
             return [], error_msg
-    
+
     def get_document_by_id(self, document_id: int) -> tuple[Optional[Dict], Optional[str]]:
         """Get document by ID"""
         try:
@@ -235,7 +261,9 @@ class DatabaseService:
         self,
         search_term: str,
         limit: Optional[int] = None,
-        offset: Optional[int] = None
+        offset: Optional[int] = None,
+        sort_by: Optional[str] = None,
+        sort_order: Optional[str] = None 
     ) -> tuple[List[Dict], Optional[str]]:
         """Search processed documents by raw document_name, with correct pagination order."""
         try:
@@ -270,11 +298,12 @@ class DatabaseService:
                     )
                 """)
                 .in_('document_id', raw_ids)
-                # add a deterministic order (e.g., most recent first)
-                .order('process_id', desc=True)
             )
 
-            # 3) Apply proper pagination AFTER filtering
+            # Order before paginate
+            query = self._apply_sort(query, sort_by, sort_order)
+
+            # Pagination
             if offset is not None and limit is not None:
                 query = query.range(offset, offset + limit - 1)
             elif limit is not None:
@@ -283,7 +312,7 @@ class DatabaseService:
             response = query.execute()
             data = response.data or []
 
-            # 4) Enrich with company names (same as get_all_documents)
+            # Company enrichment
             if data:
                 company_ids = {doc['company'] for doc in data if doc.get('company')}
                 company_names = {}
@@ -318,25 +347,86 @@ class DatabaseService:
             self.logger.error(error_msg)
             return [], error_msg
 
-    
-    def get_documents_by_status(self, status: str, limit: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
-        """Get documents by status"""
+    def get_documents_by_status(
+        self,
+        status: str,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        sort_by: Optional[str] = None,
+        sort_order: Optional[str] = None
+    ) -> tuple[List[Dict], Optional[str]]:
+        """Get processed documents by status with proper sorting/pagination."""
         try:
-            query = self.supabase.table('raw_documents').select("*").eq('status', status)
-            
-            if limit:
+            query = self.supabase.table('processed_documents').select("""
+                *,
+                raw_documents!document_id(
+                    document_name,
+                    document_type,
+                    link,
+                    uploaded_by,
+                    upload_date,
+                    file_size,
+                    file_hash,
+                    status
+                )
+            """).eq('status', status)
+
+            # Order before paginate
+            query = self._apply_sort(query, sort_by, sort_order)
+
+            # Pagination
+            if offset is not None and limit is not None:
+                query = query.range(offset, offset + limit - 1)
+            elif limit:
                 query = query.limit(limit)
-            
+
             response = query.execute()
-            self.logger.info(f"Retrieved {len(response.data)} documents with status '{status}'")
-            return response.data, None
+            data = response.data or []
+
+            # Company enrichment
+            if data:
+                company_ids = {doc['company'] for doc in data if doc.get('company')}
+                company_names = {}
+                if company_ids:
+                    companies_response = (
+                        self.supabase
+                        .table('companies')
+                        .select('company_id, company_name')
+                        .in_('company_id', list(company_ids))
+                        .execute()
+                    )
+                    for c in companies_response.data:
+                        company_names[c['company_id']] = c['company_name']
+
+                for doc in data:
+                    if doc.get('company'):
+                        cid = doc['company']
+                        doc.setdefault('raw_documents', {})
+                        doc['raw_documents']['companies'] = {
+                            'company_id': cid,
+                            'company_name': company_names.get(cid, 'Unknown Company')
+                        }
+                    else:
+                        doc.setdefault('raw_documents', {})
+                        doc['raw_documents']['companies'] = None
+
+            self.logger.info(f"Retrieved {len(data)} processed documents with status '{status}'")
+            return data, None
+
         except Exception as e:
             error_msg = f"Failed to get documents by status: {str(e)}"
             self.logger.error(error_msg)
             return [], error_msg
-    
-    def get_documents_by_company(self, company_id: int, limit: Optional[int] = None) -> tuple[List[Dict], Optional[str]]:
-        """Get processed documents by company ID (company is now in processed_documents)"""
+
+    def get_documents_by_company(
+        self,
+        company_id: int,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        sort_by: Optional[str] = None,
+        sort_order: Optional[str] = None
+    ) -> tuple[List[Dict], Optional[str]]:
+        """Get processed documents by company ID with proper sorting/pagination."""
         try:
             query = self.supabase.table('processed_documents').select("""
                 *,
@@ -351,18 +441,36 @@ class DatabaseService:
                     status
                 )
             """).eq('company', company_id)
-            
-            if limit:
+
+            # Order before paginate
+            query = self._apply_sort(query, sort_by, sort_order)
+
+            # Pagination
+            if offset is not None and limit is not None:
+                query = query.range(offset, offset + limit - 1)
+            elif limit:
                 query = query.limit(limit)
-            
+
             response = query.execute()
-            self.logger.info(f"Retrieved {len(response.data)} processed documents for company {company_id}")
-            return response.data, None
+            data = response.data or []
+
+            # Company enrichment
+            if data:
+                for doc in data:
+                    doc.setdefault('raw_documents', {})
+                    doc['raw_documents']['companies'] = {
+                        'company_id': company_id,
+                        'company_name': None
+                    }
+
+            self.logger.info(f"Retrieved {len(data)} processed documents for company {company_id}")
+            return data, None
+
         except Exception as e:
             error_msg = f"Failed to get documents by company: {str(e)}"
             self.logger.error(error_msg)
             return [], error_msg
-    
+
     def update_document_status(self, document_id: int, status: str) -> tuple[bool, Optional[str]]:
         """Update document status"""
         try:
@@ -397,12 +505,12 @@ class DatabaseService:
                 'model_id': document_data.get('model_id'),
                 'threshold_pct': document_data.get('threshold_pct', 60),
                 'suggested_tags': document_data.get('suggested_tags'),
-                'confirmed_tags': [],  # Empty array
-                'user_added_labels': [],  # Empty array
-                'user_removed_tags': [],  # Empty array
+                'confirmed_tags': [],
+                'user_added_labels': [],
+                'user_removed_tags': [],
                 'user_reviewed': False,
                 'user_id': document_data.get('user_id'),
-                'company': document_data.get('company'),  # Optional company field
+                'company': document_data.get('company'),
                 'ocr_used': document_data.get('ocr_used', False),
                 'processing_ms': document_data.get('processing_ms'),
                 'errors': document_data.get('errors'),
@@ -508,3 +616,37 @@ class DatabaseService:
             error_msg = f"Failed to get unprocessed documents: {str(e)}"
             self.logger.error(error_msg)
             return [], error_msg
+        
+    def _apply_sort(self, query, sort_by: str | None, sort_order: str | None):
+        """
+        Apply parent-level ordering by related raw_documents fields using table(column) syntax.
+        This sorts the parent processed_documents rows by the child column, not just the embedded array.
+        """
+        # Defaults: name asc if unspecified by the caller
+        by = (sort_by or 'name').lower()
+        desc = (str(sort_order).lower() == 'desc') if sort_order else False
+
+        # Map UI keys to child columns
+        if by == 'name':
+            primary = "raw_documents(document_name)"
+        elif by == 'size':
+            primary = "raw_documents(file_size)"
+        elif by == 'date':
+            primary = "raw_documents(upload_date)"
+        else:
+            # Fallback to parent
+            primary = "process_id"
+
+        # First order: parent by child column (or process_id)
+        q = query.order(primary, desc=desc)
+
+        # Stable secondary key on parent id (ascending for stability regardless of primary dir)
+        q = q.order('process_id', desc=False)
+
+        # Log how we applied sort for troubleshooting
+        try:
+            self.logger.info("Applied sort | primary=%s desc=%s | secondary=process_id.asc", primary, desc)
+        except Exception:
+            pass
+
+        return q
