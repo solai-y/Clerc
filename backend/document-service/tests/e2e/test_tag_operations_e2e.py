@@ -30,7 +30,7 @@ class TestTagOperationsE2E:
             "document_name": f"E2E Tag Test Document {name_suffix}",
             "document_type": "PDF",
             "link": f"https://test.com/e2e-tag-test-{name_suffix}.pdf",
-            "uploaded_by": None,
+            "uploaded_by": 6,
         }
         
         raw_response = requests.post(
