@@ -30,7 +30,7 @@ class TestTagOperationsE2E:
             "document_name": f"E2E Tag Test Document {name_suffix}",
             "document_type": "PDF",
             "link": f"https://test.com/e2e-tag-test-{name_suffix}.pdf",
-            "uploaded_by": 1,
+            "uploaded_by": None,
         }
         
         raw_response = requests.post(
@@ -46,7 +46,6 @@ class TestTagOperationsE2E:
         # Create processed document entry
         processed_data = {
             "document_id": document_id,
-            "model_id": 1,
             "threshold_pct": 80,
             "suggested_tags": [
                 {"tag": "invoice", "score": 0.95},

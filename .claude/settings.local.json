@@ -38,7 +38,9 @@
       "Bash(xargs kill:*)",
       "Bash(fuser:*)",
       "Bash(cat:*)",
-      "Bash(dos2unix:*)"
+      "Bash(dos2unix:*)",
+      "Bash(pip install:*)",
+      "Bash(sed:*)"
     ],
     "deny": []
   }
