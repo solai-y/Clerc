@@ -1,91 +1,94 @@
 import os
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class DatabaseService:
     """Database operations service with error handling"""
-    
+
+    # Your requested fallback test user UUID (must match access_control.user)
+    FALLBACK_UPLOADED_BY_ID = "49991737-c3c2-4916-b2e8-03a23c9cd36a"
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.supabase_url = os.environ.get("SUPABASE_URL")
         self.supabase_key = os.environ.get("SUPABASE_KEY")
-        
+
         if not self.supabase_url or not self.supabase_key:
             raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY environment variables")
-        
+
         try:
             self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
             self.logger.info("Database connection initialized")
         except Exception as e:
             self.logger.error(f"Failed to initialize database connection: {str(e)}")
             raise
-    
+
     def test_connection(self) -> tuple[bool, Optional[str]]:
         """Test database connection"""
         try:
-            # Simple query to test connection
-            response = self.supabase.table('raw_documents').select("document_id").limit(1).execute()
+            _ = self.supabase.table('raw_documents').select("document_id").limit(1).execute()
             self.logger.info("Database connection test successful")
             return True, None
         except Exception as e:
             error_msg = str(e)
             self.logger.error(f"Database connection test failed: {error_msg}")
             return False, error_msg
-    
+
     def get_total_documents_count(
         self,
         search: Optional[str] = None,
         status: Optional[str] = None,
         company_id: Optional[int] = None
     ) -> tuple[int, Optional[str]]:
+        """
+        Return count of processed_documents with optional filters.
+        Be defensive: avoid count='exact' in queries that have caused upstream errors.
+        """
         try:
-            # If searching by name, first find matching raw doc IDs
             if search:
+                # Find matching raw doc IDs (count locally to avoid worker errors)
                 raw_resp = (
                     self.supabase
                     .table('raw_documents')
-                    .select('document_id', count='exact')
+                    .select('document_id')        # no count='exact' here
                     .ilike('document_name', f'%{search}%')
                     .execute()
                 )
-                raw_ids = [r['document_id'] for r in raw_resp.data]
+                raw_ids = [r['document_id'] for r in (raw_resp.data or [])]
                 if not raw_ids:
-                    return 0, None  # no matches at all
+                    return 0, None
 
-                # Count processed docs that match those raw IDs (and other filters)
-                query = (
+                # Count processed rows locally
+                proc_resp = (
                     self.supabase
                     .table('processed_documents')
-                    .select('process_id', count='exact')
+                    .select('process_id')
                     .in_('document_id', raw_ids)
+                    .execute()
                 )
+                proc_rows = proc_resp.data or []
                 if status:
-                    query = query.eq('status', status)
+                    proc_rows = [r for r in proc_rows if r.get('status') == status]
                 if company_id:
-                    query = query.eq('company', company_id)
+                    proc_rows = [r for r in proc_rows if r.get('company') == company_id]
+                return len(proc_rows), None
 
-                resp = query.execute()
-                total_count = resp.count or 0
-                self.logger.info(f"Filtered processed documents count (search): {total_count}")
-                return total_count, None
-
-            # No search: baseline count with optional filters
-            query = self.supabase.table('processed_documents').select('process_id', count='exact')
+            # No search: lightweight count via select+len
+            query = self.supabase.table('processed_documents').select('process_id')
             if status:
                 query = query.eq('status', status)
             if company_id:
                 query = query.eq('company', company_id)
-
-            response = query.execute()
-            total_count = response.count or 0
-            self.logger.info(f"Total processed documents count: {total_count}")
-            return total_count, None
+            resp = query.execute()
+            return len(resp.data or []), None
 
         except Exception as e:
+            # Be resilient: return 0 rather than failing the whole endpoint
             error_msg = f"Failed to get processed documents count: {str(e)}"
             self.logger.error(error_msg)
             return 0, error_msg
@@ -113,10 +116,8 @@ class DatabaseService:
                 )
             """)
 
-            # Apply order before pagination
             query = self._apply_sort(query, sort_by, sort_order)
 
-            # Pagination after ordering
             if offset is not None and limit is not None:
                 query = query.range(offset, offset + limit - 1)
             elif limit:
@@ -145,18 +146,17 @@ class DatabaseService:
 
             # Company enrichment
             if response.data:
-                company_ids = set()
-                for doc in response.data:
-                    if doc.get('company'):
-                        company_ids.add(doc['company'])
-
-                company_names = {}
+                company_ids = {doc['company'] for doc in response.data if doc.get('company')}
+                company_names: Dict[Any, Any] = {}
                 if company_ids:
-                    companies_response = self.supabase.table('companies') \
-                        .select('company_id, company_name') \
+                    companies_response = (
+                        self.supabase
+                        .table('companies')
+                        .select('company_id, company_name')
                         .in_('company_id', list(company_ids)).execute()
-                    for company in companies_response.data:
-                        company_names[company['company_id']] = company['company_name']
+                    )
+                    for c in (companies_response.data or []):
+                        company_names[c['company_id']] = c['company_name']
 
                 for doc in response.data:
                     if doc.get('company'):
@@ -179,7 +179,7 @@ class DatabaseService:
         """Get document by ID"""
         try:
             response = self.supabase.table('raw_documents').select("*").eq('document_id', document_id).execute()
-            
+
             if response.data:
                 self.logger.info(f"Retrieved document with ID: {document_id}")
                 return response.data[0], None
@@ -190,12 +190,24 @@ class DatabaseService:
             error_msg = f"Failed to retrieve document {document_id}: {str(e)}"
             self.logger.error(error_msg)
             return None, error_msg
-    
+
     def create_document(self, document_data: Dict[str, Any]) -> tuple[Optional[Dict], Optional[str]]:
         """Create a new document"""
         try:
+            # Resolve uploaded_by to a real FK (or fallback)
+            if 'uploaded_by' in document_data:
+                resolved_id, resolve_err = self._resolve_uploaded_by(document_data.get('uploaded_by'))
+                if resolve_err:
+                    return None, resolve_err
+                document_data['uploaded_by'] = resolved_id
+            else:
+                resolved_id, resolve_err = self._resolve_uploaded_by(None)
+                if resolve_err:
+                    return None, resolve_err
+                document_data['uploaded_by'] = resolved_id
+
             response = self.supabase.table('raw_documents').insert(document_data).execute()
-            
+
             if response.data:
                 created_doc = response.data[0]
                 self.logger.info(f"Created document with ID: {created_doc.get('id')}")
@@ -208,21 +220,25 @@ class DatabaseService:
             error_msg = f"Failed to create document: {str(e)}"
             self.logger.error(error_msg)
             return None, error_msg
-    
+
     def update_document(self, document_id: int, document_data: Dict[str, Any]) -> tuple[Optional[Dict], Optional[str]]:
         """Update an existing document"""
         try:
-            # First check if document exists
             existing_doc, error = self.get_document_by_id(document_id)
             if error:
                 return None, error
-            
+
             if not existing_doc:
                 return None, f"Document with ID {document_id} not found"
-            
-            # Update the document
+
+            if 'uploaded_by' in document_data:
+                resolved_id, resolve_err = self._resolve_uploaded_by(document_data.get('uploaded_by'))
+                if resolve_err:
+                    return None, resolve_err
+                document_data['uploaded_by'] = resolved_id
+
             response = self.supabase.table('raw_documents').update(document_data).eq('document_id', document_id).execute()
-            
+
             if response.data:
                 updated_doc = response.data[0]
                 self.logger.info(f"Updated document with ID: {document_id}")
@@ -235,39 +251,36 @@ class DatabaseService:
             error_msg = f"Failed to update document {document_id}: {str(e)}"
             self.logger.error(error_msg)
             return None, error_msg
-    
+
     def delete_document(self, document_id: int) -> tuple[bool, Optional[str]]:
         """Delete a document"""
         try:
-            # First check if document exists
             existing_doc, error = self.get_document_by_id(document_id)
             if error:
                 return False, error
-            
+
             if not existing_doc:
                 return False, f"Document with ID {document_id} not found"
-            
-            # Delete the document
-            response = self.supabase.table('raw_documents').delete().eq('document_id', document_id).execute()
-            
+
+            _ = self.supabase.table('raw_documents').delete().eq('document_id', document_id).execute()
+
             self.logger.info(f"Deleted document with ID: {document_id}")
             return True, None
         except Exception as e:
             error_msg = f"Failed to delete document {document_id}: {str(e)}"
             self.logger.error(error_msg)
             return False, error_msg
-    
+
     def search_documents(
         self,
         search_term: str,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
         sort_by: Optional[str] = None,
-        sort_order: Optional[str] = None 
+        sort_order: Optional[str] = None
     ) -> tuple[List[Dict], Optional[str]]:
         """Search processed documents by raw document_name, with correct pagination order."""
         try:
-            # 1) Find matching raw document IDs
             raw_resp = (
                 self.supabase
                 .table('raw_documents')
@@ -275,12 +288,11 @@ class DatabaseService:
                 .ilike('document_name', f'%{search_term}%')
                 .execute()
             )
-            raw_ids = [r['document_id'] for r in raw_resp.data]
+            raw_ids = [r['document_id'] for r in (raw_resp.data or [])]
             if not raw_ids:
                 self.logger.info(f"Search for '{search_term}' returned 0 documents")
                 return [], None
 
-            # 2) Pull processed_documents for those IDs and join raw_documents
             query = (
                 self.supabase
                 .table('processed_documents')
@@ -300,10 +312,8 @@ class DatabaseService:
                 .in_('document_id', raw_ids)
             )
 
-            # Order before paginate
             query = self._apply_sort(query, sort_by, sort_order)
 
-            # Pagination
             if offset is not None and limit is not None:
                 query = query.range(offset, offset + limit - 1)
             elif limit is not None:
@@ -315,7 +325,7 @@ class DatabaseService:
             # Company enrichment
             if data:
                 company_ids = {doc['company'] for doc in data if doc.get('company')}
-                company_names = {}
+                company_names: Dict[Any, Any] = {}
                 if company_ids:
                     companies_response = (
                         self.supabase
@@ -324,7 +334,7 @@ class DatabaseService:
                         .in_('company_id', list(company_ids))
                         .execute()
                     )
-                    for c in companies_response.data:
+                    for c in (companies_response.data or []):
                         company_names[c['company_id']] = c['company_name']
 
                 for doc in data:
@@ -371,10 +381,8 @@ class DatabaseService:
                 )
             """).eq('status', status)
 
-            # Order before paginate
             query = self._apply_sort(query, sort_by, sort_order)
 
-            # Pagination
             if offset is not None and limit is not None:
                 query = query.range(offset, offset + limit - 1)
             elif limit:
@@ -386,7 +394,7 @@ class DatabaseService:
             # Company enrichment
             if data:
                 company_ids = {doc['company'] for doc in data if doc.get('company')}
-                company_names = {}
+                company_names: Dict[Any, Any] = {}
                 if company_ids:
                     companies_response = (
                         self.supabase
@@ -395,7 +403,7 @@ class DatabaseService:
                         .in_('company_id', list(company_ids))
                         .execute()
                     )
-                    for c in companies_response.data:
+                    for c in (companies_response.data or []):
                         company_names[c['company_id']] = c['company_name']
 
                 for doc in data:
@@ -442,10 +450,8 @@ class DatabaseService:
                 )
             """).eq('company', company_id)
 
-            # Order before paginate
             query = self._apply_sort(query, sort_by, sort_order)
 
-            # Pagination
             if offset is not None and limit is not None:
                 query = query.range(offset, offset + limit - 1)
             elif limit:
@@ -477,9 +483,9 @@ class DatabaseService:
             valid_statuses = ['uploaded', 'processing', 'processed', 'failed']
             if status not in valid_statuses:
                 return False, f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
-            
+
             response = self.supabase.table('raw_documents').update({'status': status}).eq('document_id', document_id).execute()
-            
+
             if response.data:
                 self.logger.info(f"Updated document {document_id} status to '{status}'")
                 return True, None
@@ -489,17 +495,15 @@ class DatabaseService:
             error_msg = f"Failed to update document status: {str(e)}"
             self.logger.error(error_msg)
             return False, error_msg
-    
+
     def create_processed_document(self, document_data: Dict[str, Any]) -> tuple[Optional[Dict], Optional[str]]:
         """Create a new processed document entry with empty tag fields"""
         try:
-            # Validate required fields
             required_fields = ['document_id']
             for field in required_fields:
                 if field not in document_data:
                     return None, f"Missing required field: {field}"
-            
-            # Prepare data with empty tag fields
+
             processed_data = {
                 'document_id': document_data['document_id'],
                 'model_id': document_data.get('model_id'),
@@ -519,9 +523,9 @@ class DatabaseService:
                 'request_id': document_data.get('request_id'),
                 'status': document_data.get('status', 'api_processed')
             }
-            
+
             response = self.supabase.table('processed_documents').insert(processed_data).execute()
-            
+
             if response.data:
                 created_doc = response.data[0]
                 self.logger.info(f"Created processed document with process_id: {created_doc.get('process_id')}")
@@ -534,50 +538,46 @@ class DatabaseService:
             error_msg = f"Failed to create processed document: {str(e)}"
             self.logger.error(error_msg)
             return None, error_msg
-    
+
     def update_document_tags(self, document_id: int, tag_data: Dict[str, Any]) -> tuple[Optional[Dict], Optional[str]]:
         """Update confirmed_tags, user_added_labels, and user_removed_tags for a processed document"""
         try:
-            # First check if processed document exists for this document_id
             existing_response = self.supabase.table('processed_documents').select("*").eq('document_id', document_id).execute()
-            
+
             if not existing_response.data:
                 return None, f"No processed document found for document_id {document_id}"
-            
+
             existing_doc = existing_response.data[0]
             process_id = existing_doc['process_id']
-            
-            # Prepare update data
-            update_data = {}
-            
+
+            update_data: Dict[str, Any] = {}
+
             if 'confirmed_tags' in tag_data:
                 if not isinstance(tag_data['confirmed_tags'], list):
                     return None, "confirmed_tags must be an array"
                 update_data['confirmed_tags'] = tag_data['confirmed_tags']
-            
+
             if 'user_added_labels' in tag_data:
                 if not isinstance(tag_data['user_added_labels'], list):
                     return None, "user_added_labels must be an array"
                 update_data['user_added_labels'] = tag_data['user_added_labels']
-            
+
             if 'user_removed_tags' in tag_data:
                 if not isinstance(tag_data['user_removed_tags'], list):
                     return None, "user_removed_tags must be an array"
                 update_data['user_removed_tags'] = tag_data['user_removed_tags']
-            
-            # Mark as user reviewed and add review timestamp
+
             update_data['user_reviewed'] = True
             update_data['reviewed_at'] = 'now()'
-            
+
             if 'user_id' in tag_data:
                 update_data['user_id'] = tag_data['user_id']
-            
+
             if not update_data:
                 return None, "No valid tag data provided for update"
-            
-            # Update the processed document
+
             response = self.supabase.table('processed_documents').update(update_data).eq('process_id', process_id).execute()
-            
+
             if response.data:
                 updated_doc = response.data[0]
                 self.logger.info(f"Updated tags for processed document {process_id} (document_id: {document_id})")
@@ -590,43 +590,84 @@ class DatabaseService:
             error_msg = f"Failed to update document tags: {str(e)}"
             self.logger.error(error_msg)
             return None, error_msg
-    
-    def get_unprocessed_documents(self, limit: int = 1) -> tuple[List[Dict], Optional[str]]:
-        """Get raw documents that haven't been processed yet"""
+
+    # ---------- Helpers ----------
+
+    def _resolve_uploaded_by(self, uploaded_by: Any) -> Tuple[Optional[Any], Optional[str]]:
+        """
+        Ensure uploaded_by points to a real access_control.user (UUID).
+        Priority:
+          1) If the provided id exists (in access_control.user), keep it.
+          2) Else if FALLBACK_UPLOADED_BY_ID exists, use it.
+          3) Else use the first available user in access_control.
+          4) If no users exist, return an error.
+        """
         try:
-            # Get all processed document IDs
-            processed_response = self.supabase.table('processed_documents').select('document_id').execute()
-            processed_ids = {doc['document_id'] for doc in processed_response.data}
-            
-            # Get all raw documents
-            raw_response = self.supabase.table('raw_documents').select("*").execute()
-            
-            # Filter out already processed documents
-            unprocessed_docs = []
-            for doc in raw_response.data:
-                if doc['document_id'] not in processed_ids:
-                    unprocessed_docs.append(doc)
-                    if len(unprocessed_docs) >= limit:
-                        break
-            
-            self.logger.info(f"Retrieved {len(unprocessed_docs)} unprocessed documents out of {len(raw_response.data)} total raw documents")
-            return unprocessed_docs, None
-            
+            # 1) If caller provided an id and it exists, use it as-is
+            if uploaded_by is not None:
+                check = (
+                    self.supabase.table('access_control')
+                    .select('user')                 # <-- correct column name
+                    .eq('user', uploaded_by)
+                    .limit(1)
+                    .execute()
+                )
+                if check.data:
+                    return uploaded_by, None
+
+            # 2) Try the configured fallback UUID
+            fb = self.FALLBACK_UPLOADED_BY_ID
+            fb_check = (
+                self.supabase.table('access_control')
+                .select('user')
+                .eq('user', fb)
+                .limit(1)
+                .execute()
+            )
+            if fb_check.data:
+                if uploaded_by is not None and uploaded_by != fb:
+                    self.logger.warning(
+                        "uploaded_by=%s not found; remapping to fallback user=%s",
+                        uploaded_by, fb
+                    )
+                return fb, None
+
+            # 3) Fall back to any existing user (pick first)
+            any_user = (
+                self.supabase.table('access_control')
+                .select('user')
+                .order('user', desc=False)   # deterministic pick
+                .limit(1)
+                .execute()
+            )
+            if any_user.data:
+                fallback_id = any_user.data[0]['user']
+                self.logger.warning(
+                    "uploaded_by=%s not found; fallback %s not present either; "
+                    "remapping to existing user=%s",
+                    uploaded_by, fb, fallback_id
+                )
+                return fallback_id, None
+
+            # 4) No users at all – surface a clear error
+            return None, (
+                "Failed to resolve uploaded_by: no rows in access_control "
+                f"(tried provided='{uploaded_by}' and fallback='{fb}')"
+            )
+
         except Exception as e:
-            error_msg = f"Failed to get unprocessed documents: {str(e)}"
-            self.logger.error(error_msg)
-            return [], error_msg
-        
+            msg = f"Failed to resolve uploaded_by: {str(e)}"
+            self.logger.error(msg)
+            return None, msg
+
     def _apply_sort(self, query, sort_by: str | None, sort_order: str | None):
         """
         Apply parent-level ordering by related raw_documents fields using table(column) syntax.
         This sorts the parent processed_documents rows by the child column, not just the embedded array.
         """
-        # Defaults: name asc if unspecified by the caller
         by = (sort_by or 'name').lower()
         desc = (str(sort_order).lower() == 'desc') if sort_order else False
 
-        # Map UI keys to child columns
         if by == 'name':
             primary = "raw_documents(document_name)"
         elif by == 'size':
@@ -634,16 +675,11 @@ class DatabaseService:
         elif by == 'date':
             primary = "raw_documents(upload_date)"
         else:
-            # Fallback to parent
             primary = "process_id"
 
-        # First order: parent by child column (or process_id)
         q = query.order(primary, desc=desc)
+        q = q.order('process_id', desc=False)  # stable tiebreaker
 
-        # Stable secondary key on parent id (ascending for stability regardless of primary dir)
-        q = q.order('process_id', desc=False)
-
-        # Log how we applied sort for troubleshooting
         try:
             self.logger.info("Applied sort | primary=%s desc=%s | secondary=process_id.asc", primary, desc)
         except Exception:

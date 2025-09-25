@@ -9,7 +9,7 @@ from services.database import DatabaseService
 documents_bp = Blueprint('documents', __name__)
 logger = logging.getLogger(__name__)
 
-# Load env (no hardcoding of Supabase URL here; DatabaseService should consume SUPABASE_URL/KEY)
+# Load env (DatabaseService consumes SUPABASE_URL/KEY)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
@@ -185,6 +185,9 @@ def create_document():
         created_document, error = db_service.create_document(document_model.to_dict())
 
         if error:
+            # surface helpful validation messages from uploaded_by mapping
+            if ("uploaded_by" in error) or ("access_control" in error) or ("map uploaded_by" in error.lower()):
+                return APIResponse.validation_error(error)
             logger.error(f"Database error: {error}")
             return APIResponse.internal_error("Failed to create document")
 
@@ -233,6 +236,9 @@ def update_document(document_id):
         if error:
             if "not found" in error.lower():
                 return APIResponse.not_found(f"Document with ID {document_id}")
+            # surface helpful validation messages from uploaded_by mapping
+            if ("uploaded_by" in error) or ("access_control" in error) or ("map uploaded_by" in error.lower()):
+                return APIResponse.validation_error(error)
             else:
                 logger.error(f"Database error: {error}")
                 return APIResponse.internal_error("Failed to update document")
