@@ -514,7 +514,7 @@ export function EnhancedConfirmTagsModal({
                                       {explanation.shap_data.supporting.map((item: any, idx: number) => (
                                         <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-800 border border-green-300">
                                           <span className="font-mono mr-1">{item.token?.trim() || item}</span>
-                                          <span className="text-green-600 font-semibold">{item.impact ? Math.round(item.impact * 100) + '%' : ''}</span>
+                                          <span className="text-green-600 font-semibold">{item.impact || ''}</span>
                                         </span>
                                       ))}
                                     </div>
@@ -529,7 +529,7 @@ export function EnhancedConfirmTagsModal({
                                       {explanation.shap_data.opposing.map((item: any, idx: number) => (
                                         <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-800 border border-red-300">
                                           <span className="font-mono mr-1">{item.token?.trim() || item}</span>
-                                          <span className="text-red-600 font-semibold">{item.impact ? Math.round(item.impact * 100) + '%' : ''}</span>
+                                          <span className="text-red-600 font-semibold">{item.impact || ''}</span>
                                         </span>
                                       ))}
                                     </div>

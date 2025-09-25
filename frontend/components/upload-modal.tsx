@@ -232,8 +232,8 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       setUploadProgress(60)
       console.log("🤖 Processing with Prediction Service...")
       
-      // Extract text from file
-      const documentText = await extractTextFromFile(file)
+      // Extract text from file using S3 URL
+      const documentText = await extractTextFromFile(file, s3Link)
       
       // Get current confidence thresholds from localStorage or use defaults
       let thresholds = { primary: 0.90, secondary: 0.85, tertiary: 0.80 };
