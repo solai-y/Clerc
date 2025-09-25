@@ -44,8 +44,10 @@ class TextExtractionClient:
             
             extracted_text = data.get("text", "")
             character_count = data.get("character_count", len(extracted_text))
+            extraction_method = data.get("extraction_method", "unknown")
+            ocr_used = data.get("ocr_used", False)
             
-            logger.info(f"Successfully extracted {character_count} characters from PDF")
+            logger.info(f"Successfully extracted {character_count} characters from PDF using {extraction_method}{' (OCR fallback)' if ocr_used else ''}")
             return extracted_text
             
         except httpx.HTTPStatusError as e:

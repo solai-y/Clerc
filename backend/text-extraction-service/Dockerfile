@@ -3,13 +3,17 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for PyMuPDF and health checks
+# Install system dependencies for PyMuPDF, OCR, and health checks
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     libffi-dev \
     libssl-dev \
     curl \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    poppler-utils \
+    libpoppler-cpp-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
