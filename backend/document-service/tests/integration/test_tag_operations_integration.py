@@ -35,7 +35,7 @@ def client():
 class TestTagOperationsIntegration:
     """Integration tests for tag operations with real database"""
     
-    def test_create_processed_document_and_update_tags(self, client: FlaskClient):
+    def test_create_processed_document_and_update_tags(self, client: FlaskClient, test_model_id):
         """Test full workflow: create processed document -> update tags"""
         print("\n[TEST] Testing full processed document and tag update workflow...")
         
@@ -67,7 +67,7 @@ class TestTagOperationsIntegration:
         print("  [STEP 2] Creating processed document entry...")
         processed_doc_data = {
             "document_id": document_id,
-            "model_id": 1,
+            "model_id": test_model_id,
             "threshold_pct": 80,
             "suggested_tags": [
                 {"tag": "invoice", "score": 0.95},
@@ -153,7 +153,7 @@ class TestTagOperationsIntegration:
         
         print("[SUCCESS] Full integration workflow completed successfully")
     
-    def test_tag_update_with_removal_workflow(self, client: FlaskClient):
+    def test_tag_update_with_removal_workflow(self, client: FlaskClient, test_model_id):
         """Test workflow including tag removal operations"""
         print("\n[TEST] Testing tag update with removal workflow...")
         
@@ -173,6 +173,7 @@ class TestTagOperationsIntegration:
         
         processed_data = {
             "document_id": document_id,
+            "model_id": test_model_id,
             "suggested_tags": [
                 {"tag": "contract", "score": 0.88},
                 {"tag": "legal", "score": 0.76},
@@ -214,7 +215,7 @@ class TestTagOperationsIntegration:
         # Cleanup
         client.delete(f'/documents/{document_id}')
     
-    def test_tag_operations_with_special_characters(self, client: FlaskClient):
+    def test_tag_operations_with_special_characters(self, client: FlaskClient, test_model_id):
         """Test tag operations with special characters and edge cases"""
         print("\n[TEST] Testing tag operations with special characters...")
         
@@ -229,7 +230,7 @@ class TestTagOperationsIntegration:
         raw_response = client.post('/documents', data=json.dumps(raw_doc_data), content_type='application/json')
         document_id = raw_response.get_json()["data"]["document_id"]
         
-        processed_data = {"document_id": document_id}
+        processed_data = {"document_id": document_id, "model_id": test_model_id}
         client.post('/documents/processed', data=json.dumps(processed_data), content_type='application/json')
         
         # Test with special characters
@@ -262,7 +263,7 @@ class TestTagOperationsIntegration:
         # Cleanup
         client.delete(f'/documents/{document_id}')
     
-    def test_concurrent_tag_updates(self, client: FlaskClient):
+    def test_concurrent_tag_updates(self, client: FlaskClient, test_model_id):
         """Test concurrent tag updates to the same document"""
         print("\n[TEST] Testing concurrent tag updates...")
         
@@ -279,6 +280,7 @@ class TestTagOperationsIntegration:
         
         processed_data = {
             "document_id": document_id,
+            "model_id": test_model_id,
             "suggested_tags": [{"tag": "base-tag", "score": 0.9}]
         }
         client.post('/documents/processed', data=json.dumps(processed_data), content_type='application/json')
@@ -320,7 +322,7 @@ class TestTagOperationsIntegration:
         # Cleanup
         client.delete(f'/documents/{document_id}')
     
-    def test_tag_operations_error_scenarios(self, client: FlaskClient):
+    def test_tag_operations_error_scenarios(self, client: FlaskClient, test_model_id):
         """Test various error scenarios in tag operations"""
         print("\n[TEST] Testing tag operation error scenarios...")
         
@@ -372,7 +374,7 @@ class TestTagOperationsIntegration:
         raw_response = client.post('/documents', data=json.dumps(raw_doc_data), content_type='application/json')
         document_id = raw_response.get_json()["data"]["document_id"]
         
-        processed_data = {"document_id": document_id}
+        processed_data = {"document_id": document_id, "model_id": test_model_id}
         client.post('/documents/processed', data=json.dumps(processed_data), content_type='application/json')
         
         # Try to update with invalid data types
@@ -395,7 +397,7 @@ class TestTagOperationsIntegration:
         
         print("[SUCCESS] All error scenarios handled correctly")
     
-    def test_tag_persistence_across_operations(self, client: FlaskClient):
+    def test_tag_persistence_across_operations(self, client: FlaskClient, test_model_id):
         """Test that tags persist correctly across multiple operations"""
         print("\n[TEST] Testing tag persistence across operations...")
         
@@ -412,6 +414,7 @@ class TestTagOperationsIntegration:
         
         processed_data = {
             "document_id": document_id,
+            "model_id": test_model_id,
             "suggested_tags": [
                 {"tag": "persistent-tag1", "score": 0.9},
                 {"tag": "persistent-tag2", "score": 0.8}

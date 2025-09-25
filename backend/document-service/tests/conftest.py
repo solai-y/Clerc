@@ -55,12 +55,28 @@ def setup_test_data():
             if result.data:
                 print(f"Created test company with company_id: {result.data[0]['company_id']}")
         
+        # Create a test model version if it doesn't exist
+        test_model_data = {
+            "model_name": "Test Model",
+            "version": "1.0.0",
+            "description": "Test model for integration tests",
+            "deployed_date": "2024-01-01T00:00:00Z"
+        }
+        
+        existing_model = supabase.table('model_versions').select("model_id").eq('model_name', 'Test Model').execute()
+        
+        if not existing_model.data:
+            result = supabase.table('model_versions').insert(test_model_data).execute()
+            if result.data:
+                print(f"Created test model with model_id: {result.data[0]['model_id']}")
+        
         yield
         
         # Cleanup - Remove test data after all tests
         # Note: This will cascade delete all related documents
         supabase.table('access_control').delete().eq('user', 'test_user').execute()
         supabase.table('companies').delete().eq('company_name', 'Test Company').execute()
+        supabase.table('model_versions').delete().eq('model_name', 'Test Model').execute()
         
     except Exception as e:
         print(f"Error setting up test data: {e}")
@@ -90,4 +106,17 @@ def test_company_id():
     result = supabase.table('companies').select("company_id").eq('company_name', 'Test Company').execute()
     if result.data:
         return result.data[0]['company_id']
+    return 1  # Fallback
+
+
+@pytest.fixture
+def test_model_id():
+    """Get the test model ID"""
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY")
+    supabase: Client = create_client(supabase_url, supabase_key)
+    
+    result = supabase.table('model_versions').select("model_id").eq('model_name', 'Test Model').execute()
+    if result.data:
+        return result.data[0]['model_id']
     return 1  # Fallback

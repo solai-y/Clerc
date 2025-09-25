@@ -97,8 +97,23 @@ class TestDocumentCRUD:
         """Test getting a document by valid ID"""
         print("\n[TEST] Running GET /documents/{id} with valid ID...")
         
-        # Use document ID 1 which should exist in the database
-        response = client.get('/documents/1')
+        # First create a document to test with
+        create_payload = {
+            "document_name": "Test Document for GET",
+            "document_type": "PDF", 
+            "link": "https://test.com/get-test.pdf",
+            "uploaded_by": None
+        }
+        
+        create_response = client.post('/documents', json=create_payload)
+        if create_response.status_code != 201:
+            pytest.skip("Cannot test GET without successful document creation")
+            
+        created_doc = create_response.get_json()
+        document_id = created_doc["data"]["document_id"]
+        
+        # Now test getting the document by ID
+        response = client.get(f'/documents/{document_id}')
         
         print(f"[DEBUG] Response status: {response.status_code}")
         data = response.get_json()
@@ -106,7 +121,7 @@ class TestDocumentCRUD:
         assert response.status_code == 200
         assert data["status"] == "success"
         assert "data" in data
-        assert data["data"]["document_id"] == 1
+        assert data["data"]["document_id"] == document_id
         
         print("[PASS] Document retrieved successfully by ID")
     
