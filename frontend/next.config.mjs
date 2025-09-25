@@ -51,6 +51,8 @@ const nextConfig = {
       { source: "/ai/:path*", destination: `${BACKEND_ORIGIN}/ai/:path*` },
       { source: "/predict", destination: `${PREDICTION_ORIGIN}` },
       { source: "/predict/:path*", destination: `${PREDICTION_ORIGIN}/:path*` },
+      { source: "/text-extract", destination: `${BACKEND_ORIGIN}/text-extract` },
+      { source: "/text-extract/:path*", destination: `${BACKEND_ORIGIN}/text-extract/:path*` },
 
       // --- Backward-compat ---
       { source: "/api/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },

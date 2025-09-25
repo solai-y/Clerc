@@ -19,7 +19,7 @@ from services.ai_client import AIServiceClient
 from services.llm_client import LLMServiceClient
 from services.aggregator import ResponseAggregator
 from services.database import DatabaseService
-from services.text_extraction import TextExtractionService
+from services.text_extraction_client import TextExtractionClient
 from utils.confidence import ConfidenceEvaluator
 
 # Configure logging
@@ -33,12 +33,12 @@ logger = logging.getLogger(__name__)
 ai_client = None
 llm_client = None
 db_service = None
-text_extraction_service = None
+text_extraction_client = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global ai_client, llm_client, db_service, text_extraction_service
+    global ai_client, llm_client, db_service, text_extraction_client
     
     # Startup
     logger.info("Starting Prediction Service Orchestrator...")
@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
         # Initialize other service clients
         ai_client = AIServiceClient()
         llm_client = LLMServiceClient()
-        text_extraction_service = TextExtractionService()
+        text_extraction_client = TextExtractionClient()
         logger.info("All service clients initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize service clients: {str(e)}")
@@ -62,8 +62,8 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down Prediction Service Orchestrator...")
-    if text_extraction_service:
-        await text_extraction_service.close()
+    if text_extraction_client:
+        await text_extraction_client.close()
 
 # Create FastAPI app
 app = FastAPI(
@@ -95,18 +95,20 @@ async def root():
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Detailed health check including downstream services"""
-    global ai_client, llm_client
+    global ai_client, llm_client, text_extraction_client
     
-    if ai_client is None or llm_client is None:
+    if ai_client is None or llm_client is None or text_extraction_client is None:
         raise HTTPException(status_code=503, detail="Service clients not initialized")
     
     # Check downstream services
     ai_health = await ai_client.health_check()
     llm_health = await llm_client.health_check()
+    text_health = await text_extraction_client.health_check()
     
     downstream_services = {
         "ai_service": ai_health["status"],
-        "llm_service": llm_health["status"]
+        "llm_service": llm_health["status"],
+        "text_extraction_service": text_health.get("status", "unhealthy")
     }
     
     overall_status = "healthy" if all(
@@ -297,19 +299,19 @@ async def extract_pdf_text(request: TextExtractionRequest):
     Raises:
         HTTPException: If text extraction fails
     """
-    global text_extraction_service
+    global text_extraction_client
     
-    if not text_extraction_service:
+    if not text_extraction_client:
         raise HTTPException(
             status_code=503,
-            detail="Text extraction service not available"
+            detail="Text extraction client not available"
         )
     
     try:
         logger.info(f"Extracting text from PDF: {request.pdf_url}")
         
         # Extract text from PDF
-        extracted_text = await text_extraction_service.extract_text_from_url(request.pdf_url)
+        extracted_text = await text_extraction_client.extract_text_from_url(request.pdf_url)
         
         # Count pages (approximate from page markers)
         page_count = extracted_text.count("[Page ") if "[Page " in extracted_text else 1

@@ -46,8 +46,18 @@ services:
     depends_on:
       - ai-service
       - llm-service
+      - text-extraction-service
     env_file:
       - .env
+
+  text-extraction-service:
+    build: ./text-extraction-service
+    ports:
+      - "5008:5008"
+    env_file:
+      - .env
+    environment:
+      - PORT=5008
 
   nginx:
     image: nginx:latest
@@ -62,3 +72,4 @@ services:
       - ai-service
       - llm-service
       - prediction-service
+      - text-extraction-service
