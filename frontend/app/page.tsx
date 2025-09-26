@@ -6,17 +6,22 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Upload, Search, Filter, AlertCircle, RefreshCw } from "lucide-react"
+import { Upload, Search, Filter, AlertCircle, RefreshCw, LogIn } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
 import { ConfirmTagsModal } from "@/components/confirm-tags-modal"
 import { DocumentDetailsModal } from "@/components/document-details-modal"
 import { DocumentTable } from "@/components/document-table"
 import { DocumentPagination } from "@/components/document-pagination"
+import { UserMenu } from "@/components/auth/user-menu"
 import { useDocuments } from "@/hooks/use-documents"
+import { useAuth } from "@/contexts/auth-context"
 import { Document, apiClient } from "@/lib/api"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function HomePage() {
+  // Auth state
+  const { user, loading: authLoading } = useAuth()
+
   // Local state for UI
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState<"name" | "date" | "size">("date")
@@ -95,7 +100,7 @@ export default function HomePage() {
       // In a real implementation, this would create the document via API
       // For now, we'll just refetch to get the latest data
       await refetch()
-      setConfirmTagsDocument(newDocument)
+      // No longer need to show confirm tags modal since it's handled in the enhanced upload flow
       setIsUploadModalOpen(false)
     } catch (err) {
       console.error('Error after upload:', err)
@@ -132,39 +137,20 @@ export default function HomePage() {
       
     } catch (err) {
       console.error('❌ Error updating document tags:', err)
-      // If the processed document doesn't exist, try to create it first (fallback)
-      if (err instanceof Error && err.message.includes('No processed document found')) {
-        console.log('🔄 Processed document not found, creating it first...')
-        try {
-          // Create processed document entry as fallback
-          const aiTags = confirmTagsDocument?.modelGeneratedTags.map(tag => ({
-            tag: tag.tag,
-            score: tag.score
-          })) || []
-          
-          await apiClient.createProcessedDocument({
-            document_id: documentIdNum,
-            suggested_tags: aiTags,
-            threshold_pct: 60
-          })
-          
-          // Now update with confirmed tags
-          await apiClient.updateDocumentTags(documentIdNum, {
-            confirmed_tags: confirmedTags,
-            user_added_labels: userAddedTags
-          })
-          
-          console.log('✅ Created processed document and updated tags (fallback)')
-          await refetch()
-          setConfirmTagsDocument(null)
-          
-        } catch (fallbackError) {
-          console.error('❌ Fallback also failed:', fallbackError)
-          throw fallbackError
-        }
-      } else {
-        throw err
-      }
+      
+      // Provide detailed error information instead of attempting fallback
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
+      const detailedError = new Error(
+        `Failed to update document tags: ${errorMessage}. ` +
+        `Document ID: ${documentId}. ` +
+        `Attempted to update with ${confirmedTags.length} confirmed tags and ${userAddedTags.length} user-added tags. ` +
+        `This error typically indicates that the processed document record does not exist in the database, ` +
+        `which suggests the document upload/processing workflow is incomplete. ` +
+        `Please verify that documents are properly processed before attempting tag confirmation, ` +
+        `or check the document service and database connectivity.`
+      )
+      
+      throw detailedError
     }
   }
 
@@ -189,6 +175,15 @@ export default function HomePage() {
               <h1 className="text-5xl font-bold text-red-600" style={{ marginLeft: '1rem' }}>Clerc.</h1>
                 <div className="h-6 w-px bg-gray-300 mx-4"></div>
                 <h1 className="text-xl font-bold text-gray-900">Document AI</h1>
+            </div>
+
+            {/* Authentication Section */}
+            <div className="flex items-center gap-4">
+              {authLoading ? (
+                <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full"></div>
+              ) : user ? (
+                <UserMenu />
+              ) : null}
             </div>
           </div>
         </div>
@@ -366,6 +361,7 @@ export default function HomePage() {
           onClose={() => setDetailsDocument(null)}
         />
       )}
+
     </div>
   )
 }

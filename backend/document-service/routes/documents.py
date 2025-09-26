@@ -389,7 +389,7 @@ def update_document_tags(document_id):
             return APIResponse.validation_error("Request body cannot be empty")
 
         # Validate that at least one tag field is provided
-        valid_fields = ['confirmed_tags', 'user_added_labels', 'user_removed_tags', 'user_id']
+        valid_fields = ['confirmed_tags', 'user_added_labels', 'user_removed_tags', 'user_id', 'explanations']
         tag_fields = ['confirmed_tags', 'user_added_labels', 'user_removed_tags']
 
         has_tag_field = any(field in data for field in tag_fields)
@@ -454,3 +454,34 @@ def get_unprocessed_documents():
     except Exception as e:
         logger.error(f"Unexpected error in get_unprocessed_documents: {str(e)}")
         return APIResponse.internal_error()
+
+@documents_bp.route('/<int:document_id>/explanations', methods=['GET'])
+def get_document_explanations(document_id):
+    """Get explanations for a specific document"""
+    logger.info(f"GET /documents/{document_id}/explanations - Request from {request.remote_addr}")
+
+    if not db_service:
+        return APIResponse.internal_error("Database service not available")
+
+    try:
+        # Get explanations for document
+        explanations, error = db_service.get_explanations_for_document(document_id)
+
+        if error:
+            logger.error(f"Database error: {error}")
+            return APIResponse.internal_error("Failed to retrieve explanations")
+
+        if not explanations:
+            return APIResponse.success([], "No explanations found for this document")
+
+        logger.info(f"Successfully retrieved {len(explanations)} explanations for document {document_id}")
+        return APIResponse.success(explanations, f"Retrieved {len(explanations)} explanations")
+
+    except Exception as e:
+        logger.error(f"Unexpected error in get_document_explanations: {str(e)}")
+        return APIResponse.internal_error()
+
+@documents_bp.route('/test', methods=['GET'])
+def test_route():
+    """Simple test route to verify blueprint works"""
+    return APIResponse.success({"test": "explanations route working"}, "Test successful")

@@ -62,7 +62,7 @@ class TestMissingEndpointsE2E:
             "document_name": "Status E2E Test Document",
             "document_type": "PDF",
             "link": "https://test.com/status-e2e-test.pdf",
-            "uploaded_by": 1,
+            "uploaded_by": 6,
         }
         
         create_response = requests.post(
