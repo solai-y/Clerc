@@ -94,6 +94,17 @@ def health_check():
     else:
         return APIResponse.error("Document service is unhealthy", 503, "SERVICE_UNHEALTHY")
 
+@app.route('/debug/routes', methods=['GET'])
+def debug_routes():
+    """Debug endpoint to show all registered routes"""
+    import urllib.parse
+    output = []
+    for rule in app.url_map.iter_rules():
+        methods = ','.join(rule.methods)
+        line = urllib.parse.unquote(f"{rule.endpoint}: {rule.rule} [{methods}]")
+        output.append(line)
+    return {"routes": output}
+
 @app.route('/e2e', methods=['GET'])
 def e2e_test():
     """End-to-end test endpoint"""
