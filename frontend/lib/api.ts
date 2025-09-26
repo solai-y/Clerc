@@ -55,6 +55,9 @@ export interface GetDocumentsOptions {
   limit?: number;
   offset?: number;
   search?: string;
+  // NEW: server-side sort controls
+  sort_by?: "name" | "date" | "size";
+  sort_order?: "asc" | "desc";
 }
 
 class APIClient {
@@ -94,23 +97,27 @@ class APIClient {
   // -------- Document Service Methods (all use relative paths on client) --------
   async getDocuments(options: GetDocumentsOptions = {}): Promise<{
     data: BackendProcessedDocument[];
-    pagination: { total: number; page: number; totalPages: number };
+    pagination: { total: number; page: number; totalPages: number; limit: number; offset: number } | null;
   }> {
     const params = new URLSearchParams();
-    if (options.limit) params.append("limit", String(options.limit));
-    if (options.offset) params.append("offset", String(options.offset));
-    if (options.search) params.append("search", options.search);
+
+    // Use explicit undefined checks so offset=0 is preserved
+    if (options.limit !== undefined)  params.append("limit", String(options.limit));
+    if (options.offset !== undefined) params.append("offset", String(options.offset));
+    if (options.search)               params.append("search", options.search);
+    if (options.sort_by)              params.append("sort_by", options.sort_by);
+    if (options.sort_order)           params.append("sort_order", options.sort_order);
 
     const url = apiUrl(`/documents${params.toString() ? `?${params}` : ""}`);
     if (isServer) console.log("[api] GET", url);
 
     const responseData = await this.fetchWithErrorHandling<{
       documents: BackendProcessedDocument[];
-      pagination: { total: number; page: number; totalPages: number; limit: number; offset: number };
+      pagination: { total: number; page: number; totalPages: number; limit: number; offset: number } | null;
     }>(url);
 
-    return { data: responseData.documents, pagination: responseData.pagination };
-    }
+    return { data: responseData.documents, pagination: responseData.pagination ?? null };
+  }
 
   async getDocument(id: number): Promise<BackendProcessedDocument> {
     return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl(`/documents/${id}`));
@@ -172,7 +179,7 @@ class APIClient {
     status?: string;
   }): Promise<any> {
     return this.fetchWithErrorHandling<any>(apiUrl("/documents"), {
-      method: "POST", 
+      method: "POST",
       body: JSON.stringify(data),
     });
   }
@@ -221,11 +228,10 @@ class APIClient {
     tertiary?: number;
   }): Promise<{ success: boolean; message: string }> {
     const updateData: any = { updated_by: "frontend_user" };
-    
-    if (thresholds.primary !== undefined) updateData.primary = thresholds.primary;
+    if (thresholds.primary !== undefined)   updateData.primary = thresholds.primary;
     if (thresholds.secondary !== undefined) updateData.secondary = thresholds.secondary;
-    if (thresholds.tertiary !== undefined) updateData.tertiary = thresholds.tertiary;
-    
+    if (thresholds.tertiary !== undefined)  updateData.tertiary = thresholds.tertiary;
+
     try {
       const response = await this.fetchWithErrorHandling<{
         primary: number;
@@ -236,7 +242,7 @@ class APIClient {
         method: "PUT",
         body: JSON.stringify(updateData),
       });
-      
+
       return {
         success: true,
         message: `Confidence thresholds updated successfully. Primary: ${response.primary}, Secondary: ${response.secondary}, Tertiary: ${response.tertiary}`
@@ -264,7 +270,7 @@ class APIClient {
         updated_at?: string;
         updated_by?: string;
       }>(apiUrl("/predict/config/thresholds"));
-      
+
       return {
         primary: response.primary,
         secondary: response.secondary,
@@ -287,7 +293,7 @@ class APIClient {
     character_count: number;
   }> {
     try {
-      const response = await this.fetchWithErrorHandling<{
+      return await this.fetchWithErrorHandling<{
         text: string;
         page_count: number;
         character_count: number;
@@ -295,8 +301,6 @@ class APIClient {
         method: "POST",
         body: JSON.stringify({ pdf_url: pdfUrl }),
       });
-      
-      return response;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       throw new Error(
@@ -363,7 +367,7 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     size: sizeEstimate,
     type: processedDoc.raw_documents?.document_type || "[Type unavailable]",
     link: processedDoc.raw_documents?.link || "",
-    company: processedDoc.company, // Company is now in processed_documents
+    company: processedDoc.company,
     companyName: processedDoc.raw_documents?.companies?.company_name || null,
     uploaded_by: processedDoc.raw_documents?.uploaded_by,
     status: processedDoc.status || "processed",
@@ -379,7 +383,6 @@ function formatFileSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
-
 
 // Export singleton
 export const apiClient = new APIClient();

@@ -64,7 +64,9 @@ export default function HomePage() {
   } = useDocuments({
     search: debouncedSearchTerm || undefined, // Use debounced search term
     limit: itemsPerPage, // 15 documents per page
-    offset: (currentPage - 1) * itemsPerPage, // Calculate offset based on current page
+    offset: (currentPage - 1) * itemsPerPage,
+    sort_by: sortBy,          
+    sort_order: sortOrder, 
   })
 
   // Apply client-side filtering for tags and sorting (search is handled server-side)

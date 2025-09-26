@@ -94,7 +94,7 @@ def test_get_documents_with_pagination(client: FlaskClient):
 def test_get_documents_with_search(client: FlaskClient):
     print("\n[TEST] Running GET /documents with search test...")
 
-    response = client.get('/documents?search=Financial&limit=3')
+    response = client.get('/documents?search=Financial')
     print(f"[DEBUG] Received response with status code: {response.status_code}")
 
     try:
