@@ -380,9 +380,28 @@ class DatabaseService:
             update_data = {}
             
             if 'confirmed_tags' in tag_data:
-                if not isinstance(tag_data['confirmed_tags'], list):
-                    return None, "confirmed_tags must be an array"
-                update_data['confirmed_tags'] = tag_data['confirmed_tags']
+                # Handle both legacy array format and new JSONB format
+                confirmed_tags = tag_data['confirmed_tags']
+                if isinstance(confirmed_tags, list):
+                    # Legacy format - convert to new JSONB format
+                    update_data['confirmed_tags'] = {
+                        "tags": [
+                            {
+                                "tag": tag,
+                                "source": "legacy",
+                                "confidence": 1.0,
+                                "confirmed": True,
+                                "added_by": "migrated",
+                                "added_at": "now()",
+                                "level": "unknown"
+                            } for tag in confirmed_tags
+                        ]
+                    }
+                elif isinstance(confirmed_tags, dict):
+                    # New JSONB format - use as is
+                    update_data['confirmed_tags'] = confirmed_tags
+                else:
+                    return None, "confirmed_tags must be an array or object"
             
             if 'user_added_labels' in tag_data:
                 if not isinstance(tag_data['user_added_labels'], list):
@@ -490,6 +509,51 @@ class DatabaseService:
             self.logger.error(error_msg)
             return error_msg
     
+    def get_complete_document_by_id(self, document_id: int) -> tuple[Optional[Dict], Optional[str]]:
+        """Get complete document information including both raw and processed data"""
+        try:
+            # Query processed_documents and join with raw_documents
+            response = self.supabase.table('processed_documents').select("""
+                *,
+                raw_documents!document_id(
+                    document_name,
+                    document_type,
+                    link,
+                    uploaded_by,
+                    upload_date,
+                    file_size,
+                    file_hash,
+                    status
+                )
+            """).eq('document_id', document_id).execute()
+
+            if response.data:
+                # Get the first (should be only) result
+                document = response.data[0]
+
+                # Flatten the structure for easier access
+                if document.get('raw_documents'):
+                    raw_data = document['raw_documents']
+                    document.update(raw_data)
+                    del document['raw_documents']
+
+                self.logger.info(f"Retrieved complete document with ID: {document_id}")
+                return document, None
+            else:
+                # Fallback to raw_documents only if no processed document exists
+                raw_response = self.supabase.table('raw_documents').select("*").eq('document_id', document_id).execute()
+                if raw_response.data:
+                    self.logger.info(f"Retrieved raw document only with ID: {document_id}")
+                    return raw_response.data[0], None
+                else:
+                    self.logger.warning(f"Document with ID {document_id} not found")
+                    return None, f"Document with ID {document_id} not found"
+
+        except Exception as e:
+            error_msg = f"Failed to retrieve complete document: {str(e)}"
+            self.logger.error(error_msg)
+            return None, error_msg
+
     def get_explanations_for_document(self, document_id: int) -> tuple[List[Dict], Optional[str]]:
         """Get all explanations for a specific document by joining with processed_documents"""
         try:

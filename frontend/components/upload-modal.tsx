@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react"
 import { apiClient } from "@/lib/api"
-import { EnhancedConfirmTagsModal } from "./enhanced-confirm-tags-modal"
+import { HierarchyBasedConfirmTagsModal } from "./hierarchy-based-confirm-tags-modal"
 
 export interface Document {
   id: string
@@ -401,24 +401,26 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
-  const handleConfirmTags = async (documentId: string, confirmedTags: string[], userAddedTags: string[]) => {
+  const handleConfirmTags = async (documentId: string, confirmedTagsData: any) => {
     if (pendingDocument) {
+      // Extract tag names from the new JSONB structure for display
+      const confirmedTagNames = confirmedTagsData.tags?.map((t: any) => t.tag) || []
+
       // Update the document with confirmed tags
       const finalDocument: Document = {
         ...pendingDocument,
-        tags: [...confirmedTags, ...userAddedTags],
+        tags: confirmedTagNames,
         modelGeneratedTags: pendingDocument.modelGeneratedTags?.map(tag => ({
           ...tag,
-          isConfirmed: confirmedTags.includes(tag.tag)
+          isConfirmed: confirmedTagNames.includes(tag.tag)
         })),
-        userAddedTags: userAddedTags
+        userAddedTags: [] // Not using user added tags in hierarchy-based system
       }
       
       // Update the backend with confirmed tags and explanations
       try {
         await apiClient.updateDocumentTags(parseInt(documentId), {
-          confirmed_tags: confirmedTags,
-          user_added_labels: userAddedTags,
+          confirmed_tags: confirmedTagsData,
           explanations: explanationData
         })
       } catch (error) {
@@ -579,9 +581,8 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
 
     {/* Enhanced Tag Confirmation Modal */}
     {showConfirmModal && pendingDocument && (
-      <EnhancedConfirmTagsModal
+      <HierarchyBasedConfirmTagsModal
         document={pendingDocument}
-        predictions={predictionData}
         explanations={explanationData}
         onConfirm={handleConfirmTags}
         onClose={handleCloseConfirmModal}

@@ -17,7 +17,7 @@ export interface BackendProcessedDocument {
   document_id: number;
   model_id: number | null;
   threshold_pct: number;
-  confirmed_tags: string[] | null;
+  confirmed_tags: string[] | any | null; // Support both legacy array and new JSONB format
   suggested_tags: Array<{ tag: string; score: number }> | null;
   user_added_labels: string[] | null;
   ocr_used: boolean;
@@ -116,6 +116,10 @@ class APIClient {
     return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl(`/documents/${id}`));
   }
 
+  async getCompleteDocument(id: number): Promise<BackendProcessedDocument> {
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl(`/documents/${id}/complete`));
+  }
+
   async createDocument(
     document: Omit<BackendProcessedDocument, "process_id" | "processing_date">
   ): Promise<BackendProcessedDocument> {
@@ -142,7 +146,7 @@ class APIClient {
   async updateDocumentTags(
     documentId: number,
     tagData: {
-      confirmed_tags?: string[];
+      confirmed_tags?: string[] | any; // Support both legacy array and new JSONB format
       user_added_labels?: string[];
       user_removed_tags?: string[];
     }
@@ -330,9 +334,21 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
   const modelGeneratedTags: Array<{ tag: string; score: number; isConfirmed: boolean }> = [];
   const userAddedTags: string[] = [];
 
+  // Helper function to extract confirmed tag names from both formats
+  const getConfirmedTagNames = (confirmedTags: any): string[] => {
+    if (!confirmedTags) return [];
+    if (Array.isArray(confirmedTags)) return confirmedTags; // Legacy format
+    if (confirmedTags.tags && Array.isArray(confirmedTags.tags)) {
+      return confirmedTags.tags.map((t: any) => t.tag); // New JSONB format
+    }
+    return [];
+  };
+
+  const confirmedTagNames = getConfirmedTagNames(processedDoc.confirmed_tags);
+
   if (processedDoc.suggested_tags) {
     processedDoc.suggested_tags.forEach((t) => {
-      const isConfirmed = processedDoc.confirmed_tags?.includes(t.tag) || false;
+      const isConfirmed = confirmedTagNames.includes(t.tag);
       modelGeneratedTags.push({ tag: t.tag, score: t.score, isConfirmed });
       if (isConfirmed && !tags.includes(t.tag)) tags.push(t.tag);
     });
@@ -345,11 +361,10 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     });
   }
 
-  if (processedDoc.confirmed_tags) {
-    processedDoc.confirmed_tags.forEach((ct) => {
-      if (!tags.includes(ct)) tags.push(ct);
-    });
-  }
+  // Add confirmed tags to the tags array
+  confirmedTagNames.forEach((ct) => {
+    if (!tags.includes(ct)) tags.push(ct);
+  });
 
   const sizeEstimate = processedDoc.raw_documents?.file_size
     ? formatFileSize(processedDoc.raw_documents.file_size)
