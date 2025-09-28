@@ -317,6 +317,18 @@ export default function HomePage() {
         <DocumentDetailsModal
           document={detailsDocument}
           onClose={() => setDetailsDocument(null)}
+          onConfirm={async (documentId: string, confirmedTagsData: any) => {
+            try {
+              const documentIdNum = parseInt(documentId)
+              await apiClient.updateDocumentTags(documentIdNum, {
+                confirmed_tags: confirmedTagsData
+              })
+              await refetch()
+            } catch (err) {
+              console.error('❌ Error updating document tags:', err)
+              throw err
+            }
+          }}
         />
       )}
 

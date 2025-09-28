@@ -1,253 +1,405 @@
 "use client"
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
+import type React from "react"
+import { useState, useMemo, useEffect } from "react"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { Progress } from "@/components/ui/progress"
-import { useState, useEffect } from "react"
-import { apiClient } from "@/lib/api"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
-  FileText,
-  Calendar,
   Tag,
-  Building,
-  User,
-  Download,
-  ExternalLink,
-  Clock,
   CheckCircle,
-  AlertCircle,
-  Info,
-  Bot,
-  UserPlus,
-  Check,
-  X,
-  MessageSquare,
+  Loader2,
   Brain,
-  Cpu,
+  Bot,
+  FileText,
   TrendingUp,
   Eye,
-  Settings
+  MessageSquare,
+  ArrowRight,
+  AlertCircle,
+  RefreshCw
 } from "lucide-react"
+import { Document, apiClient } from "@/lib/api"
+import { useToast } from "@/hooks/use-toast"
 
-interface Document {
-  id: string
-  name: string
-  uploadDate: string
-  tags: string[]
-  size: string
-  type: string
-  link: string
-  company: number | null
-  companyName: string | null
-  uploaded_by: number | null
-  status: string
-  modelGeneratedTags: Array<{
-    tag: string
-    score: number
-    isConfirmed: boolean
-    source?: string
-    hierarchy_level?: string
-  }>
-  userAddedTags: string[]
+interface EnhancedTag {
+  tag: string
+  confidence: number
+  source: 'ai' | 'llm'
+  level: 'primary' | 'secondary' | 'tertiary'
+  reasoning?: string
+  isConfirmed: boolean
+}
+
+interface TagHierarchy {
+  [primary: string]: {
+    [secondary: string]: string[]
+  }
 }
 
 interface DocumentDetailsModalProps {
   document: Document
+  onConfirm: (documentId: string, confirmedTagsData: any) => Promise<void> | void
   onClose: () => void
+  // TEMPORARY: Keep explanations prop for SHAP data until orchestrator is fixed
+  explanations?: any[]
 }
 
-export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModalProps) {
-  const [explanations, setExplanations] = useState<Array<{
-    explanation_id: number;
-    classification_level: string;
-    predicted_tag: string;
-    confidence: number;
-    reasoning: string;
-    source_service: string;
-    created_at: string;
-    shap_data?: {
-      supporting?: Array<{ token: string; impact: number }>;
-      opposing?: Array<{ token: string; impact: number }>;
-    };
-    service_response?: any;
-  }>>([])
-  const [loadingExplanations, setLoadingExplanations] = useState(false)
-  const [activeTab, setActiveTab] = useState("tags")
+export function DocumentDetailsModal({
+  document,
+  onConfirm,
+  onClose,
+  explanations = []
+}: DocumentDetailsModalProps) {
+  const { toast } = useToast()
+
+
+  // Load hierarchy from JSON file
+  const [hierarchy, setHierarchy] = useState<TagHierarchy>({})
+  const [hierarchyLoading, setHierarchyLoading] = useState(true)
+
+  // Database-fetched data
+  const [dbPredictions, setDbPredictions] = useState<any>(null)
+  const [dbExplanations, setDbExplanations] = useState<any[]>([])
+  const [dataLoading, setDataLoading] = useState(true)
 
   useEffect(() => {
-    const fetchExplanations = async () => {
-      setLoadingExplanations(true)
+    const loadHierarchy = async () => {
       try {
-        console.log("🔍 Fetching explanations for document:", document.id)
-
-        // Fetch explanations from API
-
-        const explanationData = await apiClient.getDocumentExplanations(parseInt(document.id))
-        console.log("📊 Explanation data received:", explanationData)
-        console.log("📊 Explanation data length:", explanationData?.length)
-        console.log("📊 First explanation:", explanationData?.[0])
-
-        // Transform API data to match our expected structure
-        const transformedExplanations = (explanationData || []).map((exp: any) => ({
-          ...exp,
-          shap_data: exp.service_response?.shap_data || undefined
-        }))
-
-        if (transformedExplanations?.[0]?.shap_data) {
-          console.log("🧠 SHAP data found:", transformedExplanations[0].shap_data)
-        }
-        setExplanations(transformedExplanations)
+        const response = await fetch('/hierarchy.json')
+        const data = await response.json()
+        setHierarchy(data)
       } catch (error) {
-        console.error("❌ Error fetching explanations:", error)
-        console.error("❌ Error details:", {
-          message: error instanceof Error ? error.message : 'Unknown error',
-          stack: error instanceof Error ? error.stack : undefined,
-          documentId: document.id
+        console.error('Failed to load hierarchy:', error)
+        toast({
+          title: "Warning",
+          description: "Failed to load tag hierarchy. Using fallback structure.",
+          variant: "destructive",
         })
-
-        // Set empty explanations - no fallback or mock data
-        setExplanations([])
       } finally {
-        setLoadingExplanations(false)
+        setHierarchyLoading(false)
+      }
+    }
+    loadHierarchy()
+  }, [toast])
+
+  // Fetch prediction and explanation data from database
+  useEffect(() => {
+    const fetchDatabaseData = async () => {
+      try {
+        setDataLoading(true)
+
+        // Fetch complete document details (includes suggested_tags from processed_documents)
+        const documentResponse = await apiClient.getCompleteDocument(parseInt(document.id))
+        setDbPredictions(documentResponse.suggested_tags)
+
+        // Fetch explanations from database
+        const explanationsResponse = await apiClient.getDocumentExplanations(parseInt(document.id))
+        setDbExplanations(explanationsResponse)
+
+        console.log("🗄️ Database - predictions:", documentResponse.suggested_tags)
+        console.log("🗄️ Database - explanations:", explanationsResponse)
+
+      } catch (error) {
+        console.error('Failed to fetch database data:', error)
+        toast({
+          title: "Warning",
+          description: "Failed to load prediction data from database. Using props if available.",
+          variant: "destructive",
+        })
+      } finally {
+        setDataLoading(false)
       }
     }
 
     if (document.id) {
-      fetchExplanations()
+      fetchDatabaseData()
     }
-  }, [document.id])
+  }, [document.id, toast])
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit"
-    })
+  // Process prediction data into enhanced tags (using database data only)
+  const enhancedTags = useMemo<EnhancedTag[]>(() => {
+    const tags: EnhancedTag[] = []
+    const processedTags = new Set<string>()
+
+    // First, process explanations to get the correct hierarchy levels and sources
+    if (dbExplanations && dbExplanations.length > 0) {
+      console.log("📊 Processing database explanations for hierarchy:", dbExplanations)
+
+      for (const explanation of dbExplanations) {
+        console.log("🔍 Processing explanation:", {
+          predicted_tag: explanation.predicted_tag,
+          classification_level: explanation.classification_level,
+          source_service: explanation.source_service,
+          confidence: explanation.confidence
+        })
+
+        if (explanation.predicted_tag && explanation.classification_level && !processedTags.has(explanation.predicted_tag)) {
+          processedTags.add(explanation.predicted_tag)
+
+          // Use the actual classification level from the database
+          const level = explanation.classification_level as 'primary' | 'secondary' | 'tertiary'
+
+          // Find matching prediction data for confidence score
+          let confidence = 0
+          if (dbPredictions && Array.isArray(dbPredictions)) {
+            const matchingPred = dbPredictions.find(pred => pred.tag === explanation.predicted_tag)
+            confidence = matchingPred?.score || explanation.confidence || 0
+          } else {
+            confidence = explanation.confidence || 0
+          }
+
+          const enhancedTag = {
+            tag: explanation.predicted_tag,
+            confidence: confidence,
+            source: explanation.source_service as 'ai' | 'llm',
+            level: level,
+            reasoning: explanation.reasoning || `${explanation.source_service?.toUpperCase()} prediction`,
+            isConfirmed: true
+          }
+
+          console.log("✅ Adding enhanced tag:", enhancedTag)
+          tags.push(enhancedTag)
+        }
+      }
+    }
+
+    // Fallback: if no explanations, process predictions with database hierarchy levels
+    if (tags.length === 0 && dbPredictions && Array.isArray(dbPredictions)) {
+      console.log("📊 Fallback: Processing database predictions:", dbPredictions)
+
+      for (const pred of dbPredictions) {
+        if (pred.tag && !processedTags.has(pred.tag)) {
+          processedTags.add(pred.tag)
+
+          // Use the hierarchy_level from the database instead of reassigning based on confidence
+          const level = pred.hierarchy_level as 'primary' | 'secondary' | 'tertiary'
+
+          tags.push({
+            tag: pred.tag,
+            confidence: pred.score || 0,
+            source: (pred.source || 'ai') as 'ai' | 'llm',
+            level: level,
+            reasoning: `${(pred.source || 'ai').toUpperCase()} prediction from database`,
+            isConfirmed: true
+          })
+        }
+      }
+    }
+
+    console.log("✅ Enhanced tags result:", tags)
+    return tags
+  }, [dbPredictions, dbExplanations])
+
+  // State for hierarchy-based selection
+  const [selectedPrimary, setSelectedPrimary] = useState<string>("")
+  const [selectedSecondary, setSelectedSecondary] = useState<string>("")
+  const [selectedTertiary, setSelectedTertiary] = useState<string>("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState("selection")
+
+  // Edit mode state
+  const [isEditMode, setIsEditMode] = useState(false)
+
+  // Initialize selections with AI/LLM predictions
+  useEffect(() => {
+    const primaryTag = enhancedTags.find(t => t.level === 'primary')
+    const secondaryTag = enhancedTags.find(t => t.level === 'secondary')
+    const tertiaryTag = enhancedTags.find(t => t.level === 'tertiary')
+
+    if (primaryTag) setSelectedPrimary(primaryTag.tag)
+    if (secondaryTag) setSelectedSecondary(secondaryTag.tag)
+    if (tertiaryTag) setSelectedTertiary(tertiaryTag.tag)
+  }, [enhancedTags])
+
+  // Get available options based on current selection
+  const primaryOptions = useMemo(() => Object.keys(hierarchy), [hierarchy])
+
+  const secondaryOptions = useMemo(() => {
+    if (!selectedPrimary || !hierarchy[selectedPrimary]) return []
+    return Object.keys(hierarchy[selectedPrimary])
+  }, [selectedPrimary, hierarchy])
+
+  const tertiaryOptions = useMemo(() => {
+    if (!selectedPrimary || !selectedSecondary || !hierarchy[selectedPrimary]?.[selectedSecondary]) return []
+    const tertiaries = hierarchy[selectedPrimary][selectedSecondary]
+    return tertiaries.length > 0 ? tertiaries : [selectedSecondary]
+  }, [selectedPrimary, selectedSecondary, hierarchy])
+
+  // Handle hierarchy changes
+  const handlePrimaryChange = (value: string) => {
+    setSelectedPrimary(value)
+    setSelectedSecondary("")
+    setSelectedTertiary("")
   }
 
-  const getStatusIcon = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'processed':
-      case 'completed':
-      case 'user_confirmed':
-        return <CheckCircle className="w-4 h-4 text-green-500" />
-      case 'processing':
-        return <Clock className="w-4 h-4 text-yellow-500" />
-      case 'failed':
-      case 'error':
-        return <AlertCircle className="w-4 h-4 text-red-500" />
-      default:
-        return <Info className="w-4 h-4 text-blue-500" />
+  const handleSecondaryChange = (value: string) => {
+    setSelectedSecondary(value)
+    setSelectedTertiary("")
+  }
+
+  const handleTertiaryChange = (value: string) => {
+    setSelectedTertiary(value)
+  }
+
+  // Auto-select when only one option is available
+  useEffect(() => {
+    if (secondaryOptions.length === 1 && !selectedSecondary) {
+      setSelectedSecondary(secondaryOptions[0])
+    }
+  }, [secondaryOptions, selectedSecondary])
+
+  useEffect(() => {
+    if (tertiaryOptions.length === 1 && !selectedTertiary) {
+      setSelectedTertiary(tertiaryOptions[0])
+    }
+  }, [tertiaryOptions, selectedTertiary])
+
+  const handleConfirm = async () => {
+    if (!selectedPrimary || !selectedSecondary || !selectedTertiary) {
+      toast({
+        title: "Incomplete Selection",
+        description: "Please select primary, secondary, and tertiary tags.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      // Create the data structure for the backend API
+      const confirmedTagsData = {
+        confirmed_tags: {
+          tags: [
+            {
+              tag: selectedPrimary,
+              source: enhancedTags.find(t => t.level === 'primary')?.source || 'human',
+              confidence: enhancedTags.find(t => t.level === 'primary')?.confidence || 1.0,
+              confirmed: true,
+              added_by: 'user',
+              added_at: new Date().toISOString(),
+              level: 'primary'
+            },
+            {
+              tag: selectedSecondary,
+              source: enhancedTags.find(t => t.level === 'secondary')?.source || 'human',
+              confidence: enhancedTags.find(t => t.level === 'secondary')?.confidence || 1.0,
+              confirmed: true,
+              added_by: 'user',
+              added_at: new Date().toISOString(),
+              level: 'secondary'
+            },
+            {
+              tag: selectedTertiary,
+              source: enhancedTags.find(t => t.level === 'tertiary')?.source || 'human',
+              confidence: enhancedTags.find(t => t.level === 'tertiary')?.confidence || 1.0,
+              confirmed: true,
+              added_by: 'user',
+              added_at: new Date().toISOString(),
+              level: 'tertiary'
+            }
+          ]
+        }
+      }
+
+      await onConfirm(document.id, confirmedTagsData)
+
+      toast({
+        title: "Success!",
+        description: `Document classification updated: ${selectedPrimary} → ${selectedSecondary} → ${selectedTertiary}`,
+        variant: "default",
+      })
+
+      onClose()
+    } catch (error) {
+      console.error("Error confirming tags:", error)
+
+      toast({
+        title: "Error",
+        description: "Failed to update document classification. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'processed':
-      case 'completed':
-      case 'user_confirmed':
-        return 'bg-green-50 text-green-700 border-green-200'
-      case 'processing':
-        return 'bg-yellow-50 text-yellow-700 border-yellow-200'
-      case 'failed':
-      case 'error':
-        return 'bg-red-50 text-red-700 border-red-200'
-      default:
-        return 'bg-blue-50 text-blue-700 border-blue-200'
-    }
+  const resetToAIPredictions = () => {
+    const primaryTag = enhancedTags.find(t => t.level === 'primary')
+    const secondaryTag = enhancedTags.find(t => t.level === 'secondary')
+    const tertiaryTag = enhancedTags.find(t => t.level === 'tertiary')
+
+    setSelectedPrimary(primaryTag?.tag || "")
+    setSelectedSecondary(secondaryTag?.tag || "")
+    setSelectedTertiary(tertiaryTag?.tag || "")
   }
 
-  const handleDownload = () => {
-    if (document.link) {
-      window.open(document.link, '_blank')
-    }
+  const primaryTag = enhancedTags.find(t => t.level === 'primary')
+  const secondaryTag = enhancedTags.find(t => t.level === 'secondary')
+  const tertiaryTag = enhancedTags.find(t => t.level === 'tertiary')
+
+  // Helper function to get the source for displayed tags
+  const getTagSource = (selectedTag: string, originalTag: EnhancedTag | undefined) => {
+    if (!originalTag) return 'human'; // If no AI/LLM prediction, it's human selected
+    if (selectedTag === originalTag.tag) return originalTag.source; // Same as prediction
+    return 'human'; // User changed the selection
   }
 
-  const handleOpenExternal = () => {
-    if (document.link) {
-      window.open(document.link, '_blank')
-    }
+  if (hierarchyLoading || dataLoading) {
+    return (
+      <Dialog open onOpenChange={onClose}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Loading Document Classification</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-8 h-8 animate-spin" />
+            <span className="ml-2">
+              {hierarchyLoading && dataLoading
+                ? "Loading data..."
+                : hierarchyLoading
+                ? "Loading hierarchy..."
+                : "Loading predictions..."}
+            </span>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
   }
-
-  // Process tags from explanations data with fallback to document.modelGeneratedTags
-  const enhancedTags = explanations.length > 0
-    ? explanations.map(exp => ({
-        tag: exp.predicted_tag,
-        confidence: exp.confidence,
-        source: exp.source_service as 'ai' | 'llm',
-        level: exp.classification_level as 'primary' | 'secondary' | 'tertiary',
-        reasoning: exp.reasoning,
-        isConfirmed: document.modelGeneratedTags?.some(modelTag =>
-          modelTag.tag === exp.predicted_tag && modelTag.isConfirmed
-        ) || false,
-        explanation: exp
-      }))
-    : // No explanations available - return empty array instead of using fallback data
-      []
-
-  const aiTags = enhancedTags.filter(tag => tag.source === 'ai')
-  const llmTags = enhancedTags.filter(tag => tag.source === 'llm')
-
-  const primaryTag = enhancedTags.find(tag => tag.level === 'primary')
-  const secondaryTag = enhancedTags.find(tag => tag.level === 'secondary')
-  const tertiaryTag = enhancedTags.find(tag => tag.level === 'tertiary')
-
-  // Filter explanations to show only relevant ones (same as enhanced confirm modal)
-  const filteredExplanations = explanations.filter(exp => {
-    const hasLLMForSameLevel = explanations.some(other =>
-      other.predicted_tag === exp.predicted_tag &&
-      other.classification_level === exp.classification_level &&
-      other.source_service === 'llm'
-    );
-
-    if (hasLLMForSameLevel) {
-      return exp.source_service === 'llm';
-    }
-    return exp.source_service === 'ai';
-  });
-
-  // Debug info
-  console.log("🏷️ Document data:", {
-    id: document.id,
-    modelGeneratedTags: document.modelGeneratedTags,
-    userAddedTags: document.userAddedTags,
-    explanationsCount: explanations.length,
-    enhancedTagsCount: enhancedTags.length,
-    aiTagsCount: aiTags.length,
-    llmTagsCount: llmTags.length,
-    usingFallback: explanations.length === 0,
-    enhancedTags: enhancedTags
-  })
 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-6xl h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader className="shrink-0 pb-4">
           <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
-            <FileText className="w-6 h-6 text-blue-600" />
-            Document Details - {document.name}
+            <TrendingUp className="w-6 h-6 text-blue-600" />
+            Review & Update Document Classification
           </DialogTitle>
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
           <TabsList className="grid w-full grid-cols-4 shrink-0">
-            <TabsTrigger value="tags" className="flex items-center gap-2">
+            <TabsTrigger value="selection" className="flex items-center gap-2">
               <Tag className="w-4 h-4" />
-              Tags
+              Classification
             </TabsTrigger>
             <TabsTrigger value="hierarchy" className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
-              Hierarchy
+              Current Path
             </TabsTrigger>
             <TabsTrigger value="explanations" className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4" />
-              Explanations
+              AI Reasoning
             </TabsTrigger>
             <TabsTrigger value="document" className="flex items-center gap-2">
               <FileText className="w-4 h-4" />
@@ -256,178 +408,147 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
           </TabsList>
 
           <div className="flex-1 overflow-hidden">
-            {/* Tags Tab */}
-            <TabsContent value="tags" className="h-full overflow-y-auto space-y-4 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
-              {/* Show error when explanations are not available */}
-              {explanations.length === 0 && !loadingExplanations && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-                    <div className="text-sm text-red-800">
-                      <div className="font-semibold mb-1">Explanation Data Unavailable</div>
-                      <div className="space-y-1">
-                        <p>• Document explanations could not be loaded from the API</p>
-                        <p>• Tag source information (AI vs LLM) is not available</p>
-                        <p>• Classification hierarchy levels cannot be determined</p>
-                        <p>• SHAP explainability data is missing</p>
-                      </div>
-                      <div className="mt-2 text-xs text-red-600">
-                        Check server logs or contact system administrator to resolve explanation service issues.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* AI Generated Tags */}
-                <Card className="border-l-4 border-l-blue-500">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Bot className="w-5 h-5 text-blue-600" />
-                      AI Generated Tags
-                      <Badge variant="secondary" className="ml-auto">
-                        {aiTags.length} tags
-                      </Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {aiTags.map((tagData, index) => (
-                        <div key={`ai-${index}`} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-                          <div className="flex items-center gap-3 flex-1">
-                            <div className="flex items-center gap-1">
-                              {tagData.isConfirmed ? (
-                                <CheckCircle className="w-4 h-4 text-green-500" />
-                              ) : (
-                                <X className="w-4 h-4 text-gray-400" />
-                              )}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <div className="font-medium">{tagData.tag}</div>
-                                <Badge variant="outline" className="text-xs px-1 py-0">
-                                  {tagData.level}
-                                </Badge>
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                Confidence: {Math.round(tagData.confidence * 100)}%
-                              </div>
-                            </div>
-                          </div>
-                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                            <Bot className="w-3 h-3 mr-1" />
-                            AI
+            {/* Classification Selection Tab */}
+            <TabsContent value="selection" className="h-full overflow-y-auto space-y-6 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
+              <div className="space-y-6">
+                {/* AI Predictions Summary */}
+                {enhancedTags.length > 0 && (
+                  <Card className="border-l-4 border-l-purple-500 bg-purple-50">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <Brain className="w-5 h-5 text-purple-600" />
+                        AI/LLM Predictions
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={resetToAIPredictions}
+                          className="ml-auto"
+                        >
+                          <RefreshCw className="w-4 h-4 mr-1" />
+                          Reset to AI
+                        </Button>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-2 text-sm">
+                        {primaryTag && (
+                          <Badge variant="outline" className="bg-blue-100 text-blue-800">
+                            {primaryTag.tag}
                           </Badge>
-                        </div>
-                      ))}
-                      {aiTags.length === 0 && !loadingExplanations && (
-                        <div className="text-center py-8 text-gray-500">
-                          <Bot className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                          <p>No AI-generated tags available</p>
-                        </div>
-                      )}
-                      {aiTags.length === 0 && loadingExplanations && (
-                        <div className="text-center py-8 text-gray-500">
-                          <div className="animate-pulse">
-                            <Bot className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                            <p>Loading tag information...</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                        )}
+                        {primaryTag && secondaryTag && <ArrowRight className="w-4 h-4 text-gray-400" />}
+                        {secondaryTag && (
+                          <Badge variant="outline" className="bg-green-100 text-green-800">
+                            {secondaryTag.tag}
+                          </Badge>
+                        )}
+                        {secondaryTag && tertiaryTag && <ArrowRight className="w-4 h-4 text-gray-400" />}
+                        {tertiaryTag && (
+                          <Badge variant="outline" className="bg-orange-100 text-orange-800">
+                            {tertiaryTag.tag}
+                          </Badge>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
-                {/* LLM Generated Tags */}
-                <Card className="border-l-4 border-l-purple-500">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Brain className="w-5 h-5 text-purple-600" />
-                      LLM Generated Tags
-                      <Badge variant="secondary" className="ml-auto">
-                        {llmTags.length} tags
-                      </Badge>
+                {/* Hierarchy Selection */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Tag className="w-5 h-5 text-blue-600" />
+                      Select Classification Path
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {llmTags.map((tagData, index) => (
-                        <div key={`llm-${index}`} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-                          <div className="flex items-center gap-3 flex-1">
-                            <div className="flex items-center gap-1">
-                              {tagData.isConfirmed ? (
-                                <CheckCircle className="w-4 h-4 text-green-500" />
-                              ) : (
-                                <X className="w-4 h-4 text-gray-400" />
-                              )}
-                            </div>
-                            <div className="flex-1">
+                  <CardContent className="space-y-6">
+                    {/* Primary Selection */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Primary Classification</label>
+                      <Select value={selectedPrimary} onValueChange={handlePrimaryChange}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select primary classification..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {primaryOptions.map((primary) => (
+                            <SelectItem key={primary} value={primary}>
                               <div className="flex items-center gap-2">
-                                <div className="font-medium">{tagData.tag}</div>
-                                <Badge variant="outline" className="text-xs px-1 py-0">
-                                  {tagData.level}
-                                </Badge>
+                                <Badge variant="outline" className="bg-blue-50 text-blue-700">1</Badge>
+                                {primary}
                               </div>
-                              <div className="text-sm text-gray-500">
-                                Confidence: {Math.round(tagData.confidence * 100)}%
-                              </div>
-                            </div>
-                          </div>
-                          <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                            <Brain className="w-3 h-3 mr-1" />
-                            LLM
-                          </Badge>
-                        </div>
-                      ))}
-                      {llmTags.length === 0 && !loadingExplanations && (
-                        <div className="text-center py-8 text-gray-500">
-                          <Brain className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                          <p>No LLM-generated tags available</p>
-                        </div>
-                      )}
-                      {llmTags.length === 0 && loadingExplanations && (
-                        <div className="text-center py-8 text-gray-500">
-                          <div className="animate-pulse">
-                            <Brain className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                            <p>Loading tag information...</p>
-                          </div>
-                        </div>
-                      )}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
+
+                    {/* Secondary Selection */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Secondary Classification</label>
+                      <Select
+                        value={selectedSecondary}
+                        onValueChange={handleSecondaryChange}
+                        disabled={!selectedPrimary}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select secondary classification..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {secondaryOptions.map((secondary) => (
+                            <SelectItem key={secondary} value={secondary}>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="bg-green-50 text-green-700">2</Badge>
+                                {secondary}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Tertiary Selection */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Tertiary Classification</label>
+                      <Select
+                        value={selectedTertiary}
+                        onValueChange={handleTertiaryChange}
+                        disabled={!selectedSecondary}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select tertiary classification..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {tertiaryOptions.map((tertiary) => (
+                            <SelectItem key={tertiary} value={tertiary}>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="bg-orange-50 text-orange-700">3</Badge>
+                                {tertiary}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Current Selection Preview */}
+                    {selectedPrimary && selectedSecondary && selectedTertiary && (
+                      <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                        <div className="text-sm font-medium text-gray-600 mb-2">Selected Classification Path:</div>
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-blue-100 text-blue-800">{selectedPrimary}</Badge>
+                          <ArrowRight className="w-4 h-4 text-gray-400" />
+                          <Badge className="bg-green-100 text-green-800">{selectedSecondary}</Badge>
+                          <ArrowRight className="w-4 h-4 text-gray-400" />
+                          <Badge className="bg-orange-100 text-orange-800">{selectedTertiary}</Badge>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
-
-              {/* User Added Tags */}
-              <Card className="border-l-4 border-l-green-500">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <UserPlus className="w-5 h-5 text-green-600" />
-                    User Added Tags
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-wrap gap-2">
-                    {document.userAddedTags.length > 0 ? (
-                      document.userAddedTags.map((tag, index) => (
-                        <Badge
-                          key={`custom-${index}`}
-                          variant="secondary"
-                          className="bg-green-50 text-green-800 border-green-200"
-                        >
-                          <span>{tag}</span>
-                        </Badge>
-                      ))
-                    ) : (
-                      <p className="text-gray-500 italic text-sm">No user-added tags</p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
             </TabsContent>
 
-            {/* Hierarchy Tab */}
+            {/* Current Path Tab */}
             <TabsContent value="hierarchy" className="h-full overflow-y-auto space-y-4 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
               <Card>
                 <CardHeader>
@@ -438,352 +559,373 @@ export function DocumentDetailsModal({ document, onClose }: DocumentDetailsModal
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-6">
-                    {/* Primary Level */}
-                    {primaryTag && (
+                    {/* Selected Path */}
+                    {selectedPrimary && (
                       <div className="flex items-center gap-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50">
                         <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-sm">
                           1
                         </div>
                         <div className="flex-1">
-                          <div className="font-semibold text-lg">{primaryTag.tag}</div>
-                          <div className="text-sm text-gray-600">
-                            Primary Classification • {Math.round(primaryTag.confidence * 100)}% confidence
+                          <div className="font-semibold text-lg">{selectedPrimary}</div>
+                          <div className="text-sm text-gray-600">Primary Classification</div>
+                        </div>
+                        {(() => {
+                          const source = getTagSource(selectedPrimary, primaryTag);
+                          return (
+                            <Badge className={source === 'ai' ? 'bg-blue-100 text-blue-800' : source === 'llm' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
+                              {source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : source === 'llm' ? <Brain className="w-3 h-3 mr-1" /> : <Tag className="w-3 h-3 mr-1" />}
+                              {source === 'ai' ? 'AI' : source === 'llm' ? 'LLM' : 'HUMAN'}
+                            </Badge>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {selectedPrimary && selectedSecondary && (
+                      <>
+                        <div className="flex justify-center">
+                          <div className="w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-gray-400"></div>
+                        </div>
+                        <div className="flex items-center gap-4 p-4 border-2 border-green-200 rounded-lg bg-green-50">
+                          <div className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold text-sm">
+                            2
                           </div>
-                        </div>
-                        <Badge className={primaryTag.source === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
-                          {primaryTag.source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
-                          {primaryTag.source.toUpperCase()}
-                        </Badge>
-                      </div>
-                    )}
-
-                    {/* Arrow */}
-                    {primaryTag && secondaryTag && (
-                      <div className="flex justify-center">
-                        <div className="w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-gray-400"></div>
-                      </div>
-                    )}
-
-                    {/* Secondary Level */}
-                    {secondaryTag && (
-                      <div className="flex items-center gap-4 p-4 border-2 border-green-200 rounded-lg bg-green-50">
-                        <div className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold text-sm">
-                          2
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-lg">{secondaryTag.tag}</div>
-                          <div className="text-sm text-gray-600">
-                            Secondary Classification • {Math.round(secondaryTag.confidence * 100)}% confidence
+                          <div className="flex-1">
+                            <div className="font-semibold text-lg">{selectedSecondary}</div>
+                            <div className="text-sm text-gray-600">Secondary Classification</div>
                           </div>
+                          {(() => {
+                            const source = getTagSource(selectedSecondary, secondaryTag);
+                            return (
+                              <Badge className={source === 'ai' ? 'bg-blue-100 text-blue-800' : source === 'llm' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
+                                {source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : source === 'llm' ? <Brain className="w-3 h-3 mr-1" /> : <Tag className="w-3 h-3 mr-1" />}
+                                {source === 'ai' ? 'AI' : source === 'llm' ? 'LLM' : 'HUMAN'}
+                              </Badge>
+                            );
+                          })()}
                         </div>
-                        <Badge className={secondaryTag.source === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
-                          {secondaryTag.source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
-                          {secondaryTag.source.toUpperCase()}
-                        </Badge>
-                      </div>
+                      </>
                     )}
 
-                    {/* Arrow */}
-                    {secondaryTag && tertiaryTag && (
-                      <div className="flex justify-center">
-                        <div className="w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-gray-400"></div>
-                      </div>
-                    )}
-
-                    {/* Tertiary Level */}
-                    {tertiaryTag && (
-                      <div className="flex items-center gap-4 p-4 border-2 border-orange-200 rounded-lg bg-orange-50">
-                        <div className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold text-sm">
-                          3
+                    {selectedSecondary && selectedTertiary && (
+                      <>
+                        <div className="flex justify-center">
+                          <div className="w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-gray-400"></div>
                         </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-lg">{tertiaryTag.tag}</div>
-                          <div className="text-sm text-gray-600">
-                            Tertiary Classification • {Math.round(tertiaryTag.confidence * 100)}% confidence
+                        <div className="flex items-center gap-4 p-4 border-2 border-orange-200 rounded-lg bg-orange-50">
+                          <div className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold text-sm">
+                            3
                           </div>
+                          <div className="flex-1">
+                            <div className="font-semibold text-lg">{selectedTertiary}</div>
+                            <div className="text-sm text-gray-600">Tertiary Classification</div>
+                          </div>
+                          {(() => {
+                            const source = getTagSource(selectedTertiary, tertiaryTag);
+                            return (
+                              <Badge className={source === 'ai' ? 'bg-blue-100 text-blue-800' : source === 'llm' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
+                                {source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : source === 'llm' ? <Brain className="w-3 h-3 mr-1" /> : <Tag className="w-3 h-3 mr-1" />}
+                                {source === 'ai' ? 'AI' : source === 'llm' ? 'LLM' : 'HUMAN'}
+                              </Badge>
+                            );
+                          })()}
                         </div>
-                        <Badge className={tertiaryTag.source === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
-                          {tertiaryTag.source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
-                          {tertiaryTag.source.toUpperCase()}
-                        </Badge>
-                      </div>
-                    )}
-
-                    {!primaryTag && !secondaryTag && !tertiaryTag && (
-                      <div className="text-center py-12 text-gray-500">
-                        <TrendingUp className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                        <p className="text-lg">No hierarchy data available</p>
-                        <p className="text-sm">The classification hierarchy will appear here when available</p>
-                      </div>
+                      </>
                     )}
                   </div>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* Explanations Tab */}
+            {/* AI Reasoning Tab */}
             <TabsContent value="explanations" className="h-full flex flex-col mt-4 data-[state=active]:flex">
-              {loadingExplanations ? (
-                <div className="text-center py-12 text-gray-500 flex-1 flex flex-col justify-center">
-                  <div className="animate-pulse">
-                    <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p className="text-base font-medium">Loading explanations...</p>
-                    <p className="text-sm">Please wait while we fetch the reasoning data</p>
-                  </div>
-                </div>
-              ) : filteredExplanations.length > 0 ? (
-                <div className="space-y-2 overflow-y-auto flex-1">
-                  {filteredExplanations.map((explanation, index) => (
+              {(() => {
+                // Use database explanations if available, fallback to props explanations for SHAP data
+                const explanationData = dbExplanations.length > 0 ? dbExplanations : explanations
+
+                console.log("🔍 Raw explanations data:", explanationData)
+                console.log("🔍 Explanations length:", explanationData.length)
+                console.log("🔍 DB explanations:", dbExplanations)
+                console.log("🔍 Props explanations:", explanations)
+
+                // Filter out AI explanations that were overridden by LLM
+                const filteredExplanations = explanationData.filter((explanation: any) => {
+                  return explanation.reasoning !== "AI model prediction (overridden by LLM)"
+                })
+
+                console.log("🔍 Filtered explanations:", filteredExplanations)
+
+                // Enhanced explanations with SHAP data extracted from backend service_response
+                const enhancedExplanations = filteredExplanations.map((explanation: any) => {
+                  // Extract SHAP data from service_response.shap_explainability (backend data)
+                  let shapData = null;
+
+                  if (explanation.service_response?.shap_explainability) {
+                    shapData = explanation.service_response.shap_explainability;
+                  }
+
+                  console.log('🧠 SHAP data for', explanation.predicted_tag, ':', shapData);
+
+                  return {
+                    ...explanation,
+                    shap_data: shapData || explanation.shap_data
+                  };
+                });
+
+                return enhancedExplanations.length > 0 ? (
+                  <div className="space-y-2 overflow-y-auto flex-1">
+                    {enhancedExplanations.map((explanation: any, index: number) => (
                     <div key={`explanation-${index}`} className="border border-indigo-200 rounded-lg p-3 bg-gradient-to-r from-indigo-50 to-purple-50">
-                      {/* Header */}
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <MessageSquare className="w-4 h-4 text-indigo-600" />
-                          <span className="font-semibold text-sm">{explanation.predicted_tag}</span>
+                          <span className="font-semibold text-sm">{explanation.predicted_tag || explanation.tag}</span>
                           <Badge variant="outline" className="text-xs px-1 py-0">
-                            {explanation.classification_level}
+                            {explanation.classification_level || explanation.level}
                           </Badge>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge className={`text-xs px-2 py-0 ${explanation.source_service === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
-                            {explanation.source_service === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
-                            {explanation.source_service.toUpperCase()}
+                          <Badge className={`text-xs px-2 py-0 ${(explanation.source_service || explanation.source) === 'ai' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
+                            {(explanation.source_service || explanation.source) === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : <Brain className="w-3 h-3 mr-1" />}
+                            {(explanation.source_service || explanation.source)?.toUpperCase()}
                           </Badge>
                           <div className="text-xs font-medium text-gray-600">
-                            {Math.round(explanation.confidence * 100)}%
+                            {Math.round((explanation.confidence || 0) * 100)}%
                           </div>
                         </div>
                       </div>
-
-                      {/* Confidence Bar */}
-                      <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
-                        <div
-                          className="bg-indigo-600 h-1.5 rounded-full"
-                          style={{ width: `${explanation.confidence * 100}%` }}
-                        ></div>
-                      </div>
-
-                      {/* Reasoning */}
                       <div className="text-xs leading-normal text-gray-700 bg-white/70 rounded p-2 border max-h-20 overflow-y-auto">
                         {explanation.reasoning}
                       </div>
 
-                      {/* SHAP Explainability for AI predictions */}
-                      {explanation.source_service === 'ai' && explanation.shap_data && (
-                        <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
-                          <div className="text-xs font-semibold text-blue-800 mb-1 flex items-center">
-                            <Brain className="w-3 h-3 mr-1" />
-                            SHAP Feature Importance
-                          </div>
-                          <div className="space-y-1">
-                            {/* Supporting Evidence */}
-                            {explanation.shap_data.supporting?.length > 0 && (
-                              <div>
-                                <div className="text-xs font-medium text-green-700">Supporting:</div>
-                                <div className="flex flex-wrap gap-1">
-                                  {explanation.shap_data.supporting.map((item: any, idx: number) => (
-                                    <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-800 border border-green-300">
-                                      <span className="font-mono mr-1">{item.token?.trim() || item}</span>
-                                      <span className="text-green-600 font-semibold">{item.impact ? Math.round(item.impact * 100) + '%' : ''}</span>
-                                    </span>
-                                  ))}
+                      {/* SHAP Explainability for AI predictions (enhanced with props data) */}
+                      {(explanation.source_service || explanation.source) === 'ai' && explanation.shap_data && (
+                          <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+                            <div className="text-xs font-semibold text-blue-800 mb-1 flex items-center">
+                              <Brain className="w-3 h-3 mr-1" />
+                              SHAP Feature Importance
+                            </div>
+                            <div className="space-y-1">
+                              {/* Supporting Evidence */}
+                              {explanation.shap_data.supporting?.length > 0 && (
+                                <div>
+                                  <div className="text-xs font-medium text-green-700">Supporting:</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {explanation.shap_data.supporting.map((item: any, idx: number) => (
+                                      <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-800 border border-green-300">
+                                        <span className="font-mono mr-1">{item.token?.trim() || item}</span>
+                                        <span className="text-green-600 font-semibold">{item.impact || ''}</span>
+                                      </span>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
 
-                            {/* Opposing Evidence */}
-                            {explanation.shap_data.opposing?.length > 0 && (
-                              <div>
-                                <div className="text-xs font-medium text-red-700">Opposing:</div>
-                                <div className="flex flex-wrap gap-1">
-                                  {explanation.shap_data.opposing.map((item: any, idx: number) => (
-                                    <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-800 border border-red-300">
-                                      <span className="font-mono mr-1">{item.token?.trim() || item}</span>
-                                      <span className="text-red-600 font-semibold">{item.impact ? Math.round(item.impact * 100) + '%' : ''}</span>
-                                    </span>
-                                  ))}
+                              {/* Opposing Evidence */}
+                              {explanation.shap_data.opposing?.length > 0 && (
+                                <div>
+                                  <div className="text-xs font-medium text-red-700">Opposing:</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {explanation.shap_data.opposing.map((item: any, idx: number) => (
+                                      <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-800 border border-red-300">
+                                        <span className="font-mono mr-1">{item.token?.trim() || item}</span>
+                                        <span className="text-red-600 font-semibold">{item.impact || ''}</span>
+                                      </span>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
+                            </div>
                           </div>
-                        </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-gray-500 flex-1 flex flex-col justify-center">
-                  <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p className="text-base font-medium">No explanations available</p>
-                  <p className="text-sm">Explanations will appear here when provided by the AI models</p>
-                </div>
-              )}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-gray-500 flex-1 flex flex-col justify-center">
+                    <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p className="text-base font-medium">No explanations available</p>
+                    <p className="text-sm">AI reasoning will appear here when available</p>
+                  </div>
+                );
+              })()}
             </TabsContent>
 
             {/* Document Tab */}
             <TabsContent value="document" className="h-full overflow-y-auto space-y-4 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Basic Information */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+              {/* Document Information Card */}
+              {(document.name || document.id || document.uploadDate || document.size || document.status) && (
+                <Card className="border-l-4 border-l-blue-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-lg">
                       <FileText className="w-5 h-5 text-blue-600" />
                       Document Information
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div>
-                        <div className="text-sm font-medium text-gray-600">Name</div>
-                        <div className="font-medium">{document.name}</div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {document.name && (
                         <div>
-                          <div className="text-sm font-medium text-gray-600">Upload Date</div>
-                          <div>{formatDate(document.uploadDate + 'T00:00:00')}</div>
+                          <label className="text-sm font-medium text-gray-600">Document Name</label>
+                          <p className="text-sm font-medium break-words">{document.name}</p>
                         </div>
+                      )}
+                      {document.id && (
                         <div>
-                          <div className="text-sm font-medium text-gray-600">File Size</div>
-                          <div>{document.size}</div>
+                          <label className="text-sm font-medium text-gray-600">Document ID</label>
+                          <p className="text-sm font-mono text-gray-800">{document.id}</p>
                         </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      )}
+                      {document.uploadDate && (
                         <div>
-                          <div className="text-sm font-medium text-gray-600">Status</div>
-                          <Badge className={`text-sm ${getStatusColor(document.status)}`}>
-                            {document.status.replace('_', ' ').toUpperCase()}
-                          </Badge>
+                          <label className="text-sm font-medium text-gray-600">Upload Date</label>
+                          <p className="text-sm">{document.uploadDate}</p>
                         </div>
+                      )}
+                      {document.size && (
                         <div>
-                          <div className="text-sm font-medium text-gray-600">Type</div>
-                          <div>{document.type || 'Unknown'}</div>
+                          <label className="text-sm font-medium text-gray-600">File Size</label>
+                          <p className="text-sm">{document.size}</p>
                         </div>
-                      </div>
-                      {document.companyName && (
+                      )}
+                      {document.status && (
                         <div>
-                          <div className="text-sm font-medium text-gray-600">Company</div>
-                          <div>{document.companyName}</div>
+                          <label className="text-sm font-medium text-gray-600">Processing Status</label>
+                          <p className="text-sm">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              document.status === 'Success' ? 'bg-green-100 text-green-800' :
+                              document.status === 'Processing' ? 'bg-yellow-100 text-yellow-800' :
+                              document.status === 'Failed' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {document.status}
+                            </span>
+                          </p>
+                        </div>
+                      )}
+                      {document.tags && document.tags.length > 0 && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Total Tags</label>
+                          <p className="text-sm">{document.tags.length} tags assigned</p>
                         </div>
                       )}
                     </div>
                   </CardContent>
                 </Card>
+              )}
 
-                {/* Document Access */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Eye className="w-5 h-5 text-green-600" />
-                      Document Access
+              {/* Document Preview Card */}
+              {document.link && (
+                <Card className="border-l-4 border-l-purple-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Eye className="w-5 h-5 text-purple-600" />
+                      Document Preview
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Document Preview iframe */}
+                    <div className="bg-gray-50 rounded-lg border min-h-96">
+                      <iframe
+                        src={document.link}
+                        className="w-full h-96 rounded-lg border-0"
+                        title={`Preview of ${document.name}`}
+                        onError={() => console.error('Failed to load document preview')}
+                      />
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(document.link, '_blank')}
+                        className="flex-1"
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        Open in New Tab
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigator.clipboard.writeText(document.link)}
+                        className="flex-1"
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        Copy Link
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Tags Summary Card */}
+              {document.tags && document.tags.length > 0 && (
+                <Card className="border-l-4 border-l-green-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Tag className="w-5 h-5 text-green-600" />
+                      Current Tags
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {document.link ? (
-                      <div className="space-y-4">
-                        <div>
-                          <div className="text-sm font-medium text-gray-600 mb-2">Actions</div>
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={handleDownload}
-                              size="sm"
-                              className="bg-red-600 hover:bg-red-700"
-                            >
-                              <Download className="w-4 h-4 mr-2" />
-                              Download
-                            </Button>
-                            <Button
-                              onClick={handleOpenExternal}
-                              variant="outline"
-                              size="sm"
-                            >
-                              <ExternalLink className="w-4 h-4 mr-2" />
-                              Open
-                            </Button>
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-600 mb-2">Document URL</div>
-                          <div className="bg-gray-50 p-2 rounded border text-xs font-mono break-all">
-                            {document.link}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8 text-gray-500">
-                        <ExternalLink className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                        <p>No download link available</p>
-                      </div>
-                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {document.tags.map((tag, index) => (
+                        <Badge
+                          key={`tag-${index}`}
+                          variant="outline"
+                          className="bg-green-50 text-green-700 border-green-200"
+                        >
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
                   </CardContent>
                 </Card>
-              </div>
-
-              {/* Classification Summary */}
-              <Card className="mt-4">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Settings className="w-5 h-5 text-purple-600" />
-                    Classification Summary
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
-                      <div className="text-2xl font-bold text-blue-600">{aiTags.length}</div>
-                      <div className="text-sm text-gray-600">AI Generated</div>
-                    </div>
-                    <div className="text-center p-3 bg-purple-50 rounded-lg border border-purple-200">
-                      <div className="text-2xl font-bold text-purple-600">{llmTags.length}</div>
-                      <div className="text-sm text-gray-600">LLM Generated</div>
-                    </div>
-                    <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
-                      <div className="text-2xl font-bold text-green-600">{document.userAddedTags?.length || 0}</div>
-                      <div className="text-sm text-gray-600">User Added</div>
-                    </div>
-                    <div className="text-center p-3 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-2xl font-bold text-gray-600">{enhancedTags.length + (document.userAddedTags?.length || 0)}</div>
-                      <div className="text-sm text-gray-600">Total Tags</div>
-                    </div>
-                  </div>
-                  {explanations.length > 0 && (
-                    <div className="mt-4 pt-4 border-t">
-                      <div className="text-sm font-medium text-gray-600 mb-2">Classification Confidence</div>
-                      <div className="space-y-2">
-                        {enhancedTags.map((tag, index) => (
-                          <div key={index} className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">{tag.tag}</span>
-                              <Badge variant="outline" className="text-xs px-1 py-0">
-                                {tag.level}
-                              </Badge>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="w-20 bg-gray-200 rounded-full h-2">
-                                <div
-                                  className={`h-2 rounded-full ${tag.source === 'ai' ? 'bg-blue-600' : 'bg-purple-600'}`}
-                                  style={{ width: `${tag.confidence * 100}%` }}
-                                ></div>
-                              </div>
-                              <span className="text-xs text-gray-500 w-8">{Math.round(tag.confidence * 100)}%</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              )}
             </TabsContent>
           </div>
         </Tabs>
 
         <Separator className="shrink-0 my-4" />
 
-        <div className="flex justify-end shrink-0">
-          <Button onClick={onClose} variant="outline">
-            Close
-          </Button>
-        </div>
+        <DialogFooter className="shrink-0 flex-row justify-between items-center">
+          <div className="text-sm text-gray-600">
+            {selectedPrimary && selectedSecondary && selectedTertiary ? (
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                Ready to update classification
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600" />
+                Please complete all three levels
+              </div>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={onClose} disabled={isLoading}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirm}
+              disabled={isLoading || !selectedPrimary || !selectedSecondary || !selectedTertiary}
+              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Update Classification
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

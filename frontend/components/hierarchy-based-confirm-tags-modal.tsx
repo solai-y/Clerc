@@ -637,11 +637,13 @@ export function HierarchyBasedConfirmTagsModal({
             {/* AI Reasoning Tab */}
             <TabsContent value="explanations" className="h-full flex flex-col mt-4 data-[state=active]:flex">
               {(() => {
-                // Use props explanations for SHAP data
-                const explanationData = explanations
+                // Use database explanations if available, fallback to props explanations for SHAP data
+                const explanationData = dbExplanations.length > 0 ? dbExplanations : explanations
 
                 console.log("🔍 Raw explanations data:", explanationData)
                 console.log("🔍 Explanations length:", explanationData.length)
+                console.log("🔍 DB explanations:", dbExplanations)
+                console.log("🔍 Props explanations:", explanations)
 
                 // Filter out AI explanations that were overridden by LLM
                 const filteredExplanations = explanationData.filter((explanation: any) => {
@@ -650,9 +652,26 @@ export function HierarchyBasedConfirmTagsModal({
 
                 console.log("🔍 Filtered explanations:", filteredExplanations)
 
-                return filteredExplanations.length > 0 ? (
+                // Enhanced explanations with SHAP data extracted from backend service_response
+                const enhancedExplanations = filteredExplanations.map((explanation: any) => {
+                  // Extract SHAP data from service_response.shap_explainability (backend data)
+                  let shapData = null;
+
+                  if (explanation.service_response?.shap_explainability) {
+                    shapData = explanation.service_response.shap_explainability;
+                  }
+
+                  console.log('🧠 SHAP data for', explanation.predicted_tag, ':', shapData);
+
+                  return {
+                    ...explanation,
+                    shap_data: shapData || explanation.shap_data
+                  };
+                });
+
+                return enhancedExplanations.length > 0 ? (
                   <div className="space-y-2 overflow-y-auto flex-1">
-                    {filteredExplanations.map((explanation: any, index: number) => (
+                    {enhancedExplanations.map((explanation: any, index: number) => (
                     <div key={`explanation-${index}`} className="border border-indigo-200 rounded-lg p-3 bg-gradient-to-r from-indigo-50 to-purple-50">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
@@ -676,7 +695,7 @@ export function HierarchyBasedConfirmTagsModal({
                         {explanation.reasoning}
                       </div>
 
-                      {/* SHAP Explainability for AI predictions (from props) */}
+                      {/* SHAP Explainability for AI predictions (enhanced with props data) */}
                       {(explanation.source_service || explanation.source) === 'ai' && explanation.shap_data && (
                           <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
                             <div className="text-xs font-semibold text-blue-800 mb-1 flex items-center">
