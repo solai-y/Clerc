@@ -643,8 +643,10 @@ export function HierarchyBasedConfirmTagsModal({
                 console.log("🔍 Raw explanations data:", explanationData)
                 console.log("🔍 Explanations length:", explanationData.length)
 
-                // Show ALL explanations for now - no filtering
-                const filteredExplanations = explanationData
+                // Filter out AI explanations that were overridden by LLM
+                const filteredExplanations = explanationData.filter((explanation: any) => {
+                  return explanation.reasoning !== "AI model prediction (overridden by LLM)"
+                })
 
                 console.log("🔍 Filtered explanations:", filteredExplanations)
 
