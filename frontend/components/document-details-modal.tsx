@@ -99,16 +99,17 @@ export function DocumentDetailsModal({
       try {
         setDataLoading(true)
 
-        // Fetch complete document details (includes suggested_tags from processed_documents)
+        // Fetch complete document details (includes confirmed_tags from processed_documents)
         const documentResponse = await apiClient.getCompleteDocument(parseInt(document.id))
-        setDbPredictions(documentResponse.suggested_tags)
+
+        console.log("🗄️ confirmed_tags field:", documentResponse.confirmed_tags)
+
+        setDbPredictions(documentResponse.confirmed_tags)
 
         // Fetch explanations from database
         const explanationsResponse = await apiClient.getDocumentExplanations(parseInt(document.id))
         setDbExplanations(explanationsResponse)
 
-        console.log("🗄️ Database - predictions:", documentResponse.suggested_tags)
-        console.log("🗄️ Database - explanations:", explanationsResponse)
 
       } catch (error) {
         console.error('Failed to fetch database data:', error)
@@ -132,32 +133,43 @@ export function DocumentDetailsModal({
     const tags: EnhancedTag[] = []
     const processedTags = new Set<string>()
 
-    // First, process explanations to get the correct hierarchy levels and sources
-    if (dbExplanations && dbExplanations.length > 0) {
-      console.log("📊 Processing database explanations for hierarchy:", dbExplanations)
+    // First, process confirmed_tags with JSONB structure (priority for view details)
+    if (dbPredictions) {
 
+      // Handle JSONB confirmed_tags structure: {confirmed_tags: {tags: [...]}}
+      let confirmedTagsArray = [];
+
+      if (dbPredictions?.confirmed_tags?.tags && Array.isArray(dbPredictions.confirmed_tags.tags)) {
+        confirmedTagsArray = dbPredictions.confirmed_tags.tags;
+      } else if (Array.isArray(dbPredictions)) {
+        // Legacy format - array of tags
+        confirmedTagsArray = dbPredictions;
+      }
+
+      for (const confirmedTag of confirmedTagsArray) {
+        if (confirmedTag.tag && !processedTags.has(confirmedTag.tag)) {
+          processedTags.add(confirmedTag.tag)
+
+          tags.push({
+            tag: confirmedTag.tag,
+            confidence: confirmedTag.confidence || 1.0,
+            source: (confirmedTag.source || 'human') as 'ai' | 'llm',
+            level: confirmedTag.level as 'primary' | 'secondary' | 'tertiary',
+            reasoning: `${(confirmedTag.source || 'human').toUpperCase()} confirmed classification`,
+            isConfirmed: true
+          })
+        }
+      }
+    }
+
+    // Fallback: if no confirmed tags, use explanations
+    if (tags.length === 0 && dbExplanations && dbExplanations.length > 0) {
       for (const explanation of dbExplanations) {
-        console.log("🔍 Processing explanation:", {
-          predicted_tag: explanation.predicted_tag,
-          classification_level: explanation.classification_level,
-          source_service: explanation.source_service,
-          confidence: explanation.confidence
-        })
-
         if (explanation.predicted_tag && explanation.classification_level && !processedTags.has(explanation.predicted_tag)) {
           processedTags.add(explanation.predicted_tag)
 
-          // Use the actual classification level from the database
           const level = explanation.classification_level as 'primary' | 'secondary' | 'tertiary'
-
-          // Find matching prediction data for confidence score
-          let confidence = 0
-          if (dbPredictions && Array.isArray(dbPredictions)) {
-            const matchingPred = dbPredictions.find(pred => pred.tag === explanation.predicted_tag)
-            confidence = matchingPred?.score || explanation.confidence || 0
-          } else {
-            confidence = explanation.confidence || 0
-          }
+          const confidence = explanation.confidence || 0
 
           const enhancedTag = {
             tag: explanation.predicted_tag,
@@ -165,39 +177,14 @@ export function DocumentDetailsModal({
             source: explanation.source_service as 'ai' | 'llm',
             level: level,
             reasoning: explanation.reasoning || `${explanation.source_service?.toUpperCase()} prediction`,
-            isConfirmed: true
+            isConfirmed: false
           }
 
-          console.log("✅ Adding enhanced tag:", enhancedTag)
           tags.push(enhancedTag)
         }
       }
     }
 
-    // Fallback: if no explanations, process predictions with database hierarchy levels
-    if (tags.length === 0 && dbPredictions && Array.isArray(dbPredictions)) {
-      console.log("📊 Fallback: Processing database predictions:", dbPredictions)
-
-      for (const pred of dbPredictions) {
-        if (pred.tag && !processedTags.has(pred.tag)) {
-          processedTags.add(pred.tag)
-
-          // Use the hierarchy_level from the database instead of reassigning based on confidence
-          const level = pred.hierarchy_level as 'primary' | 'secondary' | 'tertiary'
-
-          tags.push({
-            tag: pred.tag,
-            confidence: pred.score || 0,
-            source: (pred.source || 'ai') as 'ai' | 'llm',
-            level: level,
-            reasoning: `${(pred.source || 'ai').toUpperCase()} prediction from database`,
-            isConfirmed: true
-          })
-        }
-      }
-    }
-
-    console.log("✅ Enhanced tags result:", tags)
     return tags
   }, [dbPredictions, dbExplanations])
 
@@ -423,13 +410,13 @@ export function DocumentDetailsModal({
             {/* Classification Selection Tab */}
             <TabsContent value="selection" className="h-full overflow-y-auto space-y-6 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
               <div className="space-y-6">
-                {/* AI Predictions Summary */}
+                {/* Current Classification Summary */}
                 {enhancedTags.length > 0 && (
-                  <Card className="border-l-4 border-l-purple-500 bg-purple-50">
+                  <Card className="border-l-4 border-l-green-500 bg-green-50">
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center gap-2 text-lg">
-                        <Brain className="w-5 h-5 text-purple-600" />
-                        AI/LLM Predictions
+                        <CheckCircle className="w-5 h-5 text-green-600" />
+                        Current Classification
                         <Button
                           size="sm"
                           variant="outline"
@@ -438,7 +425,7 @@ export function DocumentDetailsModal({
                           className="ml-auto"
                         >
                           <RefreshCw className="w-4 h-4 mr-1" />
-                          Reset to AI
+                          Reset to Current
                         </Button>
                       </CardTitle>
                     </CardHeader>
@@ -656,17 +643,10 @@ export function DocumentDetailsModal({
                 // Use database explanations if available, fallback to props explanations for SHAP data
                 const explanationData = dbExplanations.length > 0 ? dbExplanations : explanations
 
-                console.log("🔍 Raw explanations data:", explanationData)
-                console.log("🔍 Explanations length:", explanationData.length)
-                console.log("🔍 DB explanations:", dbExplanations)
-                console.log("🔍 Props explanations:", explanations)
-
                 // Filter out AI explanations that were overridden by LLM
                 const filteredExplanations = explanationData.filter((explanation: any) => {
                   return explanation.reasoning !== "AI model prediction (overridden by LLM)"
                 })
-
-                console.log("🔍 Filtered explanations:", filteredExplanations)
 
                 // Enhanced explanations with SHAP data extracted from backend service_response
                 const enhancedExplanations = filteredExplanations.map((explanation: any) => {
@@ -677,7 +657,6 @@ export function DocumentDetailsModal({
                     shapData = explanation.service_response.shap_explainability;
                   }
 
-                  console.log('🧠 SHAP data for', explanation.predicted_tag, ':', shapData);
 
                   return {
                     ...explanation,
@@ -767,112 +746,88 @@ export function DocumentDetailsModal({
             {/* Document Tab */}
             <TabsContent value="document" className="h-full overflow-y-auto space-y-4 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
               {/* Document Information Card */}
-              {(document.name || document.id || document.uploadDate || document.size || document.status) && (
-                <Card className="border-l-4 border-l-blue-500">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <FileText className="w-5 h-5 text-blue-600" />
-                      Document Information
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {document.name && (
-                        <div>
-                          <label className="text-sm font-medium text-gray-600">Document Name</label>
-                          <p className="text-sm font-medium break-words">{document.name}</p>
-                        </div>
-                      )}
-                      {document.id && (
-                        <div>
-                          <label className="text-sm font-medium text-gray-600">Document ID</label>
-                          <p className="text-sm font-mono text-gray-800">{document.id}</p>
-                        </div>
-                      )}
-                      {document.uploadDate && (
-                        <div>
-                          <label className="text-sm font-medium text-gray-600">Upload Date</label>
-                          <p className="text-sm">{document.uploadDate}</p>
-                        </div>
-                      )}
-                      {document.size && (
-                        <div>
-                          <label className="text-sm font-medium text-gray-600">File Size</label>
-                          <p className="text-sm">{document.size}</p>
-                        </div>
-                      )}
-                      {document.status && (
-                        <div>
-                          <label className="text-sm font-medium text-gray-600">Processing Status</label>
-                          <p className="text-sm">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              document.status === 'Success' ? 'bg-green-100 text-green-800' :
-                              document.status === 'Processing' ? 'bg-yellow-100 text-yellow-800' :
-                              document.status === 'Failed' ? 'bg-red-100 text-red-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {document.status}
-                            </span>
-                          </p>
-                        </div>
-                      )}
-                      {document.tags && document.tags.length > 0 && (
-                        <div>
-                          <label className="text-sm font-medium text-gray-600">Total Tags</label>
-                          <p className="text-sm">{document.tags.length} tags assigned</p>
-                        </div>
-                      )}
+              <Card className="border-l-4 border-l-blue-500">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <FileText className="w-5 h-5 text-blue-600" />
+                    Document Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-gray-600">Document Name</label>
+                      <p className="text-sm font-medium break-words">{document.name}</p>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                    <div>
+                      <label className="text-sm font-medium text-gray-600">Document ID</label>
+                      <p className="text-sm font-mono text-gray-800">{document.id}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-600">Upload Date</label>
+                      <p className="text-sm">{document.uploadDate}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-600">File Size</label>
+                      <p className="text-sm">{document.size}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-600">Document Type</label>
+                      <p className="text-sm">{document.type}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-600">Processing Status</label>
+                      <p className="text-sm">
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          document.status === 'processed' ? 'bg-green-100 text-green-800' :
+                          document.status === 'processing' ? 'bg-yellow-100 text-yellow-800' :
+                          document.status === 'failed' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {document.status}
+                        </span>
+                      </p>
+                    </div>
+                    {document.companyName && (
+                      <div>
+                        <label className="text-sm font-medium text-gray-600">Company</label>
+                        <p className="text-sm">{document.companyName}</p>
+                      </div>
+                    )}
+                    <div>
+                      <label className="text-sm font-medium text-gray-600">Total Tags</label>
+                      <p className="text-sm">{document.tags.length} tags assigned</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
-              {/* Document Preview Card */}
+              {/* View Document Card */}
               {document.link && (
                 <Card className="border-l-4 border-l-purple-500">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-lg">
                       <Eye className="w-5 h-5 text-purple-600" />
-                      Document Preview
+                      View Document
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {/* Document Preview iframe */}
-                    <div className="bg-gray-50 rounded-lg border min-h-96">
-                      <iframe
-                        src={document.link}
-                        className="w-full h-96 rounded-lg border-0"
-                        title={`Preview of ${document.name}`}
-                        onError={() => console.error('Failed to load document preview')}
-                      />
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => window.open(document.link, '_blank')}
-                        className="flex-1"
-                      >
-                        <Eye className="w-4 h-4 mr-2" />
-                        Open in New Tab
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => navigator.clipboard.writeText(document.link)}
-                        className="flex-1"
-                      >
-                        <FileText className="w-4 h-4 mr-2" />
-                        Copy Link
-                      </Button>
-                    </div>
+                    <p className="text-sm text-gray-600">
+                      Click the button below to open and view the full document in a new tab.
+                    </p>
+                    <Button
+                      onClick={() => window.open(document.link, '_blank')}
+                      className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                      size="lg"
+                    >
+                      <Eye className="w-5 h-5 mr-2" />
+                      Open Document
+                    </Button>
                   </CardContent>
                 </Card>
               )}
 
-              {/* Tags Summary Card */}
+              {/* Current Tags Card */}
               {document.tags && document.tags.length > 0 && (
                 <Card className="border-l-4 border-l-green-500">
                   <CardHeader className="pb-3">
