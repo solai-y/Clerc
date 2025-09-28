@@ -132,29 +132,65 @@ export function HierarchyBasedConfirmTagsModal({
     const tags: EnhancedTag[] = []
     const processedTags = new Set<string>()
 
-    // Process database predictions (format: [{tag: "name", score: 0.95}, ...])
-    if (dbPredictions && Array.isArray(dbPredictions)) {
-      console.log("📊 Processing database predictions:", dbPredictions)
+    // First, process explanations to get the correct hierarchy levels and sources
+    if (dbExplanations && dbExplanations.length > 0) {
+      console.log("📊 Processing database explanations for hierarchy:", dbExplanations)
 
-      // For database format, we'll assign hierarchy levels based on confidence scores
-      // Highest confidence = primary, medium = secondary, lowest = tertiary
-      const sortedPredictions = [...dbPredictions].sort((a, b) => (b.score || 0) - (a.score || 0))
+      for (const explanation of dbExplanations) {
+        console.log("🔍 Processing explanation:", {
+          predicted_tag: explanation.predicted_tag,
+          classification_level: explanation.classification_level,
+          source_service: explanation.source_service,
+          confidence: explanation.confidence
+        })
 
-      for (let i = 0; i < sortedPredictions.length && i < 3; i++) {
-        const pred = sortedPredictions[i]
+        if (explanation.predicted_tag && explanation.classification_level && !processedTags.has(explanation.predicted_tag)) {
+          processedTags.add(explanation.predicted_tag)
+
+          // Use the actual classification level from the database
+          const level = explanation.classification_level as 'primary' | 'secondary' | 'tertiary'
+
+          // Find matching prediction data for confidence score
+          let confidence = 0
+          if (dbPredictions && Array.isArray(dbPredictions)) {
+            const matchingPred = dbPredictions.find(pred => pred.tag === explanation.predicted_tag)
+            confidence = matchingPred?.score || explanation.confidence || 0
+          } else {
+            confidence = explanation.confidence || 0
+          }
+
+          const enhancedTag = {
+            tag: explanation.predicted_tag,
+            confidence: confidence,
+            source: explanation.source_service as 'ai' | 'llm',
+            level: level,
+            reasoning: explanation.reasoning || `${explanation.source_service?.toUpperCase()} prediction`,
+            isConfirmed: true
+          }
+
+          console.log("✅ Adding enhanced tag:", enhancedTag)
+          tags.push(enhancedTag)
+        }
+      }
+    }
+
+    // Fallback: if no explanations, process predictions with database hierarchy levels
+    if (tags.length === 0 && dbPredictions && Array.isArray(dbPredictions)) {
+      console.log("📊 Fallback: Processing database predictions:", dbPredictions)
+
+      for (const pred of dbPredictions) {
         if (pred.tag && !processedTags.has(pred.tag)) {
           processedTags.add(pred.tag)
 
-          // Assign hierarchy level based on order (highest confidence first)
-          let level: 'primary' | 'secondary' | 'tertiary' =
-            i === 0 ? 'primary' : i === 1 ? 'secondary' : 'tertiary'
+          // Use the hierarchy_level from the database instead of reassigning based on confidence
+          const level = pred.hierarchy_level as 'primary' | 'secondary' | 'tertiary'
 
           tags.push({
             tag: pred.tag,
             confidence: pred.score || 0,
-            source: 'ai', // Database doesn't specify source, assume AI for now
+            source: (pred.source || 'ai') as 'ai' | 'llm',
             level: level,
-            reasoning: "AI prediction from database",
+            reasoning: `${(pred.source || 'ai').toUpperCase()} prediction from database`,
             isConfirmed: true
           })
         }
@@ -163,7 +199,7 @@ export function HierarchyBasedConfirmTagsModal({
 
     console.log("✅ Enhanced tags result:", tags)
     return tags
-  }, [dbPredictions])
+  }, [dbPredictions, dbExplanations])
 
   // State for hierarchy-based selection
   const [selectedPrimary, setSelectedPrimary] = useState<string>("")

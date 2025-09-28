@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Upload, Search, Filter, AlertCircle, RefreshCw, LogIn } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
-import { ConfirmTagsModal } from "@/components/confirm-tags-modal"
+import { HierarchyBasedConfirmTagsModal } from "@/components/hierarchy-based-confirm-tags-modal"
 import { DocumentDetailsModal } from "@/components/document-details-modal"
 import { DocumentTable } from "@/components/document-table"
 import { DocumentPagination } from "@/components/document-pagination"
@@ -124,47 +124,41 @@ export default function HomePage() {
 
   const handleConfirmTags = async (
     documentId: string,
-    confirmedTags: string[],
-    userAddedTags: string[]
+    confirmedTagsData: any
   ) => {
     try {
       console.log('✅ Confirming document tags:', {
         documentId,
-        confirmedTags,
-        userAddedTags,
-        totalTags: confirmedTags.length + userAddedTags.length
+        confirmedTagsData
       })
 
       const documentIdNum = parseInt(documentId)
-      
-      // Update the processed document with confirmed tags
-      // (processed_documents entry should already exist from upload flow)
+
+      // Update the processed document with confirmed tags in the new format
       await apiClient.updateDocumentTags(documentIdNum, {
-        confirmed_tags: confirmedTags,
-        user_added_labels: userAddedTags
+        confirmed_tags: confirmedTagsData
       })
-      
+
       console.log('✅ Successfully updated document tags')
-      
+
       // Refresh the document list to show updated tags
       await refetch()
       setConfirmTagsDocument(null)
-      
+
     } catch (err) {
       console.error('❌ Error updating document tags:', err)
-      
+
       // Provide detailed error information instead of attempting fallback
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
       const detailedError = new Error(
         `Failed to update document tags: ${errorMessage}. ` +
         `Document ID: ${documentId}. ` +
-        `Attempted to update with ${confirmedTags.length} confirmed tags and ${userAddedTags.length} user-added tags. ` +
         `This error typically indicates that the processed document record does not exist in the database, ` +
         `which suggests the document upload/processing workflow is incomplete. ` +
         `Please verify that documents are properly processed before attempting tag confirmation, ` +
         `or check the document service and database connectivity.`
       )
-      
+
       throw detailedError
     }
   }
@@ -362,7 +356,7 @@ export default function HomePage() {
 
       {/* Confirm Tags Modal */}
       {confirmTagsDocument && (
-        <ConfirmTagsModal
+        <HierarchyBasedConfirmTagsModal
           document={confirmTagsDocument}
           onConfirm={handleConfirmTags}
           onClose={() => setConfirmTagsDocument(null)}
