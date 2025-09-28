@@ -380,11 +380,23 @@ export function DocumentDetailsModal({
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-6xl h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader className="shrink-0 pb-4">
+        <DialogHeader className="shrink-0 pb-4 relative">
           <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
             <TrendingUp className="w-6 h-6 text-blue-600" />
-            Review & Update Document Classification
+            {isEditMode ? "Edit Document Classification" : "View Document Details"}
           </DialogTitle>
+
+          {/* Edit button in header - only show in view mode */}
+          {!isEditMode && (
+            <Button
+              onClick={() => setIsEditMode(true)}
+              className="absolute top-0 right-12 h-8 px-3 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium shadow-md border border-amber-600"
+              size="sm"
+            >
+              <TrendingUp className="w-3 h-3 mr-1" />
+              Edit
+            </Button>
+          )}
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
@@ -422,6 +434,7 @@ export function DocumentDetailsModal({
                           size="sm"
                           variant="outline"
                           onClick={resetToAIPredictions}
+                          disabled={!isEditMode}
                           className="ml-auto"
                         >
                           <RefreshCw className="w-4 h-4 mr-1" />
@@ -465,7 +478,7 @@ export function DocumentDetailsModal({
                     {/* Primary Selection */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-gray-700">Primary Classification</label>
-                      <Select value={selectedPrimary} onValueChange={handlePrimaryChange}>
+                      <Select value={selectedPrimary} onValueChange={handlePrimaryChange} disabled={!isEditMode}>
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select primary classification..." />
                         </SelectTrigger>
@@ -488,7 +501,7 @@ export function DocumentDetailsModal({
                       <Select
                         value={selectedSecondary}
                         onValueChange={handleSecondaryChange}
-                        disabled={!selectedPrimary}
+                        disabled={!isEditMode || !selectedPrimary}
                       >
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select secondary classification..." />
@@ -512,7 +525,7 @@ export function DocumentDetailsModal({
                       <Select
                         value={selectedTertiary}
                         onValueChange={handleTertiaryChange}
-                        disabled={!selectedSecondary}
+                        disabled={!isEditMode || !selectedSecondary}
                       >
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select tertiary classification..." />
@@ -890,41 +903,59 @@ export function DocumentDetailsModal({
         <Separator className="shrink-0 my-4" />
 
         <DialogFooter className="shrink-0 flex-row justify-between items-center">
-          <div className="text-sm text-gray-600">
-            {selectedPrimary && selectedSecondary && selectedTertiary ? (
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-green-600" />
-                Ready to update classification
+          {isEditMode ? (
+            <>
+              <div className="text-sm text-gray-600">
+                {selectedPrimary && selectedSecondary && selectedTertiary ? (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    Ready to update classification
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                    Please complete all three levels
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-600" />
-                Please complete all three levels
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setIsEditMode(false)} disabled={isLoading}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleConfirm}
+                  disabled={isLoading || !selectedPrimary || !selectedSecondary || !selectedTertiary}
+                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Save Changes
+                    </>
+                  )}
+                </Button>
               </div>
-            )}
-          </div>
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={onClose} disabled={isLoading}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleConfirm}
-              disabled={isLoading || !selectedPrimary || !selectedSecondary || !selectedTertiary}
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Updating...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  Update Classification
-                </>
-              )}
-            </Button>
-          </div>
+            </>
+          ) : (
+            <>
+              <div className="text-sm text-gray-600">
+                <div className="flex items-center gap-2">
+                  <Eye className="w-4 h-4 text-blue-600" />
+                  View mode - Click Edit button in header to make changes
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={onClose}>
+                  Close
+                </Button>
+              </div>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
