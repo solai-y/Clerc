@@ -366,10 +366,17 @@ def update_document_tags(document_id):
         if not has_tag_field:
             return APIResponse.validation_error(f"At least one of the following fields is required: {', '.join(tag_fields)}")
         
-        # Validate array fields
+        # Validate field types
         for field in tag_fields:
-            if field in data and not isinstance(data[field], list):
-                return APIResponse.validation_error(f"{field} must be an array")
+            if field in data:
+                if field == 'confirmed_tags':
+                    # confirmed_tags can be either array (legacy) or object (new JSONB format)
+                    if not isinstance(data[field], (list, dict)):
+                        return APIResponse.validation_error(f"{field} must be an array or object")
+                else:
+                    # Other fields must be arrays
+                    if not isinstance(data[field], list):
+                        return APIResponse.validation_error(f"{field} must be an array")
         
         # Update document tags
         updated_document, error = db_service.update_document_tags(document_id, data)
