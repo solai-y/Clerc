@@ -406,7 +406,7 @@ export function HierarchyBasedConfirmTagsModal({
 
           <div className="flex-1 overflow-hidden">
             {/* Classification Selection Tab */}
-            <TabsContent value="selection" className="h-full overflow-y-auto space-y-6 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
+            <TabsContent value="selection" className="h-full overflow-y-auto mt-4">
               <div className="space-y-6">
                 {/* AI Predictions Summary */}
                 {enhancedTags.length > 0 && (
@@ -546,7 +546,7 @@ export function HierarchyBasedConfirmTagsModal({
             </TabsContent>
 
             {/* Current Path Tab */}
-            <TabsContent value="hierarchy" className="h-full overflow-y-auto space-y-4 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
+            <TabsContent value="hierarchy" className="h-full overflow-y-auto mt-4">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -635,7 +635,7 @@ export function HierarchyBasedConfirmTagsModal({
             </TabsContent>
 
             {/* AI Reasoning Tab */}
-            <TabsContent value="explanations" className="h-full flex flex-col mt-4 data-[state=active]:flex">
+            <TabsContent value="explanations" className="h-full overflow-y-auto mt-4">
               {(() => {
                 // Use database explanations if available, fallback to props explanations for SHAP data
                 const explanationData = dbExplanations.length > 0 ? dbExplanations : explanations
@@ -670,7 +670,7 @@ export function HierarchyBasedConfirmTagsModal({
                 });
 
                 return enhancedExplanations.length > 0 ? (
-                  <div className="space-y-2 overflow-y-auto flex-1">
+                  <div className="space-y-2 p-4">
                     {enhancedExplanations.map((explanation: any, index: number) => (
                     <div key={`explanation-${index}`} className="border border-indigo-200 rounded-lg p-3 bg-gradient-to-r from-indigo-50 to-purple-50">
                       <div className="flex items-center justify-between mb-2">
@@ -739,7 +739,7 @@ export function HierarchyBasedConfirmTagsModal({
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-12 text-gray-500 flex-1 flex flex-col justify-center">
+                  <div className="text-center py-12 text-gray-500 p-4">
                     <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
                     <p className="text-base font-medium">No explanations available</p>
                     <p className="text-sm">AI reasoning will appear here when available</p>
@@ -749,113 +749,99 @@ export function HierarchyBasedConfirmTagsModal({
             </TabsContent>
 
             {/* Document Tab */}
-            <TabsContent value="document" className="h-full overflow-y-auto space-y-4 mt-4 data-[state=active]:flex data-[state=active]:flex-col">
-              {/* Document Information Card */}
-              <Card className="border-l-4 border-l-blue-500">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <FileText className="w-5 h-5 text-blue-600" />
-                    Document Information
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium text-gray-600">Document Name</label>
-                      <p className="text-sm font-medium break-words">{document.name}</p>
+            <TabsContent value="document" className="h-full overflow-y-auto mt-4">
+              <div className="space-y-6 p-4">
+                {/* Document Header */}
+                <div className="text-center border-b pb-4">
+                  <h3 className="text-xl font-bold text-gray-800 mb-2">{document.name}</h3>
+                  <p className="text-sm text-gray-600">Document ID: {document.id}</p>
+                </div>
+
+                {/* Document Details */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-800 mb-3 flex items-center">
+                    <FileText className="w-4 h-4 mr-2" />
+                    Document Details
+                  </h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Upload Date:</span>
+                      <span className="font-medium">{document.uploadDate}</span>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-600">Document ID</label>
-                      <p className="text-sm font-mono text-gray-800">{document.id}</p>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">File Size:</span>
+                      <span className="font-medium">{document.size}</span>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-600">Upload Date</label>
-                      <p className="text-sm">{document.uploadDate}</p>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Document Type:</span>
+                      <span className="font-medium">{document.type}</span>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-600">File Size</label>
-                      <p className="text-sm">{document.size}</p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-600">Document Type</label>
-                      <p className="text-sm">{document.type}</p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-600">Processing Status</label>
-                      <p className="text-sm">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          document.status === 'processed' ? 'bg-green-100 text-green-800' :
-                          document.status === 'processing' ? 'bg-yellow-100 text-yellow-800' :
-                          document.status === 'failed' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {document.status}
-                        </span>
-                      </p>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Status:</span>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        document.status === 'processed' ? 'bg-green-100 text-green-800' :
+                        document.status === 'processing' ? 'bg-yellow-100 text-yellow-800' :
+                        document.status === 'failed' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {document.status}
+                      </span>
                     </div>
                     {document.companyName && (
-                      <div>
-                        <label className="text-sm font-medium text-gray-600">Company</label>
-                        <p className="text-sm">{document.companyName}</p>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Company:</span>
+                        <span className="font-medium">{document.companyName}</span>
                       </div>
                     )}
-                    <div>
-                      <label className="text-sm font-medium text-gray-600">Total Tags</label>
-                      <p className="text-sm">{document.tags.length} tags assigned</p>
-                    </div>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
 
-              {/* View Document Card */}
-              {document.link && (
-                <Card className="border-l-4 border-l-purple-500">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Eye className="w-5 h-5 text-purple-600" />
-                      View Document
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <p className="text-sm text-gray-600">
-                      Click the button below to open and view the full document in a new tab.
+                {/* Open Document Button */}
+                {document.link ? (
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
+                    <h4 className="font-semibold text-purple-800 mb-3 flex items-center justify-center">
+                      <Eye className="w-4 h-4 mr-2" />
+                      View Full Document
+                    </h4>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Open the original document in a new tab to view the full content.
                     </p>
                     <Button
                       onClick={() => window.open(document.link, '_blank')}
-                      className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-                      size="lg"
+                      className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded"
                     >
-                      <Eye className="w-5 h-5 mr-2" />
+                      <Eye className="w-4 h-4 mr-2" />
                       Open Document
                     </Button>
-                  </CardContent>
-                </Card>
-              )}
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                    <p className="text-sm text-gray-500">No document link available</p>
+                  </div>
+                )}
 
-              {/* Current Tags Card */}
-              {document.tags && document.tags.length > 0 && (
-                <Card className="border-l-4 border-l-green-500">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Tag className="w-5 h-5 text-green-600" />
-                      Current Tags
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                {/* Tags Section */}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-green-800 mb-3 flex items-center">
+                    <Tag className="w-4 h-4 mr-2" />
+                    Document Tags ({document.tags?.length || 0})
+                  </h4>
+                  {document.tags && document.tags.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {document.tags.map((tag, index) => (
-                        <Badge
-                          key={`tag-${index}`}
-                          variant="outline"
-                          className="bg-green-50 text-green-700 border-green-200"
+                        <span
+                          key={index}
+                          className="inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium border border-green-300"
                         >
                           {tag}
-                        </Badge>
+                        </span>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">No tags assigned to this document</p>
+                  )}
+                </div>
+              </div>
             </TabsContent>
           </div>
         </Tabs>
