@@ -28,10 +28,10 @@ def test_e2e_endpoint():
         raise
 
     try:
-        assert data.get("message") == "Categories service is reachable"
+        assert data.get("message") == "Company service is reachable"
         print("[PASS] Message key matches expected value.")
     except AssertionError:
-        print(f"[FAIL] Expected message 'Categories service is reachable', got '{data.get('message')}'")
+        print(f"[FAIL] Expected message 'Company service is reachable', got '{data.get('message')}'")
         raise
 
     print("[SUCCESS] E2E test for GET /e2e endpoint completed successfully.")

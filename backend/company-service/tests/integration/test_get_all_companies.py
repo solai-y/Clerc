@@ -15,7 +15,7 @@ def client():
     print("[INFO] Flask test client teardown complete.")
 
 def test_get_companies(client: FlaskClient):
-    print("\n[TEST] Running GET /categories endpoint test...")
+    print("\n[TEST] Running GET /companies endpoint test...")
 
     response = client.get('/companies')
     print(f"[DEBUG] Received response with status code: {response.status_code}")
