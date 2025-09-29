@@ -298,23 +298,50 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
               confidence: levelPred.confidence,
               reasoning: levelPred.reasoning || `${levelPred.source?.toUpperCase() || 'AI'} prediction for ${level} level`,
               source: levelPred.source || 'ai',
-              shap_data: levelPred.ai_prediction?.key_evidence || null
+              full_response: levelPred.llm_prediction || levelPred.ai_prediction || {},
+              shap_data: null // Will be set below for AI predictions
             }
-            console.log(`📋 Adding explanation for ${level}:`, explanation)
+
+            // Extract SHAP data for AI predictions
+            if (levelPred.source === 'ai' && levelPred.ai_prediction) {
+              explanation.shap_data = levelPred.ai_prediction.key_evidence || null
+              explanation.full_response = levelPred.ai_prediction
+            } else if (levelPred.source === 'llm' && levelPred.llm_prediction) {
+              explanation.full_response = levelPred.llm_prediction
+            }
+
+            console.log(`📋 Adding ${levelPred.source} explanation for ${level}:`, explanation)
             explanations.push(explanation)
 
-            // Also store AI prediction separately if this is an LLM override and we have AI data
+            // CRITICAL: Also store AI prediction separately if this is an LLM override and we have AI data
+            // This ensures we don't lose AI explanations when LLM overrides them
             if (levelPred.source === 'llm' && levelPred.ai_prediction && levelPred.ai_prediction.pred) {
               const aiExplanation = {
                 level: level,
                 tag: levelPred.ai_prediction.pred,
-                confidence: levelPred.ai_prediction.confidence,
-                reasoning: `AI model prediction (overridden by LLM)`,
+                confidence: levelPred.ai_prediction.confidence || 0,
+                reasoning: levelPred.ai_prediction.reasoning || `AI model prediction (overridden by LLM)`,
                 source: 'ai',
+                full_response: levelPred.ai_prediction,
                 shap_data: levelPred.ai_prediction.key_evidence || null
               }
-              console.log(`📋 Adding AI explanation for ${level}:`, aiExplanation)
+              console.log(`📋 Adding AI explanation for ${level} (LLM override):`, aiExplanation)
               explanations.push(aiExplanation)
+            }
+
+            // ALSO: When AI is the source but we have LLM data available, ensure we preserve it too
+            if (levelPred.source === 'ai' && levelPred.llm_prediction && levelPred.llm_prediction.pred) {
+              const llmExplanation = {
+                level: level,
+                tag: levelPred.llm_prediction.pred,
+                confidence: levelPred.llm_prediction.confidence || 0,
+                reasoning: levelPred.llm_prediction.reasoning || `LLM prediction (not used)`,
+                source: 'llm',
+                full_response: levelPred.llm_prediction,
+                shap_data: null
+              }
+              console.log(`📋 Adding LLM explanation for ${level} (not used):`, llmExplanation)
+              explanations.push(llmExplanation)
             }
           }
         }
