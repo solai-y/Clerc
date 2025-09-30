@@ -73,6 +73,11 @@ class ResponseAggregator:
             if secondary_pred:
                 context["secondary"] = secondary_pred.get("pred")
         
+        # Get LLM prediction for this level if available (even if not used)
+        llm_pred_for_level = None
+        if llm_predictions:
+            llm_pred_for_level = llm_predictions.get("prediction", {}).get(level)
+
         return PredictionLevel(
             pred=ai_pred.get("pred", ""),
             confidence=ai_pred.get("confidence", 0.0),
@@ -81,7 +86,7 @@ class ResponseAggregator:
             primary=context.get("primary"),
             secondary=context.get("secondary"),
             ai_prediction=ai_pred,
-            llm_prediction=llm_predictions.get("prediction", {}).get(level) if llm_predictions else None
+            llm_prediction=llm_pred_for_level
         )
     
     @staticmethod
@@ -94,6 +99,9 @@ class ResponseAggregator:
             logger.warning(f"No LLM prediction found for level: {level}")
             return None
         
+        # Get AI prediction for this level to preserve it
+        ai_pred_for_level = ai_predictions.get("prediction", {}).get(level, {})
+
         return PredictionLevel(
             pred=llm_pred.get("pred", ""),
             confidence=llm_pred.get("confidence", 0.0),
@@ -101,7 +109,7 @@ class ResponseAggregator:
             source="llm",
             primary=llm_pred.get("primary"),
             secondary=llm_pred.get("secondary"),
-            ai_prediction=ai_predictions.get("prediction", {}).get(level, {}),
+            ai_prediction=ai_pred_for_level,
             llm_prediction=llm_pred
         )
     

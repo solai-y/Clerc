@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Upload, Search, Filter, AlertCircle, RefreshCw, LogIn } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
-import { ConfirmTagsModal } from "@/components/confirm-tags-modal"
 import { DocumentDetailsModal } from "@/components/document-details-modal"
 import { DocumentTable } from "@/components/document-table"
 import { DocumentPagination } from "@/components/document-pagination"
@@ -27,7 +26,6 @@ export default function HomePage() {
   const [sortBy, setSortBy] = useState<"name" | "date" | "size">("date")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
-  const [confirmTagsDocument, setConfirmTagsDocument] = useState<Document | null>(null)
   const [detailsDocument, setDetailsDocument] = useState<Document | null>(null)
   const [filterTag, setFilterTag] = useState<string>("")
   
@@ -122,52 +120,6 @@ export default function HomePage() {
     }
   }
 
-  const handleConfirmTags = async (
-    documentId: string,
-    confirmedTags: string[],
-    userAddedTags: string[]
-  ) => {
-    try {
-      console.log('✅ Confirming document tags:', {
-        documentId,
-        confirmedTags,
-        userAddedTags,
-        totalTags: confirmedTags.length + userAddedTags.length
-      })
-
-      const documentIdNum = parseInt(documentId)
-      
-      // Update the processed document with confirmed tags
-      // (processed_documents entry should already exist from upload flow)
-      await apiClient.updateDocumentTags(documentIdNum, {
-        confirmed_tags: confirmedTags,
-        user_added_labels: userAddedTags
-      })
-      
-      console.log('✅ Successfully updated document tags')
-      
-      // Refresh the document list to show updated tags
-      await refetch()
-      setConfirmTagsDocument(null)
-      
-    } catch (err) {
-      console.error('❌ Error updating document tags:', err)
-      
-      // Provide detailed error information instead of attempting fallback
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
-      const detailedError = new Error(
-        `Failed to update document tags: ${errorMessage}. ` +
-        `Document ID: ${documentId}. ` +
-        `Attempted to update with ${confirmedTags.length} confirmed tags and ${userAddedTags.length} user-added tags. ` +
-        `This error typically indicates that the processed document record does not exist in the database, ` +
-        `which suggests the document upload/processing workflow is incomplete. ` +
-        `Please verify that documents are properly processed before attempting tag confirmation, ` +
-        `or check the document service and database connectivity.`
-      )
-      
-      throw detailedError
-    }
-  }
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return "0 B"
@@ -317,7 +269,6 @@ export default function HomePage() {
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={handleSort}
-                  onEditTags={setConfirmTagsDocument}
                   onViewDetails={setDetailsDocument}
                 />
                 
@@ -360,20 +311,24 @@ export default function HomePage() {
         onUploadComplete={handleUploadComplete}
       />
 
-      {/* Confirm Tags Modal */}
-      {confirmTagsDocument && (
-        <ConfirmTagsModal
-          document={confirmTagsDocument}
-          onConfirm={handleConfirmTags}
-          onClose={() => setConfirmTagsDocument(null)}
-        />
-      )}
 
       {/* Document Details Modal */}
       {detailsDocument && (
         <DocumentDetailsModal
           document={detailsDocument}
           onClose={() => setDetailsDocument(null)}
+          onConfirm={async (documentId: string, confirmedTagsData: any) => {
+            try {
+              const documentIdNum = parseInt(documentId)
+              await apiClient.updateDocumentTags(documentIdNum, {
+                confirmed_tags: confirmedTagsData
+              })
+              await refetch()
+            } catch (err) {
+              console.error('❌ Error updating document tags:', err)
+              throw err
+            }
+          }}
         />
       )}
 

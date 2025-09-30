@@ -86,27 +86,52 @@ def get_documents():
 
 @documents_bp.route('/<int:document_id>', methods=['GET'])
 def get_document(document_id):
-    """Get a specific document by ID"""
+    """Get a specific document by ID (raw document only)"""
     logger.info(f"GET /documents/{document_id} - Request from {request.remote_addr}")
-    
+
     if not db_service:
         return APIResponse.internal_error("Database service not available")
-    
+
     try:
         document, error = db_service.get_document_by_id(document_id)
-        
+
         if error:
             if "not found" in error.lower():
                 return APIResponse.not_found(f"Document with ID {document_id}")
             else:
                 logger.error(f"Database error: {error}")
                 return APIResponse.internal_error("Failed to retrieve document")
-        
+
         logger.info(f"Successfully retrieved document {document_id}")
         return APIResponse.success(document, "Document retrieved successfully")
-        
+
     except Exception as e:
         logger.error(f"Unexpected error in get_document: {str(e)}")
+        return APIResponse.internal_error()
+
+@documents_bp.route('/<int:document_id>/complete', methods=['GET'])
+def get_complete_document(document_id):
+    """Get complete document information including both raw and processed data"""
+    logger.info(f"GET /documents/{document_id}/complete - Request from {request.remote_addr}")
+
+    if not db_service:
+        return APIResponse.internal_error("Database service not available")
+
+    try:
+        document, error = db_service.get_complete_document_by_id(document_id)
+
+        if error:
+            if "not found" in error.lower():
+                return APIResponse.not_found(f"Document with ID {document_id}")
+            else:
+                logger.error(f"Database error: {error}")
+                return APIResponse.internal_error("Failed to retrieve complete document")
+
+        logger.info(f"Successfully retrieved complete document {document_id}")
+        return APIResponse.success(document, "Complete document retrieved successfully")
+
+    except Exception as e:
+        logger.error(f"Unexpected error in get_complete_document: {str(e)}")
         return APIResponse.internal_error()
 
 @documents_bp.route('', methods=['POST'])
@@ -341,10 +366,17 @@ def update_document_tags(document_id):
         if not has_tag_field:
             return APIResponse.validation_error(f"At least one of the following fields is required: {', '.join(tag_fields)}")
         
-        # Validate array fields
+        # Validate field types
         for field in tag_fields:
-            if field in data and not isinstance(data[field], list):
-                return APIResponse.validation_error(f"{field} must be an array")
+            if field in data:
+                if field == 'confirmed_tags':
+                    # confirmed_tags can be either array (legacy) or object (new JSONB format)
+                    if not isinstance(data[field], (list, dict)):
+                        return APIResponse.validation_error(f"{field} must be an array or object")
+                else:
+                    # Other fields must be arrays
+                    if not isinstance(data[field], list):
+                        return APIResponse.validation_error(f"{field} must be an array")
         
         # Update document tags
         updated_document, error = db_service.update_document_tags(document_id, data)

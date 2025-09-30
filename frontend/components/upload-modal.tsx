@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react"
 import { apiClient } from "@/lib/api"
-import { EnhancedConfirmTagsModal } from "./enhanced-confirm-tags-modal"
+import { HierarchyBasedConfirmTagsModal } from "./hierarchy-based-confirm-tags-modal"
 
 export interface Document {
   id: string
@@ -298,23 +298,50 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
               confidence: levelPred.confidence,
               reasoning: levelPred.reasoning || `${levelPred.source?.toUpperCase() || 'AI'} prediction for ${level} level`,
               source: levelPred.source || 'ai',
-              shap_data: levelPred.ai_prediction?.key_evidence || null
+              full_response: levelPred.llm_prediction || levelPred.ai_prediction || {},
+              shap_data: null // Will be set below for AI predictions
             }
-            console.log(`📋 Adding explanation for ${level}:`, explanation)
+
+            // Extract SHAP data for AI predictions
+            if (levelPred.source === 'ai' && levelPred.ai_prediction) {
+              explanation.shap_data = levelPred.ai_prediction.key_evidence || null
+              explanation.full_response = levelPred.ai_prediction
+            } else if (levelPred.source === 'llm' && levelPred.llm_prediction) {
+              explanation.full_response = levelPred.llm_prediction
+            }
+
+            console.log(`📋 Adding ${levelPred.source} explanation for ${level}:`, explanation)
             explanations.push(explanation)
 
-            // Also store AI prediction separately if this is an LLM override and we have AI data
+            // CRITICAL: Also store AI prediction separately if this is an LLM override and we have AI data
+            // This ensures we don't lose AI explanations when LLM overrides them
             if (levelPred.source === 'llm' && levelPred.ai_prediction && levelPred.ai_prediction.pred) {
               const aiExplanation = {
                 level: level,
                 tag: levelPred.ai_prediction.pred,
-                confidence: levelPred.ai_prediction.confidence,
-                reasoning: `AI model prediction (overridden by LLM)`,
+                confidence: levelPred.ai_prediction.confidence || 0,
+                reasoning: levelPred.ai_prediction.reasoning || `AI model prediction (overridden by LLM)`,
                 source: 'ai',
+                full_response: levelPred.ai_prediction,
                 shap_data: levelPred.ai_prediction.key_evidence || null
               }
-              console.log(`📋 Adding AI explanation for ${level}:`, aiExplanation)
+              console.log(`📋 Adding AI explanation for ${level} (LLM override):`, aiExplanation)
               explanations.push(aiExplanation)
+            }
+
+            // ALSO: When AI is the source but we have LLM data available, ensure we preserve it too
+            if (levelPred.source === 'ai' && levelPred.llm_prediction && levelPred.llm_prediction.pred) {
+              const llmExplanation = {
+                level: level,
+                tag: levelPred.llm_prediction.pred,
+                confidence: levelPred.llm_prediction.confidence || 0,
+                reasoning: levelPred.llm_prediction.reasoning || `LLM prediction (not used)`,
+                source: 'llm',
+                full_response: levelPred.llm_prediction,
+                shap_data: null
+              }
+              console.log(`📋 Adding LLM explanation for ${level} (not used):`, llmExplanation)
+              explanations.push(llmExplanation)
             }
           }
         }
@@ -401,24 +428,26 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
-  const handleConfirmTags = async (documentId: string, confirmedTags: string[], userAddedTags: string[]) => {
+  const handleConfirmTags = async (documentId: string, confirmedTagsData: any) => {
     if (pendingDocument) {
+      // Extract tag names from the new JSONB structure for display
+      const confirmedTagNames = confirmedTagsData.tags?.map((t: any) => t.tag) || []
+
       // Update the document with confirmed tags
       const finalDocument: Document = {
         ...pendingDocument,
-        tags: [...confirmedTags, ...userAddedTags],
+        tags: confirmedTagNames,
         modelGeneratedTags: pendingDocument.modelGeneratedTags?.map(tag => ({
           ...tag,
-          isConfirmed: confirmedTags.includes(tag.tag)
+          isConfirmed: confirmedTagNames.includes(tag.tag)
         })),
-        userAddedTags: userAddedTags
+        userAddedTags: [] // Not using user added tags in hierarchy-based system
       }
       
       // Update the backend with confirmed tags and explanations
       try {
         await apiClient.updateDocumentTags(parseInt(documentId), {
-          confirmed_tags: confirmedTags,
-          user_added_labels: userAddedTags,
+          confirmed_tags: confirmedTagsData,
           explanations: explanationData
         })
       } catch (error) {
@@ -579,9 +608,8 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
 
     {/* Enhanced Tag Confirmation Modal */}
     {showConfirmModal && pendingDocument && (
-      <EnhancedConfirmTagsModal
+      <HierarchyBasedConfirmTagsModal
         document={pendingDocument}
-        predictions={predictionData}
         explanations={explanationData}
         onConfirm={handleConfirmTags}
         onClose={handleCloseConfirmModal}

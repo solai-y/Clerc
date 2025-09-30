@@ -103,7 +103,12 @@ class TestTagOperationsIntegration:
         assert tag_response.status_code == 200
         tag_data = tag_response.get_json()
         assert tag_data["status"] == "success"
-        assert tag_data["data"]["confirmed_tags"] == ["invoice", "financial"]
+
+        # Check new JSONB structure for confirmed_tags
+        confirmed_tags = tag_data["data"]["confirmed_tags"]
+        assert "tags" in confirmed_tags
+        tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+        assert set(tag_names) == {"invoice", "financial"}
         print(f"  [PASS] AI tags confirmed successfully")
         
         # Step 4: Add user tags
@@ -122,7 +127,12 @@ class TestTagOperationsIntegration:
         assert user_tag_response.status_code == 200
         user_tag_result = user_tag_response.get_json()
         assert user_tag_result["status"] == "success"
-        assert user_tag_result["data"]["confirmed_tags"] == ["invoice", "financial"]
+
+        # Check new JSONB structure for confirmed_tags
+        confirmed_tags = user_tag_result["data"]["confirmed_tags"]
+        assert "tags" in confirmed_tags
+        tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+        assert set(tag_names) == {"invoice", "financial"}
         assert user_tag_result["data"]["user_added_labels"] == ["urgent", "q1-2024", "client-xyz"]
         print(f"  [PASS] User tags added successfully")
         
@@ -140,7 +150,12 @@ class TestTagOperationsIntegration:
                 break
         
         assert final_doc is not None, f"Document {document_id} not found in processed documents"
-        assert final_doc["confirmed_tags"] == ["invoice", "financial"]
+
+        # Check new JSONB structure for confirmed_tags
+        confirmed_tags = final_doc["confirmed_tags"]
+        assert "tags" in confirmed_tags
+        tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+        assert set(tag_names) == {"invoice", "financial"}
         assert final_doc["user_added_labels"] == ["urgent", "q1-2024", "client-xyz"]
         assert len(final_doc["suggested_tags"]) == 3  # Original AI suggestions preserved
         print(f"  [PASS] Final document state verified")
@@ -207,7 +222,12 @@ class TestTagOperationsIntegration:
         
         assert update_response.status_code == 200
         result = update_response.get_json()
-        assert result["data"]["confirmed_tags"] == ["contract", "legal"]
+
+        # Check new JSONB structure for confirmed_tags
+        confirmed_tags = result["data"]["confirmed_tags"]
+        assert "tags" in confirmed_tags
+        tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+        assert set(tag_names) == {"contract", "legal"}
         assert result["data"]["user_added_labels"] == ["important"]
         
         print("  [PASS] Tag removal workflow completed")
@@ -314,7 +334,12 @@ class TestTagOperationsIntegration:
                 break
         
         assert final_doc is not None, f"Document {document_id} not found in processed documents"
-        assert final_doc["confirmed_tags"] == ["base-tag"]
+
+        # Check new JSONB structure for confirmed_tags
+        confirmed_tags = final_doc["confirmed_tags"]
+        assert "tags" in confirmed_tags
+        tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+        assert tag_names == ["base-tag"]
         assert final_doc["user_added_labels"] == ["update1", "update2", "update3"]
         
         print("  [PASS] Concurrent updates handled correctly")
@@ -466,7 +491,12 @@ class TestTagOperationsIntegration:
                 break
         
         assert final_doc is not None, f"Document {document_id} not found in processed documents"
-        assert set(final_doc["confirmed_tags"]) == {"persistent-tag1", "persistent-tag2"}
+
+        # Check new JSONB structure for confirmed_tags
+        confirmed_tags = final_doc["confirmed_tags"]
+        assert "tags" in confirmed_tags
+        tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+        assert set(tag_names) == {"persistent-tag1", "persistent-tag2"}
         assert set(final_doc["user_added_labels"]) == {"user-tag1", "user-tag3"}
         assert len(final_doc["suggested_tags"]) == 2  # AI suggestions preserved
         

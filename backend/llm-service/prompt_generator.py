@@ -59,19 +59,32 @@ STEP-BY-STEP ANALYSIS:
 3. What is the purpose? (report facts, give investment advice, announce news)
 4. Which classification path above best matches?
 
+CONFIDENCE SCORING INSTRUCTIONS:
+Use these standardized confidence levels for ALL classifications (primary, secondary, tertiary):
+
+• Very Confident (0.85-1.0): Classification is unambiguous with clear, strong indicators
+• Confident (0.70-0.84): Strong indicators present with minor uncertainty
+• Moderately Confident (0.55-0.69): Some uncertainty, requires interpretation of context
+• Low Confidence (0.40-0.54): Significant uncertainty, limited clear indicators
+• Very Low Confidence (0.25-0.39): High uncertainty, ambiguous or conflicting signals
+
+CONFIDENCE FACTORS:
+Positive (+confidence): Clear terminology match, identifiable source, explicit purpose, matching structure
+Negative (-confidence): Ambiguous language, mixed signals, unclear source/purpose, atypical format
+
 CRITICAL: Choose ONE exact path from the list above. Respond with ONLY this JSON:
 
 {{
     "primary": "EXACT_PRIMARY_NAME",
     "secondary": "EXACT_SECONDARY_NAME",
     "tertiary": "EXACT_TERTIARY_NAME",
-    "confidence_primary": 0.95,
-    "confidence_secondary": 0.90,
-    "confidence_tertiary": 0.85,
-    "reasoning": "Brief explanation of why this classification path was chosen"
+    "confidence_primary": 0.87,
+    "confidence_secondary": 0.84,
+    "confidence_tertiary": 0.81,
+    "reasoning": "Brief explanation of why this classification path was chosen and confidence assessment"
 }}
 
-Use ONLY the exact category names from the paths above. No variations."""
+Use ONLY the exact category names from the paths above. Apply confidence scoring standards consistently."""
         
         return prompt
     
@@ -110,17 +123,26 @@ DOCUMENT TO CLASSIFY:
 
 Given that this is a {primary} document, determine the most specific secondary and tertiary classification.
 
+CONFIDENCE SCORING INSTRUCTIONS:
+Use these standardized confidence levels:
+
+• Very Confident (0.85-1.0): Classification is unambiguous with clear, strong indicators
+• Confident (0.70-0.84): Strong indicators present with minor uncertainty
+• Moderately Confident (0.55-0.69): Some uncertainty, requires interpretation of context
+• Low Confidence (0.40-0.54): Significant uncertainty, limited clear indicators
+• Very Low Confidence (0.25-0.39): High uncertainty, ambiguous or conflicting signals
+
 CRITICAL: Choose ONE exact path from the list above. Respond with ONLY this JSON:
 
 {{
     "secondary": "EXACT_SECONDARY_NAME",
-    "tertiary": "EXACT_TERTIARY_NAME", 
-    "confidence_secondary": 0.90,
-    "confidence_tertiary": 0.85,
-    "reasoning": "Brief explanation of why this secondary/tertiary classification was chosen"
+    "tertiary": "EXACT_TERTIARY_NAME",
+    "confidence_secondary": 0.82,
+    "confidence_tertiary": 0.78,
+    "reasoning": "Brief explanation of why this secondary/tertiary classification was chosen and confidence assessment"
 }}
 
-Use ONLY the exact category names from the paths above."""
+Use ONLY the exact category names from the paths above. Apply confidence scoring standards consistently."""
         
         return prompt
     
@@ -155,14 +177,23 @@ DOCUMENT TO CLASSIFY:
 
 Given that this is a {primary} → {secondary} document, choose the most specific tertiary classification.
 
+CONFIDENCE SCORING INSTRUCTIONS:
+Use these standardized confidence levels:
+
+• Very Confident (0.85-1.0): Classification is unambiguous with clear, strong indicators
+• Confident (0.70-0.84): Strong indicators present with minor uncertainty
+• Moderately Confident (0.55-0.69): Some uncertainty, requires interpretation of context
+• Low Confidence (0.40-0.54): Significant uncertainty, limited clear indicators
+• Very Low Confidence (0.25-0.39): High uncertainty, ambiguous or conflicting signals
+
 CRITICAL: Choose ONE exact option from the list above. Respond with ONLY this JSON:
 
 {{
     "tertiary": "EXACT_TERTIARY_NAME",
-    "confidence_tertiary": 0.85,
-    "reasoning": "Brief explanation of why this tertiary classification was chosen"
+    "confidence_tertiary": 0.75,
+    "reasoning": "Brief explanation of why this tertiary classification was chosen and confidence assessment"
 }}
 
-Use ONLY the exact category names from the options above."""
+Use ONLY the exact category names from the options above. Apply confidence scoring standards consistently."""
         
         return prompt
