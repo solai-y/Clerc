@@ -129,7 +129,7 @@ def get_documents():
 
 @documents_bp.route('/<int:document_id>', methods=['GET'])
 def get_document(document_id):
-    """Get a specific document by ID"""
+    """Get a specific document by ID (raw document only)"""
     logger.info(f"GET /documents/{document_id} - Request from {request.remote_addr}")
 
     if not db_service:
@@ -152,6 +152,30 @@ def get_document(document_id):
         logger.error(f"Unexpected error in get_document: {str(e)}")
         return APIResponse.internal_error()
 
+@documents_bp.route('/<int:document_id>/complete', methods=['GET'])
+def get_complete_document(document_id):
+    """Get complete document information including both raw and processed data"""
+    logger.info(f"GET /documents/{document_id}/complete - Request from {request.remote_addr}")
+
+    if not db_service:
+        return APIResponse.internal_error("Database service not available")
+
+    try:
+        document, error = db_service.get_complete_document_by_id(document_id)
+
+        if error:
+            if "not found" in error.lower():
+                return APIResponse.not_found(f"Document with ID {document_id}")
+            else:
+                logger.error(f"Database error: {error}")
+                return APIResponse.internal_error("Failed to retrieve complete document")
+
+        logger.info(f"Successfully retrieved complete document {document_id}")
+        return APIResponse.success(document, "Complete document retrieved successfully")
+
+    except Exception as e:
+        logger.error(f"Unexpected error in get_complete_document: {str(e)}")
+        return APIResponse.internal_error()
 
 @documents_bp.route('', methods=['POST'])
 def create_document():

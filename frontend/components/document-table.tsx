@@ -15,11 +15,10 @@ interface DocumentTableProps {
   sortBy: SortBy
   sortOrder: SortOrder
   onSort: (column: SortBy) => void
-  onEditTags: (document: Document) => void
   onViewDetails: (document: Document) => void
 }
 
-export function DocumentTable({ documents, sortBy, sortOrder, onSort, onEditTags, onViewDetails }: DocumentTableProps) {
+export function DocumentTable({ documents, sortBy, sortOrder, onSort, onViewDetails }: DocumentTableProps) {
   if (documents.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">
@@ -34,10 +33,9 @@ export function DocumentTable({ documents, sortBy, sortOrder, onSort, onEditTags
       <DocumentTableHeader sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} />
       <TableBody>
         {documents.map((document) => (
-          <DocumentTableRow 
-            key={document.id} 
-            document={document} 
-            onEditTags={onEditTags}
+          <DocumentTableRow
+            key={document.id}
+            document={document}
             onViewDetails={onViewDetails}
           />
         ))}

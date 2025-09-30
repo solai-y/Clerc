@@ -534,10 +534,13 @@ class DatabaseService:
                 # Create explanations if provided
                 explanations = document_data.get('explanations', [])
                 if explanations:
+                    self.logger.info(f"Creating explanations for process_id {process_id}: {len(explanations)} explanations")
                     explanation_error = self.create_explanations(process_id, explanations)
                     if explanation_error:
-                        self.logger.warning(f"Failed to create explanations: {explanation_error}")
-                        # Don't fail the whole operation, just log the warning
+                        self.logger.warning(f"Failed to create explanations for process_id {process_id}: {explanation_error}")
+                        # Don't fail the whole operation, just log the warning - document creation should continue
+                    else:
+                        self.logger.info(f"Successfully created explanations for process_id {process_id}")
                 
                 return created_doc, None
             else:
@@ -563,10 +566,29 @@ class DatabaseService:
             update_data: Dict[str, Any] = {}
 
             if 'confirmed_tags' in tag_data:
-                if not isinstance(tag_data['confirmed_tags'], list):
-                    return None, "confirmed_tags must be an array"
-                update_data['confirmed_tags'] = tag_data['confirmed_tags']
-
+                # Handle both legacy array format and new JSONB format
+                confirmed_tags = tag_data['confirmed_tags']
+                if isinstance(confirmed_tags, list):
+                    # Legacy format - convert to new JSONB format
+                    update_data['confirmed_tags'] = {
+                        "tags": [
+                            {
+                                "tag": tag,
+                                "source": "legacy",
+                                "confidence": 1.0,
+                                "confirmed": True,
+                                "added_by": "migrated",
+                                "added_at": "now()",
+                                "level": "unknown"
+                            } for tag in confirmed_tags
+                        ]
+                    }
+                elif isinstance(confirmed_tags, dict):
+                    # New JSONB format - use as is
+                    update_data['confirmed_tags'] = confirmed_tags
+                else:
+                    return None, "confirmed_tags must be an array or object"
+            
             if 'user_added_labels' in tag_data:
                 if not isinstance(tag_data['user_added_labels'], list):
                     return None, "user_added_labels must be an array"
@@ -594,10 +616,13 @@ class DatabaseService:
 
                 # Handle explanations if provided
                 if 'explanations' in tag_data:
+                    self.logger.info(f"Creating explanations during tag update for process_id {process_id}: {len(tag_data['explanations'])} explanations")
                     explanation_error = self.create_explanations(process_id, tag_data['explanations'])
                     if explanation_error:
-                        self.logger.warning(f"Failed to create explanations during tag update: {explanation_error}")
-                        # Don't fail the whole operation, just log the warning
+                        self.logger.warning(f"Failed to create explanations during tag update for process_id {process_id}: {explanation_error}")
+                        # Don't fail the whole operation, just log the warning - tag update should continue
+                    else:
+                        self.logger.info(f"Successfully created explanations during tag update for process_id {process_id}")
 
                 self.logger.info(f"Updated tags for processed document {process_id} (document_id: {document_id})")
                 return updated_doc, None
@@ -711,6 +736,38 @@ class DatabaseService:
         try:
             explanation_records = []
             for explanation in explanations:
+                # Validate required fields
+                level = explanation.get('level')
+                tag = explanation.get('tag')
+                confidence = explanation.get('confidence')
+                source = explanation.get('source')
+
+                # Skip explanations with missing required fields
+                if not all([level, tag, confidence is not None, source]):
+                    self.logger.warning(f"Skipping explanation with missing required fields: {explanation}")
+                    continue
+
+                # Validate classification_level constraint
+                if level not in ['primary', 'secondary', 'tertiary']:
+                    self.logger.warning(f"Invalid classification_level '{level}', skipping explanation")
+                    continue
+
+                # Validate source_service constraint (allow ai_override for duplicate handling)
+                valid_sources = ['ai', 'llm', 'ai_override']
+                if source not in valid_sources:
+                    self.logger.warning(f"Invalid source_service '{source}', skipping explanation")
+                    continue
+
+                # Validate confidence range
+                try:
+                    confidence_float = float(confidence)
+                    if confidence_float < 0.0 or confidence_float > 1.0:
+                        self.logger.warning(f"Confidence {confidence_float} out of range [0,1], skipping explanation")
+                        continue
+                except (ValueError, TypeError):
+                    self.logger.warning(f"Invalid confidence value '{confidence}', skipping explanation")
+                    continue
+
                 # Build service response with SHAP data if available
                 service_response = explanation.get('full_response', {})
                 if explanation.get('shap_data'):
@@ -718,30 +775,133 @@ class DatabaseService:
 
                 record = {
                     'process_id': process_id,
-                    'classification_level': explanation['level'],
-                    'predicted_tag': explanation['tag'],
-                    'confidence': explanation['confidence'],
+                    'classification_level': level,
+                    'predicted_tag': str(tag),  # Ensure string type
+                    'confidence': confidence_float,
                     'reasoning': explanation.get('reasoning'),
-                    'source_service': explanation['source'],
+                    'source_service': source,
                     'service_response': service_response
                 }
                 explanation_records.append(record)
-            
+
             if explanation_records:
-                response = self.supabase.table('explanations').insert(explanation_records).execute()
-                if response.data:
-                    self.logger.info(f"Created {len(response.data)} explanation records for process_id {process_id}")
+                self.logger.info(f"Attempting to insert {len(explanation_records)} explanation records for process_id {process_id}")
+
+                # Group explanations by level to handle duplicates properly
+                explanation_groups = {}
+                for record in explanation_records:
+                    level = record['classification_level']
+                    source = record['source_service']
+                    key = f"{level}_{source}"
+
+                    if level not in explanation_groups:
+                        explanation_groups[level] = {}
+                    explanation_groups[level][source] = record
+
+                # Insert explanations, preferring LLM over AI for each level
+                successful_inserts = 0
+                failed_inserts = 0
+
+                for level, sources in explanation_groups.items():
+                    # Determine which explanation to store for this level
+                    if 'llm' in sources and 'ai' in sources:
+                        # Store LLM as primary, AI with modified source to avoid constraint
+                        llm_record = sources['llm']
+                        ai_record = sources['ai'].copy()
+                        ai_record['source_service'] = 'ai_override'  # Modify to avoid unique constraint
+                        ai_record['reasoning'] = f"AI prediction (overridden by LLM): {ai_record['reasoning']}"
+
+                        records_to_insert = [llm_record, ai_record]
+                    elif 'llm' in sources:
+                        records_to_insert = [sources['llm']]
+                    elif 'ai' in sources:
+                        records_to_insert = [sources['ai']]
+                    else:
+                        continue
+
+                    # Insert the records for this level
+                    for record in records_to_insert:
+                        try:
+                            response = self.supabase.table('explanations').insert([record]).execute()
+                            if response.data:
+                                successful_inserts += 1
+                                self.logger.info(f"Inserted {record['source_service']} explanation for {level}")
+                            else:
+                                failed_inserts += 1
+                                self.logger.warning(f"Failed to insert {record['source_service']} explanation for {level}")
+                        except Exception as insert_error:
+                            error_str = str(insert_error)
+                            if "duplicate key value violates unique constraint" in error_str:
+                                self.logger.warning(f"Skipping duplicate explanation for {level} ({record['source_service']})")
+                                failed_inserts += 1
+                            else:
+                                self.logger.warning(f"Failed to insert {record['source_service']} explanation for {level}: {error_str}")
+                                failed_inserts += 1
+
+                if successful_inserts > 0:
+                    self.logger.info(f"Successfully created {successful_inserts} explanation records for process_id {process_id}")
+                    if failed_inserts > 0:
+                        self.logger.warning(f"{failed_inserts} explanation records failed to insert for process_id {process_id}")
                     return None
                 else:
-                    return "Failed to create explanation records - no data returned"
-            
-            return None
-            
+                    error_msg = f"Failed to create any explanation records for process_id {process_id}"
+                    self.logger.error(error_msg)
+                    return error_msg
+            else:
+                self.logger.warning(f"No valid explanation records to insert for process_id {process_id}")
+                return None
+
         except Exception as e:
             error_msg = f"Failed to create explanations: {str(e)}"
             self.logger.error(error_msg)
+            self.logger.error(f"Explanation data that caused error: {explanations}")
             return error_msg
     
+    def get_complete_document_by_id(self, document_id: int) -> tuple[Optional[Dict], Optional[str]]:
+        """Get complete document information including both raw and processed data"""
+        try:
+            # Query processed_documents and join with raw_documents
+            response = self.supabase.table('processed_documents').select("""
+                *,
+                raw_documents!document_id(
+                    document_name,
+                    document_type,
+                    link,
+                    uploaded_by,
+                    upload_date,
+                    file_size,
+                    file_hash,
+                    status
+                )
+            """).eq('document_id', document_id).execute()
+
+            if response.data:
+                # Get the first (should be only) result
+                document = response.data[0]
+
+                # Flatten the structure for easier access
+                if document.get('raw_documents'):
+                    raw_data = document['raw_documents']
+                    document.update(raw_data)
+                    del document['raw_documents']
+
+                self.logger.info(f"Retrieved complete document with ID: {document_id}")
+                return document, None
+            else:
+                # Fallback to raw_documents only if no processed document exists
+                raw_response = self.supabase.table('raw_documents').select("*").eq('document_id', document_id).execute()
+                if raw_response.data:
+                    self.logger.info(f"Retrieved raw document only with ID: {document_id}")
+                    return raw_response.data[0], None
+                else:
+                    self.logger.warning(f"Document with ID {document_id} not found")
+                    return None, f"Document with ID {document_id} not found"
+
+        except Exception as e:
+            error_msg = f"Failed to retrieve complete document: {str(e)}"
+            self.logger.error(error_msg)
+            return None, error_msg
+
     def get_explanations_for_document(self, document_id: int) -> tuple[List[Dict], Optional[str]]:
         """Get all explanations for a specific document by joining with processed_documents"""
         try:

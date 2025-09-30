@@ -17,7 +17,7 @@ export interface BackendProcessedDocument {
   document_id: number;
   model_id: number | null;
   threshold_pct: number;
-  confirmed_tags: string[] | null;
+  confirmed_tags: string[] | any | null; // Support both legacy array and new JSONB format
   suggested_tags: Array<{ tag: string; score: number }> | null;
   user_added_labels: string[] | null;
   ocr_used: boolean;
@@ -121,6 +121,10 @@ class APIClient {
     return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl(`/documents/${id}`));
   }
 
+  async getCompleteDocument(id: number): Promise<BackendProcessedDocument> {
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl(`/documents/${id}/complete`));
+  }
+
   async createDocument(
     document: Omit<BackendProcessedDocument, "process_id" | "processing_date">
   ): Promise<BackendProcessedDocument> {
@@ -147,7 +151,7 @@ class APIClient {
   async updateDocumentTags(
     documentId: number,
     tagData: {
-      confirmed_tags?: string[];
+      confirmed_tags?: string[] | any; // Support both legacy array and new JSONB format
       user_added_labels?: string[];
       user_removed_tags?: string[];
     }
@@ -328,16 +332,88 @@ export interface Document {
   status: string;
   modelGeneratedTags: Array<{ tag: string; score: number; isConfirmed: boolean }>;
   userAddedTags: string[];
+  // Hierarchical tags
+  primaryTag?: { tag: string; source: string; confidence: number };
+  secondaryTag?: { tag: string; source: string; confidence: number };
+  tertiaryTag?: { tag: string; source: string; confidence: number };
 }
 
 export function transformBackendDocument(processedDoc: BackendProcessedDocument): Document {
+  console.log('🔍 [API Transform] Processing document:', {
+    document_id: processedDoc.document_id,
+    document_name: processedDoc.raw_documents?.document_name,
+    confirmed_tags_raw: processedDoc.confirmed_tags,
+    suggested_tags: processedDoc.suggested_tags,
+    user_added_labels: processedDoc.user_added_labels
+  });
+
   const tags: string[] = [];
   const modelGeneratedTags: Array<{ tag: string; score: number; isConfirmed: boolean }> = [];
   const userAddedTags: string[] = [];
 
+  // Extract hierarchical tags from new JSONB format
+  let primaryTag: { tag: string; source: string; confidence: number } | undefined;
+  let secondaryTag: { tag: string; source: string; confidence: number } | undefined;
+  let tertiaryTag: { tag: string; source: string; confidence: number } | undefined;
+
+  // Process the new JSONB confirmed_tags structure
+  const processConfirmedTags = (confirmedTagsObj: any): string[] => {
+    console.log('🏷️ [API Transform] Processing confirmed_tags:', confirmedTagsObj);
+
+    if (!confirmedTagsObj) {
+      console.log('❌ [API Transform] No confirmed_tags found');
+      return [];
+    }
+
+    // The structure should be: {confirmed_tags: {tags: [...]}}
+    // But we receive: confirmedTagsObj = {confirmed_tags: {tags: [...]}}
+    const tagsArray = confirmedTagsObj.confirmed_tags?.tags;
+
+    if (!tagsArray || !Array.isArray(tagsArray)) {
+      console.log('❌ [API Transform] Invalid structure - expected confirmed_tags.tags array:', confirmedTagsObj);
+      return [];
+    }
+
+    console.log('🆕 [API Transform] Found tags array:', tagsArray);
+
+    // Process hierarchical tags from JSONB format
+    tagsArray.forEach((tagObj: any) => {
+      console.log('🔍 [API Transform] Processing tag object:', tagObj);
+
+      if (tagObj.level === 'primary') {
+        primaryTag = {
+          tag: tagObj.tag,
+          source: tagObj.source || 'unknown',
+          confidence: tagObj.confidence || 0
+        };
+        console.log('🔵 [API Transform] Found primary tag:', primaryTag);
+      } else if (tagObj.level === 'secondary') {
+        secondaryTag = {
+          tag: tagObj.tag,
+          source: tagObj.source || 'unknown',
+          confidence: tagObj.confidence || 0
+        };
+        console.log('🟢 [API Transform] Found secondary tag:', secondaryTag);
+      } else if (tagObj.level === 'tertiary') {
+        tertiaryTag = {
+          tag: tagObj.tag,
+          source: tagObj.source || 'unknown',
+          confidence: tagObj.confidence || 0
+        };
+        console.log('🟠 [API Transform] Found tertiary tag:', tertiaryTag);
+      }
+    });
+
+    const tagNames = tagsArray.map((t: any) => t.tag);
+    console.log('📝 [API Transform] Extracted tag names:', tagNames);
+    return tagNames;
+  };
+
+  const confirmedTagNames = processConfirmedTags(processedDoc.confirmed_tags);
+
   if (processedDoc.suggested_tags) {
     processedDoc.suggested_tags.forEach((t) => {
-      const isConfirmed = processedDoc.confirmed_tags?.includes(t.tag) || false;
+      const isConfirmed = confirmedTagNames.includes(t.tag);
       modelGeneratedTags.push({ tag: t.tag, score: t.score, isConfirmed });
       if (isConfirmed && !tags.includes(t.tag)) tags.push(t.tag);
     });
@@ -350,17 +426,26 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     });
   }
 
-  if (processedDoc.confirmed_tags) {
-    processedDoc.confirmed_tags.forEach((ct) => {
-      if (!tags.includes(ct)) tags.push(ct);
-    });
-  }
+  // Add confirmed tags to the tags array
+  confirmedTagNames.forEach((ct) => {
+    if (!tags.includes(ct)) tags.push(ct);
+  });
+
+  console.log('📊 [API Transform] Final tag processing results:', {
+    document_id: processedDoc.document_id,
+    legacy_tags: tags,
+    primaryTag,
+    secondaryTag,
+    tertiaryTag,
+    userAddedTags,
+    modelGeneratedTags: modelGeneratedTags.length
+  });
 
   const sizeEstimate = processedDoc.raw_documents?.file_size
     ? formatFileSize(processedDoc.raw_documents.file_size)
     : "Size unavailable";
 
-  return {
+  const transformedDocument = {
     id: processedDoc.document_id.toString(),
     name: processedDoc.raw_documents?.document_name || "[Document name unavailable]",
     uploadDate: processedDoc.raw_documents?.upload_date.split("T")[0] || "[Date unavailable]",
@@ -374,7 +459,23 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     status: processedDoc.status || "processed",
     modelGeneratedTags,
     userAddedTags,
+    // Hierarchical tags
+    primaryTag,
+    secondaryTag,
+    tertiaryTag,
   };
+
+  console.log('✅ [API Transform] Transformed document:', {
+    id: transformedDocument.id,
+    name: transformedDocument.name,
+    tags: transformedDocument.tags,
+    primaryTag: transformedDocument.primaryTag,
+    secondaryTag: transformedDocument.secondaryTag,
+    tertiaryTag: transformedDocument.tertiaryTag,
+    userAddedTags: transformedDocument.userAddedTags
+  });
+
+  return transformedDocument;
 }
 
 function formatFileSize(bytes: number): string {

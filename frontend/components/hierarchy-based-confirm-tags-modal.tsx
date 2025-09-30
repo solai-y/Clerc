@@ -47,7 +47,7 @@ interface TagHierarchy {
   }
 }
 
-interface DocumentDetailsModalProps {
+interface HierarchyBasedConfirmTagsModalProps {
   document: Document
   onConfirm: (documentId: string, confirmedTagsData: any) => Promise<void> | void
   onClose: () => void
@@ -55,12 +55,12 @@ interface DocumentDetailsModalProps {
   explanations?: any[]
 }
 
-export function DocumentDetailsModal({
+export function HierarchyBasedConfirmTagsModal({
   document,
   onConfirm,
   onClose,
   explanations = []
-}: DocumentDetailsModalProps) {
+}: HierarchyBasedConfirmTagsModalProps) {
   const { toast } = useToast()
 
 
@@ -99,17 +99,16 @@ export function DocumentDetailsModal({
       try {
         setDataLoading(true)
 
-        // Fetch complete document details (includes confirmed_tags from processed_documents)
+        // Fetch complete document details (includes suggested_tags from processed_documents)
         const documentResponse = await apiClient.getCompleteDocument(parseInt(document.id))
-
-        console.log("🗄️ confirmed_tags field:", documentResponse.confirmed_tags)
-
-        setDbPredictions(documentResponse.confirmed_tags)
+        setDbPredictions(documentResponse.suggested_tags)
 
         // Fetch explanations from database
         const explanationsResponse = await apiClient.getDocumentExplanations(parseInt(document.id))
         setDbExplanations(explanationsResponse)
 
+        console.log("🗄️ Database - predictions:", documentResponse.suggested_tags)
+        console.log("🗄️ Database - explanations:", explanationsResponse)
 
       } catch (error) {
         console.error('Failed to fetch database data:', error)
@@ -133,43 +132,32 @@ export function DocumentDetailsModal({
     const tags: EnhancedTag[] = []
     const processedTags = new Set<string>()
 
-    // First, process confirmed_tags with JSONB structure (priority for view details)
-    if (dbPredictions) {
+    // First, process explanations to get the correct hierarchy levels and sources
+    if (dbExplanations && dbExplanations.length > 0) {
+      console.log("📊 Processing database explanations for hierarchy:", dbExplanations)
 
-      // Handle JSONB confirmed_tags structure: {confirmed_tags: {tags: [...]}}
-      let confirmedTagsArray = [];
-
-      if (dbPredictions?.confirmed_tags?.tags && Array.isArray(dbPredictions.confirmed_tags.tags)) {
-        confirmedTagsArray = dbPredictions.confirmed_tags.tags;
-      } else if (Array.isArray(dbPredictions)) {
-        // Legacy format - array of tags
-        confirmedTagsArray = dbPredictions;
-      }
-
-      for (const confirmedTag of confirmedTagsArray) {
-        if (confirmedTag.tag && !processedTags.has(confirmedTag.tag)) {
-          processedTags.add(confirmedTag.tag)
-
-          tags.push({
-            tag: confirmedTag.tag,
-            confidence: confirmedTag.confidence || 1.0,
-            source: (confirmedTag.source || 'human') as 'ai' | 'llm',
-            level: confirmedTag.level as 'primary' | 'secondary' | 'tertiary',
-            reasoning: `${(confirmedTag.source || 'human').toUpperCase()} confirmed classification`,
-            isConfirmed: true
-          })
-        }
-      }
-    }
-
-    // Fallback: if no confirmed tags, use explanations
-    if (tags.length === 0 && dbExplanations && dbExplanations.length > 0) {
       for (const explanation of dbExplanations) {
+        console.log("🔍 Processing explanation:", {
+          predicted_tag: explanation.predicted_tag,
+          classification_level: explanation.classification_level,
+          source_service: explanation.source_service,
+          confidence: explanation.confidence
+        })
+
         if (explanation.predicted_tag && explanation.classification_level && !processedTags.has(explanation.predicted_tag)) {
           processedTags.add(explanation.predicted_tag)
 
+          // Use the actual classification level from the database
           const level = explanation.classification_level as 'primary' | 'secondary' | 'tertiary'
-          const confidence = explanation.confidence || 0
+
+          // Find matching prediction data for confidence score
+          let confidence = 0
+          if (dbPredictions && Array.isArray(dbPredictions)) {
+            const matchingPred = dbPredictions.find(pred => pred.tag === explanation.predicted_tag)
+            confidence = matchingPred?.score || explanation.confidence || 0
+          } else {
+            confidence = explanation.confidence || 0
+          }
 
           const enhancedTag = {
             tag: explanation.predicted_tag,
@@ -177,14 +165,39 @@ export function DocumentDetailsModal({
             source: explanation.source_service as 'ai' | 'llm',
             level: level,
             reasoning: explanation.reasoning || `${explanation.source_service?.toUpperCase()} prediction`,
-            isConfirmed: false
+            isConfirmed: true
           }
 
+          console.log("✅ Adding enhanced tag:", enhancedTag)
           tags.push(enhancedTag)
         }
       }
     }
 
+    // Fallback: if no explanations, process predictions with database hierarchy levels
+    if (tags.length === 0 && dbPredictions && Array.isArray(dbPredictions)) {
+      console.log("📊 Fallback: Processing database predictions:", dbPredictions)
+
+      for (const pred of dbPredictions) {
+        if (pred.tag && !processedTags.has(pred.tag)) {
+          processedTags.add(pred.tag)
+
+          // Use the hierarchy_level from the database instead of reassigning based on confidence
+          const level = pred.hierarchy_level as 'primary' | 'secondary' | 'tertiary'
+
+          tags.push({
+            tag: pred.tag,
+            confidence: pred.score || 0,
+            source: (pred.source || 'ai') as 'ai' | 'llm',
+            level: level,
+            reasoning: `${(pred.source || 'ai').toUpperCase()} prediction from database`,
+            isConfirmed: true
+          })
+        }
+      }
+    }
+
+    console.log("✅ Enhanced tags result:", tags)
     return tags
   }, [dbPredictions, dbExplanations])
 
@@ -194,9 +207,6 @@ export function DocumentDetailsModal({
   const [selectedTertiary, setSelectedTertiary] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState("selection")
-
-  // Edit mode state
-  const [isEditMode, setIsEditMode] = useState(false)
 
   // Initialize selections with AI/LLM predictions
   useEffect(() => {
@@ -367,23 +377,11 @@ export function DocumentDetailsModal({
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-6xl h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader className="shrink-0 pb-4 relative">
+        <DialogHeader className="shrink-0 pb-4">
           <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
             <TrendingUp className="w-6 h-6 text-blue-600" />
-            {isEditMode ? "Edit Document Classification" : "View Document Details"}: {document.name}
+            Review & Update Document Classification
           </DialogTitle>
-
-          {/* Edit button in header - only show in view mode */}
-          {!isEditMode && (
-            <Button
-              onClick={() => setIsEditMode(true)}
-              className="absolute top-0 right-12 h-8 px-3 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium shadow-md border border-amber-600"
-              size="sm"
-            >
-              <TrendingUp className="w-3 h-3 mr-1" />
-              Edit
-            </Button>
-          )}
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
@@ -410,22 +408,21 @@ export function DocumentDetailsModal({
             {/* Classification Selection Tab */}
             <TabsContent value="selection" className="h-full overflow-y-auto mt-4">
               <div className="space-y-6">
-                {/* Current Classification Summary */}
+                {/* AI Predictions Summary */}
                 {enhancedTags.length > 0 && (
-                  <Card className="border-l-4 border-l-green-500 bg-green-50">
+                  <Card className="border-l-4 border-l-purple-500 bg-purple-50">
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center gap-2 text-lg">
-                        <CheckCircle className="w-5 h-5 text-green-600" />
-                        Current Classification
+                        <Brain className="w-5 h-5 text-purple-600" />
+                        AI/LLM Predictions
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={resetToAIPredictions}
-                          disabled={!isEditMode}
                           className="ml-auto"
                         >
                           <RefreshCw className="w-4 h-4 mr-1" />
-                          Reset to Current
+                          Reset to AI
                         </Button>
                       </CardTitle>
                     </CardHeader>
@@ -465,7 +462,7 @@ export function DocumentDetailsModal({
                     {/* Primary Selection */}
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-gray-700">Primary Classification</label>
-                      <Select value={selectedPrimary} onValueChange={handlePrimaryChange} disabled={!isEditMode}>
+                      <Select value={selectedPrimary} onValueChange={handlePrimaryChange}>
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select primary classification..." />
                         </SelectTrigger>
@@ -488,7 +485,7 @@ export function DocumentDetailsModal({
                       <Select
                         value={selectedSecondary}
                         onValueChange={handleSecondaryChange}
-                        disabled={!isEditMode || !selectedPrimary}
+                        disabled={!selectedPrimary}
                       >
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select secondary classification..." />
@@ -512,7 +509,7 @@ export function DocumentDetailsModal({
                       <Select
                         value={selectedTertiary}
                         onValueChange={handleTertiaryChange}
-                        disabled={!isEditMode || !selectedSecondary}
+                        disabled={!selectedSecondary}
                       >
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select tertiary classification..." />
@@ -643,10 +640,17 @@ export function DocumentDetailsModal({
                 // Use database explanations if available, fallback to props explanations for SHAP data
                 const explanationData = dbExplanations.length > 0 ? dbExplanations : explanations
 
+                console.log("🔍 Raw explanations data:", explanationData)
+                console.log("🔍 Explanations length:", explanationData.length)
+                console.log("🔍 DB explanations:", dbExplanations)
+                console.log("🔍 Props explanations:", explanations)
+
                 // Filter out AI explanations that were overridden by LLM
                 const filteredExplanations = explanationData.filter((explanation: any) => {
                   return explanation.reasoning !== "AI model prediction (overridden by LLM)"
                 })
+
+                console.log("🔍 Filtered explanations:", filteredExplanations)
 
                 // Enhanced explanations with SHAP data extracted from backend service_response
                 const enhancedExplanations = filteredExplanations.map((explanation: any) => {
@@ -657,6 +661,7 @@ export function DocumentDetailsModal({
                     shapData = explanation.service_response.shap_explainability;
                   }
 
+                  console.log('🧠 SHAP data for', explanation.predicted_tag, ':', shapData);
 
                   return {
                     ...explanation,
@@ -844,59 +849,41 @@ export function DocumentDetailsModal({
         <Separator className="shrink-0 my-4" />
 
         <DialogFooter className="shrink-0 flex-row justify-between items-center">
-          {isEditMode ? (
-            <>
-              <div className="text-sm text-gray-600">
-                {selectedPrimary && selectedSecondary && selectedTertiary ? (
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-600" />
-                    Ready to update classification
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-amber-600" />
-                    Please complete all three levels
-                  </div>
-                )}
+          <div className="text-sm text-gray-600">
+            {selectedPrimary && selectedSecondary && selectedTertiary ? (
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                Ready to update classification
               </div>
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={() => setIsEditMode(false)} disabled={isLoading}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleConfirm}
-                  disabled={isLoading || !selectedPrimary || !selectedSecondary || !selectedTertiary}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Save Changes
-                    </>
-                  )}
-                </Button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600" />
+                Please complete all three levels
               </div>
-            </>
-          ) : (
-            <>
-              <div className="text-sm text-gray-600">
-                <div className="flex items-center gap-2">
-                  <Eye className="w-4 h-4 text-blue-600" />
-                  View mode - Click Edit button in header to make changes
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={onClose}>
-                  Close
-                </Button>
-              </div>
-            </>
-          )}
+            )}
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={onClose} disabled={isLoading}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirm}
+              disabled={isLoading || !selectedPrimary || !selectedSecondary || !selectedTertiary}
+              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Update Classification
+                </>
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
