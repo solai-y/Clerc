@@ -52,17 +52,19 @@ export function DocumentTable({
   }
 
   return (
-    <Table>
-      <DocumentTableHeader sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} />
-      <TableBody>
-        {documents.map((document) => (
-          <DocumentTableRow
-            key={document.id}
-            document={document}
-            onViewDetails={onViewDetails}
-          />
-        ))}
-      </TableBody>
-    </Table>
+    <div className="w-full overflow-x-auto">
+      <Table className="table-fixed">
+        <DocumentTableHeader sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} />
+        <TableBody>
+          {documents.map((document) => (
+            <DocumentTableRow
+              key={document.id}
+              document={document}
+              onViewDetails={onViewDetails}
+            />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   )
 }
