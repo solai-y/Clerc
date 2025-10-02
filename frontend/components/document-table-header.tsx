@@ -16,7 +16,7 @@ export function DocumentTableHeader({ sortBy, sortOrder, onSort }: DocumentTable
   return (
     <TableHeader>
       <TableRow>
-        <TableHead className="cursor-pointer hover:bg-gray-50" onClick={() => onSort("name")}>
+        <TableHead className="cursor-pointer hover:bg-gray-50 w-[350px]" onClick={() => onSort("name")}>
           <div className="flex items-center space-x-1">
             <span>Document Name</span>
             <ArrowUpDown className="w-4 h-4" />
