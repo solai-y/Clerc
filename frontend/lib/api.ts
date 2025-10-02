@@ -55,6 +55,10 @@ export interface GetDocumentsOptions {
   limit?: number;
   offset?: number;
   search?: string;
+  sortBy?: "name" | "date" | "size";
+  sortOrder?: "asc" | "desc";
+  status?: string;
+  companyId?: number;
 }
 
 class APIClient {
@@ -86,44 +90,71 @@ class APIClient {
     } catch (error) {
       // Avoid leaking server origin in client logs
       const displayUrl = isServer ? url : new URL(url, location.origin).pathname;
-      console.error(`API Error for ${displayUrl}:`, error);
+      console.error(`❌ [api] Error for ${displayUrl}:`, error);
       throw error;
     }
   }
 
   // -------- Document Service Methods (all use relative paths on client) --------
   async getDocuments(options: GetDocumentsOptions = {}): Promise<{
-    data: BackendProcessedDocument[];
-    pagination: { total: number; page: number; totalPages: number };
+    documents: BackendProcessedDocument[];
+    pagination: { total: number; page: number; totalPages: number; limit: number; offset: number };
   }> {
     const params = new URLSearchParams();
-    if (options.limit) params.append("limit", String(options.limit));
-    if (options.offset) params.append("offset", String(options.offset));
+    if (options.limit != null) params.append("limit", String(options.limit));
+    if (options.offset != null) params.append("offset", String(options.offset));
     if (options.search) params.append("search", options.search);
+    if (options.status) params.append("status", options.status);
+    if (options.companyId != null) params.append("company_id", String(options.companyId));
+    if (options.sortBy) params.append("sort_by", options.sortBy);
+    if (options.sortOrder) params.append("sort_order", options.sortOrder);
 
     const url = apiUrl(`/documents${params.toString() ? `?${params}` : ""}`);
-    if (isServer) console.log("[api] GET", url);
+
+    // Debug logs for outgoing request
+    console.log("[api] GET /documents params:", {
+      limit: options.limit,
+      offset: options.offset,
+      search: options.search,
+      status: options.status,
+      company_id: options.companyId,
+      sort_by: options.sortBy,
+      sort_order: options.sortOrder,
+      url: isServer ? url : `/documents?${params.toString()}`
+    });
 
     const responseData = await this.fetchWithErrorHandling<{
       documents: BackendProcessedDocument[];
       pagination: { total: number; page: number; totalPages: number; limit: number; offset: number };
     }>(url);
 
-    return { data: responseData.documents, pagination: responseData.pagination };
-    }
+    // Debug logs for response summary
+    console.log("[api] GET /documents response:", {
+      returned: responseData.documents?.length ?? 0,
+      pagination: responseData.pagination
+    });
+
+    return responseData;
+  }
 
   async getDocument(id: number): Promise<BackendProcessedDocument> {
-    return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl(`/documents/${id}`));
+    const url = apiUrl(`/documents/${id}`);
+    console.log("[api] GET", url);
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(url);
   }
 
   async getCompleteDocument(id: number): Promise<BackendProcessedDocument> {
-    return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl(`/documents/${id}/complete`));
+    const url = apiUrl(`/documents/${id}/complete`);
+    console.log("[api] GET", url);
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(url);
   }
 
   async createDocument(
     document: Omit<BackendProcessedDocument, "process_id" | "processing_date">
   ): Promise<BackendProcessedDocument> {
-    return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl("/documents"), {
+    const url = apiUrl("/documents");
+    console.log("[api] POST", url, { payloadKeys: Object.keys(document || {}) });
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(url, {
       method: "POST",
       body: JSON.stringify(document),
     });
@@ -133,14 +164,18 @@ class APIClient {
     id: number,
     document: Partial<Omit<BackendProcessedDocument, "process_id">>
   ): Promise<BackendProcessedDocument> {
-    return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl(`/documents/${id}`), {
+    const url = apiUrl(`/documents/${id}`);
+    console.log("[api] PUT", url, { payloadKeys: Object.keys(document || {}) });
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(url, {
       method: "PUT",
       body: JSON.stringify(document),
     });
   }
 
   async deleteDocument(id: number): Promise<void> {
-    await this.fetchWithErrorHandling<null>(apiUrl(`/documents/${id}`), { method: "DELETE" });
+    const url = apiUrl(`/documents/${id}`);
+    console.log("[api] DELETE", url);
+    await this.fetchWithErrorHandling<null>(url, { method: "DELETE" });
   }
 
   async updateDocumentTags(
@@ -151,19 +186,21 @@ class APIClient {
       user_removed_tags?: string[];
     }
   ): Promise<BackendProcessedDocument> {
-    return this.fetchWithErrorHandling<BackendProcessedDocument>(
-      apiUrl(`/documents/${documentId}/tags`),
-      { method: "PATCH", body: JSON.stringify(tagData) }
-    );
+    const url = apiUrl(`/documents/${documentId}/tags`);
+    console.log("[api] PATCH", url, { payloadKeys: Object.keys(tagData || {}) });
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(url, {
+      method: "PATCH",
+      body: JSON.stringify(tagData),
+    });
   }
 
   async getUnprocessedDocuments(limit: number = 1): Promise<{
     unprocessed_documents: any[];
     count: number;
   }> {
-    return this.fetchWithErrorHandling<{ unprocessed_documents: any[]; count: number }>(
-      apiUrl(`/documents/unprocessed?limit=${limit}`)
-    );
+    const url = apiUrl(`/documents/unprocessed?limit=${limit}`);
+    console.log("[api] GET", url);
+    return this.fetchWithErrorHandling<{ unprocessed_documents: any[]; count: number }>(url);
   }
 
   async createRawDocument(data: {
@@ -175,8 +212,10 @@ class APIClient {
     file_hash?: string;
     status?: string;
   }): Promise<any> {
-    return this.fetchWithErrorHandling<any>(apiUrl("/documents"), {
-      method: "POST", 
+    const url = apiUrl("/documents");
+    console.log("[api] POST", url, { payloadKeys: Object.keys(data || {}) });
+    return this.fetchWithErrorHandling<any>(url, {
+      method: "POST",
       body: JSON.stringify(data),
     });
   }
@@ -198,24 +237,30 @@ class APIClient {
     }>;
     prediction_response?: any;
   }): Promise<any> {
-    return this.fetchWithErrorHandling<any>(apiUrl("/documents/processed"), {
+    const url = apiUrl("/documents/processed");
+    console.log("[api] POST", url, { payloadKeys: Object.keys(data || {}) });
+    return this.fetchWithErrorHandling<any>(url, {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
-  async getDocumentExplanations(documentId: number): Promise<Array<{
-    explanation_id: number;
-    document_id: number;
-    classification_level: string;
-    predicted_tag: string;
-    confidence: number;
-    reasoning: string;
-    source_service: string;
-    service_response: any;
-    created_at: string;
-  }>> {
-    return this.fetchWithErrorHandling<Array<any>>(apiUrl(`/documents/${documentId}/explanations`));
+  async getDocumentExplanations(documentId: number): Promise<
+    Array<{
+      explanation_id: number;
+      document_id: number;
+      classification_level: string;
+      predicted_tag: string;
+      confidence: number;
+      reasoning: string;
+      source_service: string;
+      service_response: any;
+      created_at: string;
+    }>
+  > {
+    const url = apiUrl(`/documents/${documentId}/explanations`);
+    console.log("[api] GET", url);
+    return this.fetchWithErrorHandling<Array<any>>(url);
   }
 
   // -------- Prediction Service Configuration Methods --------
@@ -225,22 +270,21 @@ class APIClient {
     tertiary?: number;
   }): Promise<{ success: boolean; message: string }> {
     const updateData: any = { updated_by: "frontend_user" };
-    
     if (thresholds.primary !== undefined) updateData.primary = thresholds.primary;
     if (thresholds.secondary !== undefined) updateData.secondary = thresholds.secondary;
     if (thresholds.tertiary !== undefined) updateData.tertiary = thresholds.tertiary;
-    
+
+    const url = apiUrl("/predict/config/thresholds");
+    console.log("[api] PUT", url, { payload: updateData });
+
     try {
       const response = await this.fetchWithErrorHandling<{
         primary: number;
         secondary: number;
         tertiary: number;
         updated_by: string;
-      }>(apiUrl("/predict/config/thresholds"), {
-        method: "PUT",
-        body: JSON.stringify(updateData),
-      });
-      
+      }>(url, { method: "PUT", body: JSON.stringify(updateData) });
+
       return {
         success: true,
         message: `Confidence thresholds updated successfully. Primary: ${response.primary}, Secondary: ${response.secondary}, Tertiary: ${response.tertiary}`
@@ -260,6 +304,9 @@ class APIClient {
     secondary: number;
     tertiary: number;
   }> {
+    const url = apiUrl("/predict/config/thresholds");
+    console.log("[api] GET", url);
+
     try {
       const response = await this.fetchWithErrorHandling<{
         primary: number;
@@ -267,8 +314,7 @@ class APIClient {
         tertiary: number;
         updated_at?: string;
         updated_by?: string;
-      }>(apiUrl("/predict/config/thresholds"));
-      
+      }>(url);
       return {
         primary: response.primary,
         secondary: response.secondary,
@@ -290,16 +336,15 @@ class APIClient {
     page_count: number;
     character_count: number;
   }> {
+    const url = apiUrl("/predict/extract/pdf");
+    console.log("[api] POST", url, { payload: { pdf_url: pdfUrl } });
+
     try {
       const response = await this.fetchWithErrorHandling<{
         text: string;
         page_count: number;
         character_count: number;
-      }>(apiUrl("/predict/extract/pdf"), {
-        method: "POST",
-        body: JSON.stringify({ pdf_url: pdfUrl }),
-      });
-      
+      }>(url, { method: "POST", body: JSON.stringify({ pdf_url: pdfUrl }) });
       return response;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
@@ -360,8 +405,7 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
       return [];
     }
 
-    // The structure should be: {confirmed_tags: {tags: [...]}}
-    // But we receive: confirmedTagsObj = {confirmed_tags: {tags: [...]}}
+    // Expect: { confirmed_tags: { tags: [...] } }
     const tagsArray = confirmedTagsObj.confirmed_tags?.tags;
 
     if (!tagsArray || !Array.isArray(tagsArray)) {
@@ -480,7 +524,6 @@ function formatFileSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
-
 
 // Export singleton
 export const apiClient = new APIClient();

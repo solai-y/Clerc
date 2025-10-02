@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import { Table, TableBody } from "@/components/ui/table"
 import { FileText } from "lucide-react"
 import { DocumentTableHeader } from "@/components/document-table-header"
@@ -18,8 +19,30 @@ interface DocumentTableProps {
   onViewDetails: (document: Document) => void
 }
 
-export function DocumentTable({ documents, sortBy, sortOrder, onSort, onViewDetails }: DocumentTableProps) {
+export function DocumentTable({
+  documents,
+  sortBy,
+  sortOrder,
+  onSort,
+  onViewDetails
+}: DocumentTableProps) {
+  // Debug whenever inputs change
+  useEffect(() => {
+    console.log("[DocumentTable] render", {
+      rows: documents.length,
+      sortBy,
+      sortOrder,
+      sample: documents.slice(0, 3).map(d => ({
+        id: d.id,
+        name: d.name,
+        uploadDate: d.uploadDate,
+        size: d.size
+      }))
+    })
+  }, [documents, sortBy, sortOrder])
+
   if (documents.length === 0) {
+    console.log("[DocumentTable] empty state (no rows to render)")
     return (
       <div className="text-center py-8 text-gray-500">
         <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
