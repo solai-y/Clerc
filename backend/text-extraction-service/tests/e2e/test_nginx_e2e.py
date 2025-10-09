@@ -7,7 +7,7 @@ import requests
 import time
 
 # Nginx URL - adjust based on your deployment
-NGINX_URL = "http://localhost/text-extraction"
+NGINX_URL = "http://localhost/text-extract"
 
 class TestTextExtractionNginxE2E:
     """E2E tests for text extraction service through nginx"""
