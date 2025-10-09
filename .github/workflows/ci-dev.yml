@@ -72,6 +72,14 @@ jobs:
           pip install -r requirements.txt
           pytest -s tests/integration -v
 
+      # Run text-extraction-service integration tests
+      - name: Run text-extraction-service tests
+        working-directory: backend/text-extraction-service
+        run: |
+          pip install -r requirements.txt
+          pip install -r tests/requirements.txt
+          pytest -s tests/integration -v
+
       #! E2E TESTS
       # Run company-service E2E tests
       - name: Run company-service E2E tests
@@ -108,6 +116,14 @@ jobs:
           pip install -r tests/requirements.txt
           pytest -s tests/e2e -v
 
+      # Run text-extraction-service E2E tests
+      - name: Run text-extraction-service E2E tests
+        working-directory: backend/text-extraction-service
+        run: |
+          pip install -r requirements.txt
+          pip install -r tests/requirements.txt
+          pytest -s tests/e2e -v
+
       #! UNIT TESTS
       # Run document-service unit tests
       - name: Run document-service unit tests
@@ -128,6 +144,14 @@ jobs:
         working-directory: backend/prediction-service
         run: |
           pip install -r requirements.txt
+          pytest -s tests/unit -v
+
+      # Run text-extraction-service unit tests
+      - name: Run text-extraction-service unit tests
+        working-directory: backend/text-extraction-service
+        run: |
+          pip install -r requirements.txt
+          pip install -r tests/requirements.txt
           pytest -s tests/unit -v
 
       # Tear down services with Docker Compose v2 syntax
