@@ -3,4 +3,4 @@ flask-cors
 requests
 supabase
 python-dotenv
-pytest
+pytest>=8.2.0

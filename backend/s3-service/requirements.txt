@@ -1,5 +1,5 @@
 flask
 python-dotenv
-pytest
+pytest>=8.2.0
 boto3
 werkzeug
