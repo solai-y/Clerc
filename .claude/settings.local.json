@@ -43,7 +43,14 @@
       "Bash(sed:*)",
       "Bash(awk:*)",
       "Bash(docker compose:*)",
-      "Bash(pytest:*)"
+      "Bash(pytest:*)",
+      "Bash(for service in ai-service company-service document-service s3-service text-extraction-service)",
+      "Bash(do echo \"=== $service ===\")",
+      "Bash(head:*)",
+      "Bash(done)",
+      "Bash(wc:*)",
+      "Bash(ls:*)",
+      "Bash(for service in ai-service company-service s3-service text-extraction-service)"
     ],
     "deny": []
   }
