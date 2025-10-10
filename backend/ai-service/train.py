@@ -19,7 +19,8 @@ from sklearn.metrics import accuracy_score, f1_score
 # Global threshold for including labels per layer at inference time.
 # For each layer, include ALL labels with confidence >= THRESHOLD.
 # If none pass, include the single top-1 label for that layer.
-THRESHOLD: float = 0.30
+# TODO: the threshold needs to be fetched dynamically
+THRESHOLD: float = 0.30 
 
 # =============================== HIERARCHY (enforced) ==========================
 # TODO: replace with a call to your tags table; keep the same structure
