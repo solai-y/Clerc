@@ -72,6 +72,7 @@ export function HierarchyBasedConfirmTagsModal({
   const [dbPredictions, setDbPredictions] = useState<any>(null)
   const [dbExplanations, setDbExplanations] = useState<any[]>([])
   const [dataLoading, setDataLoading] = useState(true)
+  const [documentLink, setDocumentLink] = useState<string>(document.link || "")
 
   useEffect(() => {
     const loadHierarchy = async () => {
@@ -103,12 +104,19 @@ export function HierarchyBasedConfirmTagsModal({
         const documentResponse = await apiClient.getCompleteDocument(parseInt(document.id))
         setDbPredictions(documentResponse.suggested_tags)
 
+        // Extract document link - check both locations
+        const link = documentResponse.link || documentResponse.raw_documents?.link
+        if (link) {
+          setDocumentLink(link)
+        }
+
         // Fetch explanations from database
         const explanationsResponse = await apiClient.getDocumentExplanations(parseInt(document.id))
         setDbExplanations(explanationsResponse)
 
         console.log("🗄️ Database - predictions:", documentResponse.suggested_tags)
         console.log("🗄️ Database - explanations:", explanationsResponse)
+        console.log("🗄️ Database - document link:", link)
 
       } catch (error) {
         console.error('Failed to fetch database data:', error)
@@ -797,7 +805,7 @@ export function HierarchyBasedConfirmTagsModal({
                 </div>
 
                 {/* Open Document Button */}
-                {document.link ? (
+                {documentLink ? (
                   <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
                     <h4 className="font-semibold text-purple-800 mb-3 flex items-center justify-center">
                       <Eye className="w-4 h-4 mr-2" />
@@ -807,7 +815,7 @@ export function HierarchyBasedConfirmTagsModal({
                       Open the original document in a new tab to view the full content.
                     </p>
                     <Button
-                      onClick={() => window.open(document.link, '_blank')}
+                      onClick={() => window.open(documentLink, '_blank')}
                       className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded"
                     >
                       <Eye className="w-4 h-4 mr-2" />

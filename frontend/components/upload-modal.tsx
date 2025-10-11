@@ -531,9 +531,9 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
           {isUploading && uploadedFile && (
             <div className="space-y-4">
               <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
-                <FileText className="w-8 h-8 text-red-600" />
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900">{uploadedFile.name}</p>
+                <FileText className="w-8 h-8 text-red-600 flex-shrink-0" />
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <p className="font-medium text-gray-900 break-all" title={uploadedFile.name}>{uploadedFile.name}</p>
                   <p className="text-sm text-gray-500">{formatFileSize(uploadedFile.size)}</p>
                 </div>
               </div>

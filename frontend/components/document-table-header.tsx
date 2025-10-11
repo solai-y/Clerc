@@ -18,16 +18,18 @@ function SortHeaderCell({
   active,
   order,
   onClick,
+  className,
 }: {
   label: string
   column: SortBy
   active: boolean
   order: SortOrder
   onClick: () => void
+  className?: string
 }) {
   return (
     <TableHead
-      className="cursor-pointer hover:bg-gray-50 select-none"
+      className={`cursor-pointer hover:bg-gray-50 select-none ${className || ""}`}
       onClick={() => {
         console.log("[table-header] click", { column, willToggle: active })
         onClick()
@@ -61,6 +63,7 @@ export function DocumentTableHeader({ sortBy, sortOrder, onSort }: DocumentTable
           active={sortBy === "name"}
           order={sortOrder}
           onClick={() => onSort("name")}
+          className="w-[400px]"
         />
         <TableHead>Tags</TableHead>
         <SortHeaderCell

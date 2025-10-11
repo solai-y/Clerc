@@ -34,10 +34,10 @@ export function DocumentTableRow({ document, onViewDetails }: DocumentTableRowPr
 
   return (
     <TableRow className="hover:bg-gray-50">
-      <TableCell className="font-medium">
+      <TableCell className="font-medium w-[400px]">
         <div className="flex items-center space-x-2">
-          <FileText className="w-4 h-4 text-gray-500" />
-          <span>{document.name}</span>
+          <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          <span className="truncate">{document.name}</span>
         </div>
       </TableCell>
       <TableCell>
