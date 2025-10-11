@@ -6,7 +6,7 @@ def test_rebuild_hot_swap(client, app_module, monkeypatch):
     # Sanity: /predict uses v1 now
     r0 = client.post("/predict", json={"text": "hello world"})
     assert r0.status_code == 200
-    v0 = r0.get_json()["prediction"]["model_version"]
+    v0 = r0.json()["prediction"]["model_version"]
     assert v0 == "v1"
 
     # Simulate slow training
@@ -27,10 +27,10 @@ def test_rebuild_hot_swap(client, app_module, monkeypatch):
     # During rebuild -> still v1
     r2 = client.post("/predict", json={"text": "hello again"})
     assert r2.status_code == 200
-    assert r2.get_json()["prediction"]["model_version"] == "v1"
+    assert r2.json()["prediction"]["model_version"] == "v1"
 
     # After rebuild -> v2
     time.sleep(0.35)
     r3 = client.post("/predict", json={"text": "final check"})
     assert r3.status_code == 200
-    assert r3.get_json()["prediction"]["model_version"] == "v2"
+    assert r3.json()["prediction"]["model_version"] == "v2"

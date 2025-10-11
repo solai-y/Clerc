@@ -2,8 +2,8 @@
 def test_predict_success(client, app_module):
     raw_text = "This Q2 earnings report shows us that there is a need for us to buy more stock of Company X!!!"
     resp = client.post("/predict", json={"text": raw_text})
-    assert resp.status_code == 200, resp.get_data(as_text=True)
-    data = resp.get_json()
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
 
     # response shape
     assert "prediction" in data and "elapsed_seconds" in data and "processed_text" in data

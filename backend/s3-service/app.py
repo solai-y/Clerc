@@ -1,9 +1,10 @@
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
 import boto3
 import os
 from dotenv import load_dotenv
-from werkzeug.utils import secure_filename
 from datetime import datetime
+import re
 
 # Load .env variables
 load_dotenv()
@@ -13,8 +14,8 @@ AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = os.getenv("AWS_REGION")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 
-# Flask app
-app = Flask(__name__)
+# FastAPI app
+app = FastAPI()
 
 # S3 client
 s3_client = boto3.client(
@@ -24,53 +25,58 @@ s3_client = boto3.client(
     region_name=AWS_REGION
 )
 
-@app.route('/e2e', methods=['GET'])
+def secure_filename(filename: str) -> str:
+    """Secure a filename by removing dangerous characters"""
+    # Remove path components
+    filename = filename.split('/')[-1].split('\\')[-1]
+    # Allow only alphanumeric, dots, hyphens, and underscores
+    filename = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+    return filename
+
+@app.get('/e2e')
 def e2e_test():
-    return jsonify({'message': 'S3 service is reachable'}), 200
+    return {'message': 'S3 service is reachable'}
 
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    # Check if the request contains a file
-    if 'file' not in request.files:
-        return jsonify({"error": "No file provided"}), 400
-
-    # Get the file from the request
-    file = request.files['file']
-
+@app.post('/upload')
+async def upload_file(file: UploadFile = File(...)):
     # Check if the file is empty
-    if file.filename == '':
-        return jsonify({"error": "Empty filename"}), 400
-    
+    if not file.filename or file.filename == '':
+        raise HTTPException(status_code=400, detail="Empty filename")
+
     # Check if file is pdf
-    if not file.content_type == "application/pdf":
-        return jsonify({"error": "File is not a PDF"}), 400
-    
-    # Check file size max 100MB
-    if file.content_length > 100 * 1024 * 1024:
-        return jsonify({"error": "File is too large"}), 400 
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="File is not a PDF")
 
     try:
         filename = secure_filename(file.filename)
         key = f"uploads/{filename}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
 
-        s3_client.upload_fileobj(
-            file,
-            S3_BUCKET_NAME,
-            key,
-            ExtraArgs={
-                "ContentType": file.content_type,
-                "ContentDisposition": "inline"     # tells browser to preview the file instead of downloading it
-            }
+        # Read file content
+        file_content = await file.read()
+
+        # Check file size max 100MB
+        if len(file_content) > 100 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File is too large")
+
+        s3_client.put_object(
+            Bucket=S3_BUCKET_NAME,
+            Key=key,
+            Body=file_content,
+            ContentType=file.content_type,
+            ContentDisposition="inline"
         )
 
-        return jsonify({
+        return {
             "message": "File uploaded successfully",
             "file_key": key,
             "s3_url": f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
-        }), 200
+        }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    app.run(port=5003, debug=True, host='0.0.0.0')
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=5003)

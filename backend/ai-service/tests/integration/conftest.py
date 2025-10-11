@@ -3,6 +3,7 @@ import sys
 import types
 from pathlib import Path
 import pytest
+from fastapi.testclient import TestClient
 
 HERE = Path(__file__).resolve().parent
 SERVICE_ROOT = HERE.parent.parent  # .../ai-service
@@ -62,7 +63,5 @@ def app_module(_prepare_models_dir):
 
 @pytest.fixture
 def client(app_module):
-    app_module.app.config["TESTING"] = True
-    app_module.app.config["PROPAGATE_EXCEPTIONS"] = True
-    with app_module.app.test_client() as c:
-        yield c
+    # FastAPI TestClient
+    return TestClient(app_module.app)

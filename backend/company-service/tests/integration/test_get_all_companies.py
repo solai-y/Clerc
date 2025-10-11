@@ -1,5 +1,5 @@
 import pytest
-from flask.testing import FlaskClient
+from fastapi.testclient import TestClient
 import sys
 import os
 
@@ -9,12 +9,10 @@ from app import app
 
 @pytest.fixture
 def client():
-    print("\n[INFO] Setting up Flask test client...")
-    with app.test_client() as client:
-        yield client
-    print("[INFO] Flask test client teardown complete.")
+    print("\n[INFO] Setting up FastAPI test client...")
+    return TestClient(app)
 
-def test_get_companies(client: FlaskClient):
+def test_get_companies(client: TestClient):
     print("\n[TEST] Running GET /companies endpoint test...")
 
     response = client.get('/companies')
@@ -27,7 +25,7 @@ def test_get_companies(client: FlaskClient):
         print(f"[FAIL] Expected status code 200, got {response.status_code}")
         raise
 
-    data = response.get_json()
+    data = response.json()
     print(f"[DEBUG] Response JSON data: {data}")
 
     try:
