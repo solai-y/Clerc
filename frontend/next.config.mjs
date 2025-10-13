@@ -35,8 +35,8 @@ const nextConfig = {
   async rewrites() {
     const rewrites = [
       // --- Match /documents with or without paths ---
-      { source: "/api/documents", destination: `${BACKEND_ORIGIN}/documents` },
-      { source: "/api/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },
+      { source: "/documents", destination: `${BACKEND_ORIGIN}/documents` },
+      { source: "/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },
       
       // --- Other services ---
       { source: "/s3", destination: `${BACKEND_ORIGIN}/s3` },
