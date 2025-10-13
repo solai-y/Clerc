@@ -109,10 +109,10 @@ class APIClient {
     if (options.sortBy) params.append("sort_by", options.sortBy);
     if (options.sortOrder) params.append("sort_order", options.sortOrder);
 
-    const url = apiUrl(`/documents${params.toString() ? `?${params}` : ""}`);
+    const url = apiUrl(`/api/documents${params.toString() ? `?${params}` : ""}`);
 
     // Debug logs for outgoing request
-    console.log("[api] GET /documents params:", {
+    console.log("[api] GET /api/documents params:", {
       limit: options.limit,
       offset: options.offset,
       search: options.search,
@@ -120,7 +120,7 @@ class APIClient {
       company_id: options.companyId,
       sort_by: options.sortBy,
       sort_order: options.sortOrder,
-      url: isServer ? url : `/documents?${params.toString()}`
+      url: isServer ? url : `/api/documents?${params.toString()}`
     });
 
     const responseData = await this.fetchWithErrorHandling<{
@@ -129,7 +129,7 @@ class APIClient {
     }>(url);
 
     // Debug logs for response summary
-    console.log("[api] GET /documents response:", {
+    console.log("[api] GET /api/documents response:", {
       returned: responseData.documents?.length ?? 0,
       pagination: responseData.pagination
     });
@@ -138,13 +138,13 @@ class APIClient {
   }
 
   async getDocument(id: number): Promise<BackendProcessedDocument> {
-    const url = apiUrl(`/documents/${id}`);
+    const url = apiUrl(`/api/documents/${id}`);
     console.log("[api] GET", url);
     return this.fetchWithErrorHandling<BackendProcessedDocument>(url);
   }
 
   async getCompleteDocument(id: number): Promise<BackendProcessedDocument> {
-    const url = apiUrl(`/documents/${id}/complete`);
+    const url = apiUrl(`/api/documents/${id}/complete`);
     console.log("[api] GET", url);
     return this.fetchWithErrorHandling<BackendProcessedDocument>(url);
   }
@@ -152,7 +152,7 @@ class APIClient {
   async createDocument(
     document: Omit<BackendProcessedDocument, "process_id" | "processing_date">
   ): Promise<BackendProcessedDocument> {
-    const url = apiUrl("/documents");
+    const url = apiUrl("/api/documents");
     console.log("[api] POST", url, { payloadKeys: Object.keys(document || {}) });
     return this.fetchWithErrorHandling<BackendProcessedDocument>(url, {
       method: "POST",
@@ -164,7 +164,7 @@ class APIClient {
     id: number,
     document: Partial<Omit<BackendProcessedDocument, "process_id">>
   ): Promise<BackendProcessedDocument> {
-    const url = apiUrl(`/documents/${id}`);
+    const url = apiUrl(`/api/documents/${id}`);
     console.log("[api] PUT", url, { payloadKeys: Object.keys(document || {}) });
     return this.fetchWithErrorHandling<BackendProcessedDocument>(url, {
       method: "PUT",
@@ -173,7 +173,7 @@ class APIClient {
   }
 
   async deleteDocument(id: number): Promise<void> {
-    const url = apiUrl(`/documents/${id}`);
+    const url = apiUrl(`/api/documents/${id}`);
     console.log("[api] DELETE", url);
     await this.fetchWithErrorHandling<null>(url, { method: "DELETE" });
   }
@@ -186,7 +186,7 @@ class APIClient {
       user_removed_tags?: string[];
     }
   ): Promise<BackendProcessedDocument> {
-    const url = apiUrl(`/documents/${documentId}/tags`);
+    const url = apiUrl(`/api/documents/${documentId}/tags`);
     console.log("[api] PATCH", url, { payloadKeys: Object.keys(tagData || {}) });
     return this.fetchWithErrorHandling<BackendProcessedDocument>(url, {
       method: "PATCH",
@@ -198,7 +198,7 @@ class APIClient {
     unprocessed_documents: any[];
     count: number;
   }> {
-    const url = apiUrl(`/documents/unprocessed?limit=${limit}`);
+    const url = apiUrl(`/api/documents/unprocessed?limit=${limit}`);
     console.log("[api] GET", url);
     return this.fetchWithErrorHandling<{ unprocessed_documents: any[]; count: number }>(url);
   }
@@ -212,7 +212,7 @@ class APIClient {
     file_hash?: string;
     status?: string;
   }): Promise<any> {
-    const url = apiUrl("/documents");
+    const url = apiUrl("/api/documents");
     console.log("[api] POST", url, { payloadKeys: Object.keys(data || {}) });
     return this.fetchWithErrorHandling<any>(url, {
       method: "POST",
@@ -237,7 +237,7 @@ class APIClient {
     }>;
     prediction_response?: any;
   }): Promise<any> {
-    const url = apiUrl("/documents/processed");
+    const url = apiUrl("/api/documents/processed");
     console.log("[api] POST", url, { payloadKeys: Object.keys(data || {}) });
     return this.fetchWithErrorHandling<any>(url, {
       method: "POST",
@@ -258,7 +258,7 @@ class APIClient {
       created_at: string;
     }>
   > {
-    const url = apiUrl(`/documents/${documentId}/explanations`);
+    const url = apiUrl(`/api/documents/${documentId}/explanations`);
     console.log("[api] GET", url);
     return this.fetchWithErrorHandling<Array<any>>(url);
   }
