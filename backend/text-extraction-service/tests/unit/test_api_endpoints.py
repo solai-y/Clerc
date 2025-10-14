@@ -30,7 +30,8 @@ class TestExtractTextEndpoint:
 
         assert response.status_code == 400
         data = response.json()
-        assert 'detail' in data
+        assert data['success'] is False
+        assert 'error' in data
 
     def test_extract_text_missing_pdf_url(self, client):
         """Test extract-text without pdf_url parameter"""
@@ -38,7 +39,8 @@ class TestExtractTextEndpoint:
 
         assert response.status_code == 400
         data = response.json()
-        assert 'detail' in data
+        assert data['success'] is False
+        assert 'pdf_url' in data['error'].lower()
 
     @patch('app.text_service.extract_text_from_url')
     def test_extract_text_success(self, mock_extract, client):
