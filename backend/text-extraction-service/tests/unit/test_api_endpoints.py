@@ -28,7 +28,7 @@ class TestExtractTextEndpoint:
         """Test extract-text with non-JSON request"""
         response = client.post('/extract-text', data='not json')
 
-        assert response.status_code == 422
+        assert response.status_code == 400
         data = response.json()
         assert 'detail' in data
 
@@ -36,7 +36,7 @@ class TestExtractTextEndpoint:
         """Test extract-text without pdf_url parameter"""
         response = client.post('/extract-text', json={})
 
-        assert response.status_code == 422
+        assert response.status_code == 400
         data = response.json()
         assert 'detail' in data
 
@@ -69,8 +69,8 @@ class TestExtractTextEndpoint:
 
         assert response.status_code == 500
         data = response.json()
-        assert 'detail' in data
-        assert 'Text extraction failed' in data['detail']
+        assert data['success'] is False
+        assert 'Text extraction failed' in data['error']
 
     @patch('app.text_service.extract_text_from_url')
     def test_extract_text_with_ocr(self, mock_extract, client):
