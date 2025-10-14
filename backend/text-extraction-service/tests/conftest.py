@@ -4,24 +4,22 @@ Pytest configuration and fixtures for text-extraction-service tests
 import pytest
 import sys
 from pathlib import Path
+from fastapi.testclient import TestClient
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app import app as flask_app
+from app import app as fastapi_app
 
 @pytest.fixture
 def app():
-    """Create and configure a Flask app instance for testing"""
-    flask_app.config.update({
-        "TESTING": True,
-    })
-    yield flask_app
+    """Create and configure a FastAPI app instance for testing"""
+    yield fastapi_app
 
 @pytest.fixture
 def client(app):
-    """Create a test client for the Flask app"""
-    return app.test_client()
+    """Create a test client for the FastAPI app"""
+    return TestClient(app)
 
 @pytest.fixture
 def sample_pdf_url():

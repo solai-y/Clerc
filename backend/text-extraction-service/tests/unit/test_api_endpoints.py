@@ -12,7 +12,7 @@ class TestHealthEndpoint:
         response = client.get('/health')
 
         assert response.status_code == 200
-        data = response.get_json()
+        data = response.json()
         assert data['status'] == 'healthy'
         assert data['service'] == 'text-extraction'
         assert 'ocr_available' in data
@@ -28,21 +28,17 @@ class TestExtractTextEndpoint:
         """Test extract-text with non-JSON request"""
         response = client.post('/extract-text', data='not json')
 
-        assert response.status_code == 400
-        data = response.get_json()
-        assert data['success'] is False
-        assert 'JSON' in data['error']
+        assert response.status_code == 422
+        data = response.json()
+        assert 'detail' in data
 
     def test_extract_text_missing_pdf_url(self, client):
         """Test extract-text without pdf_url parameter"""
-        response = client.post('/extract-text',
-                              json={},
-                              content_type='application/json')
+        response = client.post('/extract-text', json={})
 
-        assert response.status_code == 400
-        data = response.get_json()
-        assert data['success'] is False
-        assert 'pdf_url is required' in data['error']
+        assert response.status_code == 422
+        data = response.json()
+        assert 'detail' in data
 
     @patch('app.text_service.extract_text_from_url')
     def test_extract_text_success(self, mock_extract, client):
@@ -53,11 +49,10 @@ class TestExtractTextEndpoint:
         )
 
         response = client.post('/extract-text',
-                              json={'pdf_url': 'https://example.com/test.pdf'},
-                              content_type='application/json')
+                              json={'pdf_url': 'https://example.com/test.pdf'})
 
         assert response.status_code == 200
-        data = response.get_json()
+        data = response.json()
         assert data['success'] is True
         assert data['text'] == "Extracted text content"
         assert data['character_count'] == len("Extracted text content")
@@ -70,13 +65,12 @@ class TestExtractTextEndpoint:
         mock_extract.side_effect = Exception("PDF processing failed")
 
         response = client.post('/extract-text',
-                              json={'pdf_url': 'https://example.com/test.pdf'},
-                              content_type='application/json')
+                              json={'pdf_url': 'https://example.com/test.pdf'})
 
         assert response.status_code == 500
-        data = response.get_json()
-        assert data['success'] is False
-        assert 'Text extraction failed' in data['error']
+        data = response.json()
+        assert 'detail' in data
+        assert 'Text extraction failed' in data['detail']
 
     @patch('app.text_service.extract_text_from_url')
     def test_extract_text_with_ocr(self, mock_extract, client):
@@ -87,11 +81,10 @@ class TestExtractTextEndpoint:
         )
 
         response = client.post('/extract-text',
-                              json={'pdf_url': 'https://example.com/test.pdf'},
-                              content_type='application/json')
+                              json={'pdf_url': 'https://example.com/test.pdf'})
 
         assert response.status_code == 200
-        data = response.get_json()
+        data = response.json()
         assert data['success'] is True
         assert data['text'] == "OCR extracted text"
         assert data['extraction_method'] == "ocr"
@@ -106,6 +99,6 @@ class TestErrorHandlers:
         response = client.get('/nonexistent-endpoint')
 
         assert response.status_code == 404
-        data = response.get_json()
+        data = response.json()
         assert data['success'] is False
         assert 'not found' in data['error'].lower()

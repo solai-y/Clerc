@@ -8,8 +8,9 @@ from typing import Optional, Dict, Any, Tuple
 
 import fitz  # PyMuPDF
 import httpx
-from flask import Flask, request, jsonify
-from werkzeug.exceptions import BadRequest, InternalServerError
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 # Configure logging
 logging.basicConfig(
@@ -29,55 +30,59 @@ except ImportError as e:
     OCR_AVAILABLE = False
     logger.warning(f"OCR dependencies not available: {e}. OCR fallback will be disabled.")
 
-app = Flask(__name__)
+app = FastAPI()
+
+# Pydantic models
+class ExtractTextRequest(BaseModel):
+    pdf_url: str
 
 class TextExtractionService:
     """Service for extracting text from PDF documents"""
-    
+
     def __init__(self):
         self.http_client = httpx.Client()
         logger.info("Text extraction service initialized")
-    
+
     def extract_text_from_url(self, pdf_url: str) -> Tuple[str, Dict[str, Any]]:
         """
         Extract text from PDF at given URL
-        
+
         Args:
             pdf_url: URL to PDF file (e.g., S3 URL)
-            
+
         Returns:
             Extracted text content
-            
+
         Raises:
             Exception: If PDF processing fails
         """
         try:
             logger.info(f"Downloading PDF from URL: {pdf_url}")
-            
+
             # Download PDF from URL
             response = self.http_client.get(pdf_url, timeout=30.0)
             response.raise_for_status()
             pdf_bytes = response.content
-            
+
             logger.info(f"Downloaded PDF ({len(pdf_bytes)} bytes), extracting text...")
-            
+
             # Extract text from PDF bytes
             text, extraction_info = self._extract_text_from_bytes(pdf_bytes)
-            
+
             logger.info(f"Extracted {len(text)} characters from PDF")
             return text, extraction_info
-            
+
         except Exception as e:
             logger.error(f"Failed to extract text from PDF URL {pdf_url}: {str(e)}")
             raise Exception(f"PDF text extraction failed: {str(e)}")
-    
+
     def _extract_text_from_bytes(self, pdf_bytes: bytes) -> Tuple[str, Dict[str, Any]]:
         """
         Extract text from PDF bytes using PyMuPDF with OCR fallback
-        
+
         Args:
             pdf_bytes: PDF file as bytes
-            
+
         Returns:
             Extracted text content
         """
@@ -88,7 +93,7 @@ class TextExtractionService:
                 temp_file.write(pdf_bytes)
                 temp_file.flush()
                 temp_file_path = temp_file.name
-                
+
                 # Try PyMuPDF first (faster for text-based PDFs)
                 try:
                     full_text = self._extract_with_pymupdf(temp_file_path)
@@ -97,7 +102,7 @@ class TextExtractionService:
                         return full_text.strip(), {"method": "pymupdf", "ocr_used": False}
                 except Exception as e:
                     logger.warning(f"PyMuPDF extraction failed: {str(e)}")
-                
+
                 # Fallback to OCR if PyMuPDF fails or returns empty text
                 if OCR_AVAILABLE:
                     logger.info("Attempting OCR fallback for text extraction")
@@ -108,10 +113,10 @@ class TextExtractionService:
                             return full_text.strip(), {"method": "ocr", "ocr_used": True}
                     except Exception as e:
                         logger.error(f"OCR extraction failed: {str(e)}")
-                
+
                 # If both methods fail
                 raise Exception("No text content found in PDF. Both PyMuPDF and OCR extraction failed.")
-                
+
         except Exception as e:
             logger.error(f"Failed to extract text from PDF bytes: {str(e)}")
             raise Exception(f"PDF text extraction failed: {str(e)}")
@@ -122,51 +127,51 @@ class TextExtractionService:
                     os.unlink(temp_file_path)
                 except Exception as e:
                     logger.warning(f"Failed to cleanup temp file {temp_file_path}: {e}")
-    
+
     def _extract_with_pymupdf(self, pdf_path: str) -> str:
         """
         Extract text using PyMuPDF
-        
+
         Args:
             pdf_path: Path to PDF file
-            
+
         Returns:
             Extracted text content
         """
         doc = fitz.open(pdf_path)
         text_parts = []
-        
+
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
             page_text = page.get_text()
             if page_text.strip():  # Only add non-empty pages
                 text_parts.append(f"[Page {page_num + 1}]\n{page_text.strip()}")
-        
+
         doc.close()
         return "\n\n".join(text_parts)
-    
+
     def _extract_with_ocr(self, pdf_bytes: bytes) -> str:
         """
         Extract text using OCR (pdf2image + tesseract)
-        
+
         Args:
             pdf_bytes: PDF file as bytes
-            
+
         Returns:
             Extracted text content
         """
         if not OCR_AVAILABLE:
             raise Exception("OCR dependencies not available")
-        
+
         # Convert PDF to images
         try:
             images = convert_from_bytes(pdf_bytes)
         except Exception as e:
             raise Exception(f"Failed to convert PDF to images: {str(e)}")
-        
+
         if not images:
             raise Exception("No images could be extracted from PDF")
-        
+
         text_parts = []
         for page_num, image in enumerate(images, 1):
             try:
@@ -179,38 +184,38 @@ class TextExtractionService:
             except Exception as e:
                 logger.warning(f"OCR failed for page {page_num}: {str(e)}")
                 continue
-        
+
         if not text_parts:
             raise Exception("No text could be extracted using OCR")
-        
+
         return "\n\n".join(text_parts)
 
 # Initialize service
 text_service = TextExtractionService()
 
-@app.route('/health', methods=['GET'])
+@app.get('/health')
 def health_check():
     """Health check endpoint"""
-    return jsonify({
-        "status": "healthy", 
+    return {
+        "status": "healthy",
         "service": "text-extraction",
         "ocr_available": OCR_AVAILABLE,
         "capabilities": {
             "pymupdf": True,
             "ocr_fallback": OCR_AVAILABLE
         }
-    }), 200
+    }
 
-@app.route('/extract-text', methods=['POST'])
-def extract_text():
+@app.post('/extract-text')
+async def extract_text(request: ExtractTextRequest):
     """
     Extract text from PDF
-    
+
     Request body:
     {
         "pdf_url": "https://example.com/document.pdf"
     }
-    
+
     Response:
     {
         "success": true,
@@ -219,59 +224,49 @@ def extract_text():
     }
     """
     try:
-        # Parse request
-        if not request.is_json:
-            raise BadRequest("Request must be JSON")
-        
-        data = request.get_json()
-        pdf_url = data.get('pdf_url')
-        
-        if not pdf_url:
-            raise BadRequest("pdf_url is required")
-        
         # Extract text
-        extracted_text, extraction_info = text_service.extract_text_from_url(pdf_url)
-        
-        return jsonify({
+        extracted_text, extraction_info = text_service.extract_text_from_url(request.pdf_url)
+
+        return {
             "success": True,
             "text": extracted_text,
             "character_count": len(extracted_text),
             "extraction_method": extraction_info["method"],
             "ocr_used": extraction_info["ocr_used"]
-        }), 200
-        
-    except BadRequest as e:
-        logger.warning(f"Bad request: {str(e)}")
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 400
-        
+        }
+
     except Exception as e:
         logger.error(f"Text extraction failed: {str(e)}")
-        return jsonify({
+        raise HTTPException(
+            status_code=500,
+            detail=f"Text extraction failed: {str(e)}"
+        )
+
+# Custom exception handlers
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc):
+    return JSONResponse(
+        status_code=404,
+        content={
             "success": False,
-            "error": f"Text extraction failed: {str(e)}"
-        }), 500
+            "error": "Endpoint not found"
+        }
+    )
 
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({
-        "success": False,
-        "error": "Endpoint not found"
-    }), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({
-        "success": False,
-        "error": "Internal server error"
-    }), 500
+@app.exception_handler(500)
+async def internal_error_handler(request: Request, exc):
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": "Internal server error"
+        }
+    )
 
 if __name__ == '__main__':
+    import uvicorn
     port = int(os.environ.get('PORT', 5008))
     host = os.environ.get('HOST', '0.0.0.0')
-    debug = os.environ.get('DEBUG', 'false').lower() == 'true'
-    
+
     logger.info(f"Starting Text Extraction Service on {host}:{port}")
-    app.run(host=host, port=port, debug=debug)
+    uvicorn.run(app, host=host, port=port)
