@@ -137,7 +137,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       confidence_thresholds: confidenceThresholds
     };
 
-    const res = await fetch("/predict/classify", {
+    const res = await fetch("/api/predict/classify", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
