@@ -86,7 +86,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch('/s3/upload', {
+      const response = await fetch('/api/s3/upload', {
         method: 'POST',
         body: formData,
       })
