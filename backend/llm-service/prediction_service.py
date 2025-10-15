@@ -84,14 +84,16 @@ class PredictionService:
         predictions = self._extract_predictions(claude_result, predict_levels, context)
 
         # Process each level - return single best prediction per level (not arrays)
+        # Only add levels that were actually requested and have valid predictions
         if "primary" in predict_levels and "primary" in predictions:
             primary_list = self._create_prediction_levels(
                 predictions["primary"],
                 level="primary",
                 context=context
             )
-            # Take only the first (best) prediction
-            result["primary"] = primary_list[0] if primary_list else None
+            # Only add to result if we got a valid prediction
+            if primary_list:
+                result["primary"] = primary_list[0]
 
         if "secondary" in predict_levels and "secondary" in predictions:
             secondary_list = self._create_prediction_levels(
@@ -102,8 +104,9 @@ class PredictionService:
                     "primary": result.get("primary", {}).get("pred") if result.get("primary") else context.get("primary")
                 }
             )
-            # Take only the first (best) prediction
-            result["secondary"] = secondary_list[0] if secondary_list else None
+            # Only add to result if we got a valid prediction
+            if secondary_list:
+                result["secondary"] = secondary_list[0]
 
         if "tertiary" in predict_levels and "tertiary" in predictions:
             tertiary_list = self._create_prediction_levels(
@@ -115,14 +118,23 @@ class PredictionService:
                     "secondary": result.get("secondary", {}).get("pred") if result.get("secondary") else context.get("secondary")
                 }
             )
-            # Take only the first (best) prediction
-            result["tertiary"] = tertiary_list[0] if tertiary_list else None
+            # Only add to result if we got a valid prediction
+            if tertiary_list:
+                result["tertiary"] = tertiary_list[0]
 
         return result
     
     def _extract_predictions(self, claude_result: Dict[str, Any],
                             predict_levels: List[str], context: Dict[str, str]) -> Dict[str, List[Dict[str, Any]]]:
-        """Extract predictions from Claude result (now expects arrays)"""
+        """
+        Extract predictions from Claude result and convert to list of dicts format
+
+        Claude can return two formats:
+        1. Array format (new): {"primary": [{"tag": "News", "confidence": 0.9, "reasoning": "..."}]}
+        2. Flat format (legacy): {"primary": "News", "confidence_primary": 0.9, "reasoning": "..."}
+
+        We normalize both to the array format.
+        """
         predictions = {}
 
         # Add context to predictions (keep as-is for string context)
@@ -130,19 +142,31 @@ class PredictionService:
             if isinstance(value, str):
                 predictions[key] = value
 
-        # Extract from Claude result - now expects arrays
-        if "primary" in predict_levels and "primary" in claude_result:
-            primary_data = claude_result["primary"]
-            # Ensure it's a list
-            predictions["primary"] = primary_data if isinstance(primary_data, list) else [primary_data]
+        # Extract from Claude result and convert to expected format
+        for level in ["primary", "secondary", "tertiary"]:
+            if level not in predict_levels or level not in claude_result:
+                continue
 
-        if "secondary" in predict_levels and "secondary" in claude_result:
-            secondary_data = claude_result["secondary"]
-            predictions["secondary"] = secondary_data if isinstance(secondary_data, list) else [secondary_data]
+            level_data = claude_result[level]
 
-        if "tertiary" in predict_levels and "tertiary" in claude_result:
-            tertiary_data = claude_result["tertiary"]
-            predictions["tertiary"] = tertiary_data if isinstance(tertiary_data, list) else [tertiary_data]
+            # If already in array format, use as-is
+            if isinstance(level_data, list):
+                predictions[level] = level_data
+            # If in flat format, convert to array
+            elif isinstance(level_data, str):
+                # Legacy flat format: {"primary": "News", "confidence_primary": 0.9}
+                tag = level_data
+                confidence = claude_result.get(f"confidence_{level}", 0.0)
+                reasoning = claude_result.get("reasoning", "No reasoning provided")
+
+                predictions[level] = [{
+                    "tag": tag,
+                    "confidence": confidence,
+                    "reasoning": reasoning
+                }]
+            # If it's a dict, convert to array with single item
+            elif isinstance(level_data, dict):
+                predictions[level] = [level_data]
 
         return predictions
     
