@@ -175,12 +175,12 @@ class ConfidenceEvaluator:
             if level not in llm_levels:  # Only include levels that LLM is NOT processing
                 ai_preds = ai_predictions.get("prediction", {}).get(level, [])
                 if isinstance(ai_preds, list) and ai_preds:
-                    # Pass all labels as a list for multi-label context
+                    # Pass top label as context for hierarchical classification
+                    # LLM service expects single string per level, not array
                     labels = [pred.get("label", "") for pred in ai_preds if pred.get("label")]
                     if labels:
-                        # If single label, pass as string for compatibility
-                        # If multiple labels, pass as list
-                        context[level] = labels[0] if len(labels) == 1 else labels
+                        # Always pass first/top label as string (highest confidence from AI)
+                        context[level] = labels[0]
 
         logger.info(f"Built LLM context: {context}")
         return context
