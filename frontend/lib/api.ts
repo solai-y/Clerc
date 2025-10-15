@@ -129,23 +129,19 @@ class APIClient {
     }>(url);
 
     // Debug logs for response summary
-    console.log("[api] GET /documents response:", {
-      returned: responseData.documents?.length ?? 0,
-      pagination: responseData.pagination
-    });
-
+    // console.log(...);
     return responseData;
   }
 
   async getDocument(id: number): Promise<BackendProcessedDocument> {
     const url = apiUrl(`/documents/${id}`);
-    console.log("[api] GET", url);
+    // console.log(...);
     return this.fetchWithErrorHandling<BackendProcessedDocument>(url);
   }
 
   async getCompleteDocument(id: number): Promise<BackendProcessedDocument> {
     const url = apiUrl(`/documents/${id}/complete`);
-    console.log("[api] GET", url);
+    // console.log(...);
     return this.fetchWithErrorHandling<BackendProcessedDocument>(url);
   }
 
@@ -174,7 +170,7 @@ class APIClient {
 
   async deleteDocument(id: number): Promise<void> {
     const url = apiUrl(`/documents/${id}`);
-    console.log("[api] DELETE", url);
+    // console.log(...);
     await this.fetchWithErrorHandling<null>(url, { method: "DELETE" });
   }
 
@@ -199,7 +195,7 @@ class APIClient {
     count: number;
   }> {
     const url = apiUrl(`/documents/unprocessed?limit=${limit}`);
-    console.log("[api] GET", url);
+    // console.log(...);
     return this.fetchWithErrorHandling<{ unprocessed_documents: any[]; count: number }>(url);
   }
 
@@ -259,7 +255,7 @@ class APIClient {
     }>
   > {
     const url = apiUrl(`/documents/${documentId}/explanations`);
-    console.log("[api] GET", url);
+    // console.log(...);
     return this.fetchWithErrorHandling<Array<any>>(url);
   }
 
@@ -275,8 +271,7 @@ class APIClient {
     if (thresholds.tertiary !== undefined) updateData.tertiary = thresholds.tertiary;
 
     const url = apiUrl("/predict/config/thresholds");
-    console.log("[api] PUT", url, { payload: updateData });
-
+    // console.log(...);
     try {
       const response = await this.fetchWithErrorHandling<{
         primary: number;
@@ -305,8 +300,7 @@ class APIClient {
     tertiary: number;
   }> {
     const url = apiUrl("/predict/config/thresholds");
-    console.log("[api] GET", url);
-
+    // console.log(...);
     try {
       const response = await this.fetchWithErrorHandling<{
         primary: number;
@@ -337,8 +331,7 @@ class APIClient {
     character_count: number;
   }> {
     const url = apiUrl("/predict/extract/pdf");
-    console.log("[api] POST", url, { payload: { pdf_url: pdfUrl } });
-
+    // console.log(...);
     try {
       const response = await this.fetchWithErrorHandling<{
         text: string;
@@ -379,14 +372,7 @@ export interface Document {
 }
 
 export function transformBackendDocument(processedDoc: BackendProcessedDocument): Document {
-  console.log('🔍 [API Transform] Processing document:', {
-    document_id: processedDoc.document_id,
-    document_name: processedDoc.raw_documents?.document_name,
-    confirmed_tags_raw: processedDoc.confirmed_tags,
-    suggested_tags: processedDoc.suggested_tags,
-    user_added_labels: processedDoc.user_added_labels
-  });
-
+  // console.log(...);
   const tags: string[] = [];
   const modelGeneratedTags: Array<{ tag: string; score: number; isConfirmed: boolean }> = [];
   const userAddedTags: string[] = [];
@@ -398,10 +384,9 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
 
   // Process the new JSONB confirmed_tags structure
   const processConfirmedTags = (confirmedTagsObj: any): string[] => {
-    console.log('🏷️ [API Transform] Processing confirmed_tags:', confirmedTagsObj);
-
+    // console.log(...);
     if (!confirmedTagsObj) {
-      console.log('❌ [API Transform] No confirmed_tags found');
+      // console.log(...);
       return [];
     }
 
@@ -409,42 +394,40 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     const tagsArray = confirmedTagsObj.confirmed_tags?.tags;
 
     if (!tagsArray || !Array.isArray(tagsArray)) {
-      console.log('❌ [API Transform] Invalid structure - expected confirmed_tags.tags array:', confirmedTagsObj);
+      // console.log(...);
       return [];
     }
 
-    console.log('🆕 [API Transform] Found tags array:', tagsArray);
-
+    // console.log(...);
     // Process hierarchical tags from JSONB format
     tagsArray.forEach((tagObj: any) => {
-      console.log('🔍 [API Transform] Processing tag object:', tagObj);
-
+      // console.log(...);
       if (tagObj.level === 'primary') {
         primaryTag = {
           tag: tagObj.tag,
           source: tagObj.source || 'unknown',
           confidence: tagObj.confidence || 0
         };
-        console.log('🔵 [API Transform] Found primary tag:', primaryTag);
+        // console.log(...);
       } else if (tagObj.level === 'secondary') {
         secondaryTag = {
           tag: tagObj.tag,
           source: tagObj.source || 'unknown',
           confidence: tagObj.confidence || 0
         };
-        console.log('🟢 [API Transform] Found secondary tag:', secondaryTag);
+        // console.log(...);
       } else if (tagObj.level === 'tertiary') {
         tertiaryTag = {
           tag: tagObj.tag,
           source: tagObj.source || 'unknown',
           confidence: tagObj.confidence || 0
         };
-        console.log('🟠 [API Transform] Found tertiary tag:', tertiaryTag);
+        // console.log(...);
       }
     });
 
     const tagNames = tagsArray.map((t: any) => t.tag);
-    console.log('📝 [API Transform] Extracted tag names:', tagNames);
+    // console.log(...);
     return tagNames;
   };
 
@@ -470,16 +453,7 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     if (!tags.includes(ct)) tags.push(ct);
   });
 
-  console.log('📊 [API Transform] Final tag processing results:', {
-    document_id: processedDoc.document_id,
-    legacy_tags: tags,
-    primaryTag,
-    secondaryTag,
-    tertiaryTag,
-    userAddedTags,
-    modelGeneratedTags: modelGeneratedTags.length
-  });
-
+  // console.log(...);
   const sizeEstimate = processedDoc.raw_documents?.file_size
     ? formatFileSize(processedDoc.raw_documents.file_size)
     : "Size unavailable";
@@ -504,16 +478,7 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     tertiaryTag,
   };
 
-  console.log('✅ [API Transform] Transformed document:', {
-    id: transformedDocument.id,
-    name: transformedDocument.name,
-    tags: transformedDocument.tags,
-    primaryTag: transformedDocument.primaryTag,
-    secondaryTag: transformedDocument.secondaryTag,
-    tertiaryTag: transformedDocument.tertiaryTag,
-    userAddedTags: transformedDocument.userAddedTags
-  });
-
+  // console.log(...);
   return transformedDocument;
 }
 
