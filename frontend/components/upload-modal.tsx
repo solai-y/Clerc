@@ -258,28 +258,33 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       // Debug: Log each level prediction in detail
       if (predictionResponse.prediction) {
         for (const level of ['primary', 'secondary', 'tertiary']) {
-          const levelPred = predictionResponse.prediction[level]
-          console.log(`🔍 ${level} prediction:`, levelPred)
-          if (levelPred) {
-            console.log(`  - pred: ${levelPred.pred}`)
-            console.log(`  - confidence: ${levelPred.confidence}`)
-            console.log(`  - source: ${levelPred.source}`)
-            console.log(`  - ai_prediction:`, levelPred.ai_prediction)
-            console.log(`  - llm_prediction:`, levelPred.llm_prediction)
+          const levelPreds = predictionResponse.prediction[level]
+          console.log(`🔍 ${level} prediction:`, levelPreds)
+          if (Array.isArray(levelPreds) && levelPreds.length > 0) {
+            levelPreds.forEach((pred: any, idx: number) => {
+              console.log(`  [${idx}] - pred: ${pred.pred}`)
+              console.log(`  [${idx}] - confidence: ${pred.confidence}`)
+              console.log(`  [${idx}] - source: ${pred.source}`)
+              console.log(`  [${idx}] - ai_prediction:`, pred.ai_prediction)
+              console.log(`  [${idx}] - llm_prediction:`, pred.llm_prediction)
+            })
           }
         }
       }
 
-      // Extract tags from prediction response with enhanced metadata
+      // Extract tags from prediction response with enhanced metadata (multi-label support)
       const extractedTags: any[] = []
       const explanations: any[] = []
       const processedTags = new Set<string>() // Prevent duplicates for UI
 
-      // Process prediction results for each level
+      // Process prediction results for each level (now supports multiple predictions per level)
       if (predictionResponse.prediction) {
         for (const level of ['primary', 'secondary', 'tertiary']) {
-          const levelPred = predictionResponse.prediction[level]
-          if (levelPred && levelPred.pred) {
+          const levelPreds = predictionResponse.prediction[level]
+          // Handle multi-label: iterate through array of predictions
+          if (Array.isArray(levelPreds)) {
+            for (const levelPred of levelPreds) {
+              if (levelPred && levelPred.pred) {
             // Always add to extractedTags with hierarchy and source metadata
             extractedTags.push({
               tag: levelPred.pred,
@@ -342,6 +347,8 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
               }
               console.log(`📋 Adding LLM explanation for ${level} (not used):`, llmExplanation)
               explanations.push(llmExplanation)
+            }
+              }
             }
           }
         }
