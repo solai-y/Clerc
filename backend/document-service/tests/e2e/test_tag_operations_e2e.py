@@ -30,7 +30,7 @@ class TestTagOperationsE2E:
             "document_name": f"E2E Tag Test Document {name_suffix}",
             "document_type": "PDF",
             "link": f"https://test.com/e2e-tag-test-{name_suffix}.pdf",
-            "uploaded_by": 1,
+            "uploaded_by": 6,
         }
         
         raw_response = requests.post(
@@ -46,7 +46,6 @@ class TestTagOperationsE2E:
         # Create processed document entry
         processed_data = {
             "document_id": document_id,
-            "model_id": 1,
             "threshold_pct": 80,
             "suggested_tags": [
                 {"tag": "invoice", "score": 0.95},
@@ -160,7 +159,12 @@ class TestTagOperationsE2E:
         assert update_response.status_code == 200
         update_data = update_response.json()
         assert update_data["status"] == "success"
-        assert update_data["data"]["confirmed_tags"] == ["invoice", "financial"]
+
+        # Check new JSONB structure for confirmed_tags
+        confirmed_tags = update_data["data"]["confirmed_tags"]
+        assert "tags" in confirmed_tags
+        tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+        assert set(tag_names) == {"invoice", "financial"}
         assert update_data["data"]["user_added_labels"] == ["client-abc", "priority-high", "q1-2024"]
         
         print("  [PASS] Tags confirmed and custom tags added successfully")
@@ -180,7 +184,12 @@ class TestTagOperationsE2E:
         
         assert modify_response.status_code == 200
         modify_data = modify_response.json()
-        assert modify_data["data"]["confirmed_tags"] == ["invoice"]
+
+        # Check new JSONB structure for confirmed_tags
+        confirmed_tags = modify_data["data"]["confirmed_tags"]
+        assert "tags" in confirmed_tags
+        tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+        assert tag_names == ["invoice"]
         assert set(modify_data["data"]["user_added_labels"]) == {"client-abc", "priority-medium", "q1-2024", "reviewed"}
         
         print("  [PASS] Tag modifications applied successfully")
@@ -200,7 +209,12 @@ class TestTagOperationsE2E:
                 break
         
         assert final_doc is not None, f"Document {document_id} not found in final verification"
-        assert final_doc["confirmed_tags"] == ["invoice"]
+
+        # Check new JSONB structure for confirmed_tags
+        confirmed_tags = final_doc["confirmed_tags"]
+        assert "tags" in confirmed_tags
+        tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+        assert tag_names == ["invoice"]
         assert set(final_doc["user_added_labels"]) == {"client-abc", "priority-medium", "q1-2024", "reviewed"}
         # AI suggestions should still be preserved
         assert len(final_doc["suggested_tags"]) == 4
@@ -262,7 +276,12 @@ class TestTagOperationsE2E:
         for result in results:
             assert result["status_code"] == 200
             assert result["response_data"]["status"] == "success"
-            assert result["response_data"]["data"]["confirmed_tags"] == ["invoice"]
+
+            # Check new JSONB structure for confirmed_tags
+            confirmed_tags = result["response_data"]["data"]["confirmed_tags"]
+            assert "tags" in confirmed_tags
+            tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+            assert tag_names == ["invoice"]
         
         print("  [PASS] All concurrent operations completed successfully")
         print("[SUCCESS] Concurrent tag operations test completed")
@@ -288,7 +307,15 @@ class TestTagOperationsE2E:
         )
         
         assert response.status_code == 200
-        assert response.json()["data"]["confirmed_tags"] == []
+
+        # Check new JSONB structure for confirmed_tags (empty case)
+        confirmed_tags = response.json()["data"]["confirmed_tags"]
+        if confirmed_tags is None or confirmed_tags == {}:
+            # Empty confirmed_tags
+            pass
+        else:
+            assert "tags" in confirmed_tags
+            assert confirmed_tags["tags"] == []
         assert response.json()["data"]["user_added_labels"] == []
         print("  [PASS] Empty arrays handled correctly")
         
@@ -502,7 +529,11 @@ class TestTagOperationsE2E:
             result = response.json()["data"]
             
             # Verify immediate consistency
-            assert set(result["confirmed_tags"]) == set(operation["confirmed_tags"])
+            # Check new JSONB structure for confirmed_tags
+            confirmed_tags = result["confirmed_tags"]
+            assert "tags" in confirmed_tags
+            result_tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+            assert set(result_tag_names) == set(operation["confirmed_tags"])
             assert set(result["user_added_labels"]) == set(operation["user_added_labels"])
             
             # Verify by retrieving the document from processed documents
@@ -518,7 +549,12 @@ class TestTagOperationsE2E:
                     break
             
             assert retrieved_doc is not None, f"Document {document_id} not found in operation {i+1}"
-            assert set(retrieved_doc["confirmed_tags"]) == set(operation["confirmed_tags"])
+
+            # Check new JSONB structure for confirmed_tags
+            confirmed_tags = retrieved_doc["confirmed_tags"]
+            assert "tags" in confirmed_tags
+            retrieved_tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+            assert set(retrieved_tag_names) == set(operation["confirmed_tags"])
             assert set(retrieved_doc["user_added_labels"]) == set(operation["user_added_labels"])
             
             # Verify AI suggestions are preserved

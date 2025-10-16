@@ -63,7 +63,12 @@ class TestTagUpdateOperations:
         assert response.status_code == 200
         assert data["status"] == "success"
         assert data["message"] == "Document tags updated successfully"
-        assert data["data"]["confirmed_tags"] == ["invoice", "financial"]
+
+        # Check new JSONB structure for confirmed_tags
+        confirmed_tags = data["data"]["confirmed_tags"]
+        assert "tags" in confirmed_tags
+        tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+        assert set(tag_names) == {"invoice", "financial"}
         
         # Verify database service was called with correct parameters
         mock_db_service.update_document_tags.assert_called_once_with(123, tag_data)
@@ -136,7 +141,12 @@ class TestTagUpdateOperations:
         assert response.status_code == 200
         data = response.get_json()
         assert data["status"] == "success"
-        assert data["data"]["confirmed_tags"] == ["invoice", "financial"]
+
+        # Check new JSONB structure for confirmed_tags
+        confirmed_tags = data["data"]["confirmed_tags"]
+        assert "tags" in confirmed_tags
+        tag_names = [tag["tag"] for tag in confirmed_tags["tags"]]
+        assert set(tag_names) == {"invoice", "financial"}
         assert data["data"]["user_added_labels"] == ["urgent", "q1-2024"]
         
         print("[PASS] Combined tags updated successfully")
@@ -333,7 +343,15 @@ class TestTagUpdateOperations:
         assert response.status_code == 200
         data = response.get_json()
         assert data["status"] == "success"
-        assert data["data"]["confirmed_tags"] == []
+
+        # Check new JSONB structure for confirmed_tags (empty case)
+        confirmed_tags = data["data"]["confirmed_tags"]
+        if confirmed_tags is None or confirmed_tags == {}:
+            # Empty confirmed_tags
+            pass
+        else:
+            assert "tags" in confirmed_tags
+            assert confirmed_tags["tags"] == []
         assert data["data"]["user_added_labels"] == []
         
         print("[PASS] Empty tag arrays (clearing tags) handled successfully")

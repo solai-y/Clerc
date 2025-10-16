@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useMemo } from "react"
 import {
   Pagination,
   PaginationContent,
@@ -27,54 +28,56 @@ export function DocumentPagination({
   onPageChange,
   loading = false,
 }: DocumentPaginationProps) {
-  // Don't show pagination if there's only one page or less
-  if (totalPages <= 1) {
+  // Guard: nothing to paginate
+  if (!totalPages || totalPages <= 1) {
     return null
   }
 
-  // Calculate the range of items being displayed
-  const startItem = (currentPage - 1) * itemsPerPage + 1
-  const endItem = Math.min(currentPage * itemsPerPage, totalItems)
+  // Clamp values just in case
+  const safeCurrent = Math.min(Math.max(currentPage || 1, 1), Math.max(totalPages, 1))
+  const safePerPage = Math.max(itemsPerPage || 1, 1)
+  const safeTotal = Math.max(totalItems || 0, 0)
 
-  // Generate page numbers to display
-  const getPageNumbers = () => {
-    const delta = 2 // Number of pages to show around current page
-    const range = []
-    const rangeWithDots = []
+  // Calculate displayed range
+  const startItem = safeTotal === 0 ? 0 : (safeCurrent - 1) * safePerPage + 1
+  const endItem = safeTotal === 0 ? 0 : Math.min(safeCurrent * safePerPage, safeTotal)
 
-    // Always include first page
-    range.push(1)
+  // Generate page numbers (with ellipses)
+  const pageNumbers = useMemo(() => {
+    const delta = 2
+    const range: number[] = [1]
 
-    // Add pages around current page
-    for (let i = Math.max(2, currentPage - delta); i <= Math.min(totalPages - 1, currentPage + delta); i++) {
+    for (let i = Math.max(2, safeCurrent - delta); i <= Math.min(totalPages - 1, safeCurrent + delta); i++) {
       range.push(i)
     }
+    if (totalPages > 1) range.push(totalPages)
 
-    // Always include last page if it's not the first page
-    if (totalPages > 1) {
-      range.push(totalPages)
-    }
+    const unique = [...new Set(range)].sort((a, b) => a - b)
 
-    // Remove duplicates and sort
-    const uniqueRange = [...new Set(range)].sort((a, b) => a - b)
-
-    // Add ellipsis where there are gaps
+    const output: Array<number | "ellipsis"> = []
     let prev = 0
-    for (const page of uniqueRange) {
-      if (page - prev > 1) {
-        rangeWithDots.push('ellipsis')
-      }
-      rangeWithDots.push(page)
+    for (const page of unique) {
+      if (page - prev > 1) output.push("ellipsis")
+      output.push(page)
       prev = page
     }
+    return output
+  }, [safeCurrent, totalPages])
 
-    return rangeWithDots
-  }
-
-  const pageNumbers = getPageNumbers()
+  useEffect(() => {
+    console.log("[Pagination] props changed", {
+      currentPage,
+      totalPages,
+      totalItems,
+      itemsPerPage,
+      loading,
+      computed: { safeCurrent, startItem, endItem, pageNumbers }
+    })
+  }, [currentPage, totalPages, totalItems, itemsPerPage, loading, pageNumbers, safeCurrent, startItem, endItem])
 
   const handlePageClick = (page: number) => {
-    if (!loading && page >= 1 && page <= totalPages && page !== currentPage) {
+    console.log("[Pagination] click", { page, safeCurrent, totalPages, loading })
+    if (!loading && page >= 1 && page <= totalPages && page !== safeCurrent) {
       onPageChange(page)
     }
   }
@@ -85,37 +88,33 @@ export function DocumentPagination({
       <div className="text-sm text-gray-700">
         Showing <span className="font-medium">{startItem}</span> to{" "}
         <span className="font-medium">{endItem}</span> of{" "}
-        <span className="font-medium">{totalItems}</span> documents
+        <span className="font-medium">{safeTotal}</span> documents
       </div>
 
       {/* Pagination controls */}
       <Pagination>
         <PaginationContent>
-          {/* Previous button */}
+          {/* Previous */}
           <PaginationItem>
             <PaginationPrevious
-              onClick={() => handlePageClick(currentPage - 1)}
+              onClick={() => handlePageClick(safeCurrent - 1)}
               className={`cursor-pointer ${
-                currentPage <= 1 || loading 
-                  ? 'pointer-events-none opacity-50' 
-                  : 'hover:bg-gray-100'
+                safeCurrent <= 1 || loading ? "pointer-events-none opacity-50" : "hover:bg-gray-100"
               }`}
             />
           </PaginationItem>
 
           {/* Page numbers */}
-          {pageNumbers.map((item, index) => (
-            <PaginationItem key={index}>
-              {item === 'ellipsis' ? (
+          {pageNumbers.map((item, idx) => (
+            <PaginationItem key={`${item}-${idx}`}>
+              {item === "ellipsis" ? (
                 <PaginationEllipsis />
               ) : (
                 <PaginationLink
-                  onClick={() => handlePageClick(item as number)}
-                  isActive={item === currentPage}
+                  onClick={() => handlePageClick(item)}
+                  isActive={item === safeCurrent}
                   className={`cursor-pointer ${
-                    loading 
-                      ? 'pointer-events-none opacity-50' 
-                      : 'hover:bg-gray-100'
+                    loading ? "pointer-events-none opacity-50" : "hover:bg-gray-100"
                   }`}
                 >
                   {item}
@@ -124,14 +123,12 @@ export function DocumentPagination({
             </PaginationItem>
           ))}
 
-          {/* Next button */}
+          {/* Next */}
           <PaginationItem>
             <PaginationNext
-              onClick={() => handlePageClick(currentPage + 1)}
+              onClick={() => handlePageClick(safeCurrent + 1)}
               className={`cursor-pointer ${
-                currentPage >= totalPages || loading 
-                  ? 'pointer-events-none opacity-50' 
-                  : 'hover:bg-gray-100'
+                safeCurrent >= totalPages || loading ? "pointer-events-none opacity-50" : "hover:bg-gray-100"
               }`}
             />
           </PaginationItem>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react"
 import { apiClient } from "@/lib/api"
+import { HierarchyBasedConfirmTagsModal } from "./hierarchy-based-confirm-tags-modal"
 
 export interface Document {
   id: string
@@ -33,6 +34,10 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [pendingDocument, setPendingDocument] = useState<Document | null>(null)
+  const [predictionData, setPredictionData] = useState<any>(null)
+  const [explanationData, setExplanationData] = useState<any[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -125,53 +130,57 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     request_id?: string
   }
 
-  async function predictTags(file: File, thresholdPct = 30) {
-    const fd = new FormData();
-    fd.append("pdf", file, file.name);              // field name must be 'pdf'
-    fd.append("threshold_pct", String(thresholdPct));
-  
-    const res = await fetch("/ai/v1/predict", {
+  async function predictTags(text: string, confidenceThresholds = { primary: 0.90, secondary: 0.85, tertiary: 0.80 }) {
+    const requestData = {
+      text: text,
+      predict_levels: ["primary", "secondary", "tertiary"],
+      confidence_thresholds: confidenceThresholds
+    };
+
+    const res = await fetch("/predict/classify", {
       method: "POST",
-      body: fd,
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(requestData)
     });
-  
+
     let json: any;
     try {
       json = await res.json();
     } catch {
-      throw new Error(`Predict: invalid JSON (status ${res.status})`);
+      throw new Error(`Prediction service: invalid JSON (status ${res.status})`);
     }
-  
-    console.log("🔍 predict JSON:", json);
-  
+
+    console.log("🔍 prediction service JSON:", json);
+
     if (!res.ok) {
-      const msg = json?.error || JSON.stringify(json);
-      throw new Error(`Predict ${res.status}: ${msg}`);
+      const msg = json?.detail || json?.error || JSON.stringify(json);
+      throw new Error(`Prediction service ${res.status}: ${msg}`);
     }
-  
-    // Normalize shapes:
-    // 1) { results: [...] }  OR  2) { filename, tags: [...] }
-    let first: any = null;
-    let results: any[] = [];
-  
-    if (Array.isArray(json?.results) && json.results.length) {
-      first = json.results[0];
-      results = json.results;
-    } else if (Array.isArray(json?.tags)) {
-      first = {
-        filename: json.filename ?? file.name,
-        tags: json.tags,                 // [{tag, score}, ...]
-        ocr_used: json.ocr_used ?? false,
-        processing_ms: json.processing_ms,
-      };
-      results = [first];
+
+    return json;
+  }
+
+  // Extract text from PDF file using prediction service
+  async function extractTextFromFile(file: File, s3Link: string): Promise<string> {
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      throw new Error(
+        `File type ${file.type || 'unknown'} is not supported. ` +
+        `Currently only PDF files are supported for text extraction. ` +
+        `Please upload a PDF file for document classification.`
+      );
     }
-  
-    if (!first) {
-      return { results: [], first: null, raw: json };
+
+    try {
+      console.log("🔤 Extracting text from PDF using prediction service...");
+      const extractionResult = await apiClient.extractTextFromPDF(s3Link);
+      console.log(`✅ Extracted ${extractionResult.character_count} characters from ${extractionResult.page_count} pages`);
+      return extractionResult.text;
+    } catch (error) {
+      console.error("❌ PDF text extraction failed:", error);
+      throw error;
     }
-  
-    return { results, first, raw: json };
   }
   
   
@@ -219,29 +228,141 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       console.log("✅ Created raw document with ID:", documentId)
       setUploadProgress(50)
 
-      // Step 3: Run AI processing (50-80% progress)
+      // Step 3: Extract text and run prediction service processing (50-80% progress)
       setUploadProgress(60)
-      console.log("🤖 Processing with AI...")
+      console.log("🤖 Processing with Prediction Service...")
       
-      const predict = await predictTags(file, 60)
-      console.log("🤖 AI processing response:", predict)
-
-      const first = predict.results?.[0]
-      if (!first) {
-        throw new Error("No prediction results returned")
+      // Extract text from file using S3 URL
+      const documentText = await extractTextFromFile(file, s3Link)
+      
+      // Get current confidence thresholds from localStorage or use defaults
+      let thresholds = { primary: 0.90, secondary: 0.85, tertiary: 0.80 };
+      try {
+        const saved = localStorage.getItem('confidence_thresholds');
+        if (saved) {
+          const savedThresholds = JSON.parse(saved);
+          thresholds = { ...thresholds, ...savedThresholds };
+        }
+      } catch (error) {
+        console.warn('Failed to load saved thresholds:', error);
       }
 
-      const rawTags: PredictTag[] = first.tags ?? first.probs ?? first.top5 ?? []
+      console.log("📊 Using confidence thresholds:", thresholds);
+
+      // Call prediction service with confidence thresholds
+      const predictionResponse = await predictTags(documentText, thresholds)
+      console.log("🤖 Prediction service response:", predictionResponse)
+      console.log("🔍 Service calls:", predictionResponse.service_calls)
+      console.log("📊 Confidence analysis:", predictionResponse.confidence_analysis)
+
+      // Debug: Log each level prediction in detail
+      if (predictionResponse.prediction) {
+        for (const level of ['primary', 'secondary', 'tertiary']) {
+          const levelPred = predictionResponse.prediction[level]
+          console.log(`🔍 ${level} prediction:`, levelPred)
+          if (levelPred) {
+            console.log(`  - pred: ${levelPred.pred}`)
+            console.log(`  - confidence: ${levelPred.confidence}`)
+            console.log(`  - source: ${levelPred.source}`)
+            console.log(`  - ai_prediction:`, levelPred.ai_prediction)
+            console.log(`  - llm_prediction:`, levelPred.llm_prediction)
+          }
+        }
+      }
+
+      // Extract tags from prediction response with enhanced metadata
+      const extractedTags: any[] = []
+      const explanations: any[] = []
+      const processedTags = new Set<string>() // Prevent duplicates for UI
+
+      // Process prediction results for each level
+      if (predictionResponse.prediction) {
+        for (const level of ['primary', 'secondary', 'tertiary']) {
+          const levelPred = predictionResponse.prediction[level]
+          if (levelPred && levelPred.pred) {
+            // Always add to extractedTags with hierarchy and source metadata
+            extractedTags.push({
+              tag: levelPred.pred,
+              score: levelPred.confidence,
+              hierarchy_level: level,
+              source: levelPred.source || 'ai',
+              is_primary: level === 'primary',
+              is_secondary: level === 'secondary',
+              is_tertiary: level === 'tertiary'
+            })
+
+            // Always store explanation data for each level - this ensures we capture both AI and LLM predictions
+            const explanation = {
+              level: level,
+              tag: levelPred.pred,
+              confidence: levelPred.confidence,
+              reasoning: levelPred.reasoning || `${levelPred.source?.toUpperCase() || 'AI'} prediction for ${level} level`,
+              source: levelPred.source || 'ai',
+              full_response: levelPred.llm_prediction || levelPred.ai_prediction || {},
+              shap_data: null // Will be set below for AI predictions
+            }
+
+            // Extract SHAP data for AI predictions
+            if (levelPred.source === 'ai' && levelPred.ai_prediction) {
+              explanation.shap_data = levelPred.ai_prediction.key_evidence || null
+              explanation.full_response = levelPred.ai_prediction
+            } else if (levelPred.source === 'llm' && levelPred.llm_prediction) {
+              explanation.full_response = levelPred.llm_prediction
+            }
+
+            console.log(`📋 Adding ${levelPred.source} explanation for ${level}:`, explanation)
+            explanations.push(explanation)
+
+            // CRITICAL: Also store AI prediction separately if this is an LLM override and we have AI data
+            // This ensures we don't lose AI explanations when LLM overrides them
+            if (levelPred.source === 'llm' && levelPred.ai_prediction && levelPred.ai_prediction.pred) {
+              const aiExplanation = {
+                level: level,
+                tag: levelPred.ai_prediction.pred,
+                confidence: levelPred.ai_prediction.confidence || 0,
+                reasoning: levelPred.ai_prediction.reasoning || `AI model prediction (overridden by LLM)`,
+                source: 'ai',
+                full_response: levelPred.ai_prediction,
+                shap_data: levelPred.ai_prediction.key_evidence || null
+              }
+              console.log(`📋 Adding AI explanation for ${level} (LLM override):`, aiExplanation)
+              explanations.push(aiExplanation)
+            }
+
+            // ALSO: When AI is the source but we have LLM data available, ensure we preserve it too
+            if (levelPred.source === 'ai' && levelPred.llm_prediction && levelPred.llm_prediction.pred) {
+              const llmExplanation = {
+                level: level,
+                tag: levelPred.llm_prediction.pred,
+                confidence: levelPred.llm_prediction.confidence || 0,
+                reasoning: levelPred.llm_prediction.reasoning || `LLM prediction (not used)`,
+                source: 'llm',
+                full_response: levelPred.llm_prediction,
+                shap_data: null
+              }
+              console.log(`📋 Adding LLM explanation for ${level} (not used):`, llmExplanation)
+              explanations.push(llmExplanation)
+            }
+          }
+        }
+      }
+
+      if (extractedTags.length === 0) {
+        throw new Error("No prediction results returned from prediction service")
+      }
+
       setUploadProgress(80)
 
       // Step 4: Create processed_documents entry in Supabase (80-90% progress)
       console.log("📊 Creating processed document entry...")
       const processedDocumentData = {
         document_id: documentId,
-        suggested_tags: rawTags,
-        threshold_pct: 60,
-        ocr_used: first.ocr_used || false,
-        processing_ms: first.processing_ms || null
+        suggested_tags: extractedTags,
+        threshold_pct: 80, // Based on our confidence thresholds
+        ocr_used: false, // Text extraction method would determine this
+        processing_ms: predictionResponse.elapsed_seconds ? Math.round(predictionResponse.elapsed_seconds * 1000) : null,
+        explanations: explanations, // Include explanations for storage
+        prediction_response: predictionResponse // Include full response for debugging
       }
       
       const processedDocResponse = await apiClient.createProcessedDocument(processedDocumentData)
@@ -253,30 +374,42 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         id: documentId.toString(),
         name: file.name,
         uploadDate: new Date().toISOString().split("T")[0],
-        tags: rawTags.map((t: any) => t.tag),
+        tags: extractedTags.map((t: any) => t.tag),
         subtags: {
-          "Model Tags (w/ confidence)": rawTags.map(
+          "Model Tags (w/ confidence)": extractedTags.map(
             (t: any) => `${t.tag} (${Math.round((t.score ?? 0) * 100)}%)`
+          ),
+          "Explanations": explanations.map(
+            (e: any) => `${e.level}: ${e.reasoning?.substring(0, 100)}...`
           ),
         },
         size: formatFileSize(file.size),
         status: "Success",
-        modelGeneratedTags: rawTags.map((t: any) => ({
+        modelGeneratedTags: extractedTags.map((t: any) => ({
           tag: t.tag,
           score: t.score,
-          isConfirmed: false
+          isConfirmed: false,
+          hierarchy_level: t.hierarchy_level,
+          source: t.source,
+          is_primary: t.is_primary,
+          is_secondary: t.is_secondary,
+          is_tertiary: t.is_tertiary
         })),
         userAddedTags: []
       };
       
       setUploadProgress(100)
 
-      // Complete the upload
+      // Store data for confirmation modal
+      setPendingDocument(newDocument)
+      setPredictionData(predictionResponse)
+      setExplanationData(explanations)
+      
+      // Complete upload processing and show confirmation modal
       setTimeout(() => {
-        onUploadComplete(newDocument)
         setIsUploading(false)
         setUploadProgress(0)
-        setUploadedFile(null)
+        setShowConfirmModal(true)
       }, 500)
 
     } catch (error) {
@@ -293,6 +426,51 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     const sizes = ["Bytes", "KB", "MB", "GB"]
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+  }
+
+  const handleConfirmTags = async (documentId: string, confirmedTagsData: any) => {
+    if (pendingDocument) {
+      // Extract tag names from the new JSONB structure for display
+      const confirmedTagNames = confirmedTagsData.tags?.map((t: any) => t.tag) || []
+
+      // Update the document with confirmed tags
+      const finalDocument: Document = {
+        ...pendingDocument,
+        tags: confirmedTagNames,
+        modelGeneratedTags: pendingDocument.modelGeneratedTags?.map(tag => ({
+          ...tag,
+          isConfirmed: confirmedTagNames.includes(tag.tag)
+        })),
+        userAddedTags: [] // Not using user added tags in hierarchy-based system
+      }
+      
+      // Update the backend with confirmed tags and explanations
+      try {
+        await apiClient.updateDocumentTags(parseInt(documentId), {
+          confirmed_tags: confirmedTagsData,
+          explanations: explanationData
+        })
+      } catch (error) {
+        console.error('Failed to update tags in backend:', error)
+        // Still proceed with frontend update
+      }
+      
+      onUploadComplete(finalDocument)
+      setShowConfirmModal(false)
+      setPendingDocument(null)
+      setPredictionData(null)
+      setExplanationData([])
+      setUploadedFile(null)
+    }
+  }
+
+  const handleCloseConfirmModal = () => {
+    setShowConfirmModal(false)
+    // Reset upload modal state
+    setPendingDocument(null)
+    setPredictionData(null)
+    setExplanationData([])
+    setUploadedFile(null)
   }
 
   const handleClose = () => {
@@ -312,6 +490,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
   }
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
@@ -352,9 +531,9 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
           {isUploading && uploadedFile && (
             <div className="space-y-4">
               <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
-                <FileText className="w-8 h-8 text-red-600" />
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900">{uploadedFile.name}</p>
+                <FileText className="w-8 h-8 text-red-600 flex-shrink-0" />
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <p className="font-medium text-gray-900 break-all" title={uploadedFile.name}>{uploadedFile.name}</p>
                   <p className="text-sm text-gray-500">{formatFileSize(uploadedFile.size)}</p>
                 </div>
               </div>
@@ -426,6 +605,17 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Enhanced Tag Confirmation Modal */}
+    {showConfirmModal && pendingDocument && (
+      <HierarchyBasedConfirmTagsModal
+        document={pendingDocument}
+        explanations={explanationData}
+        onConfirm={handleConfirmTags}
+        onClose={handleCloseConfirmModal}
+      />
+    )}
+    </>
   )
 }
 
