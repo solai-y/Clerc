@@ -50,6 +50,14 @@ services:
     env_file:
       - .env
 
+  tag-service:
+    build: ./tag-service
+    ports:
+      - "5007:5007"
+    env_file:
+      - .env
+    
+
   text-extraction-service:
     build: ./text-extraction-service
     ports:
@@ -72,4 +80,5 @@ services:
       - ai-service
       - llm-service
       - prediction-service
+      - tag-service
       - text-extraction-service
