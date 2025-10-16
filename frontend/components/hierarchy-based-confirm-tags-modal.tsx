@@ -104,8 +104,8 @@ export function HierarchyBasedConfirmTagsModal({
         const documentResponse = await apiClient.getCompleteDocument(parseInt(document.id))
         setDbPredictions(documentResponse.suggested_tags)
 
-        // Extract document link - check both locations
-        const link = documentResponse.link || documentResponse.raw_documents?.link
+        // Extract document link from raw_documents
+        const link = documentResponse.raw_documents?.link
         if (link) {
           setDocumentLink(link)
         }
@@ -216,15 +216,31 @@ export function HierarchyBasedConfirmTagsModal({
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState("selection")
 
-  // Initialize selections with AI/LLM predictions
+  // Initialize selections with AI/LLM predictions (default to highest confidence tag)
   useEffect(() => {
-    const primaryTag = enhancedTags.find(t => t.level === 'primary')
-    const secondaryTag = enhancedTags.find(t => t.level === 'secondary')
-    const tertiaryTag = enhancedTags.find(t => t.level === 'tertiary')
+    const primaryTagsFiltered = enhancedTags.filter(t => t.level === 'primary')
+    const secondaryTagsFiltered = enhancedTags.filter(t => t.level === 'secondary')
+    const tertiaryTagsFiltered = enhancedTags.filter(t => t.level === 'tertiary')
 
-    if (primaryTag) setSelectedPrimary(primaryTag.tag)
-    if (secondaryTag) setSelectedSecondary(secondaryTag.tag)
-    if (tertiaryTag) setSelectedTertiary(tertiaryTag.tag)
+    // Select the tag with highest confidence as default
+    if (primaryTagsFiltered.length > 0) {
+      const topPrimary = primaryTagsFiltered.reduce((prev, current) =>
+        (prev.confidence > current.confidence) ? prev : current
+      )
+      setSelectedPrimary(topPrimary.tag)
+    }
+    if (secondaryTagsFiltered.length > 0) {
+      const topSecondary = secondaryTagsFiltered.reduce((prev, current) =>
+        (prev.confidence > current.confidence) ? prev : current
+      )
+      setSelectedSecondary(topSecondary.tag)
+    }
+    if (tertiaryTagsFiltered.length > 0) {
+      const topTertiary = tertiaryTagsFiltered.reduce((prev, current) =>
+        (prev.confidence > current.confidence) ? prev : current
+      )
+      setSelectedTertiary(topTertiary.tag)
+    }
   }, [enhancedTags])
 
   // Get available options based on current selection
@@ -340,24 +356,48 @@ export function HierarchyBasedConfirmTagsModal({
   }
 
   const resetToAIPredictions = () => {
-    const primaryTag = enhancedTags.find(t => t.level === 'primary')
-    const secondaryTag = enhancedTags.find(t => t.level === 'secondary')
-    const tertiaryTag = enhancedTags.find(t => t.level === 'tertiary')
+    const primaryTagsFiltered = enhancedTags.filter(t => t.level === 'primary')
+    const secondaryTagsFiltered = enhancedTags.filter(t => t.level === 'secondary')
+    const tertiaryTagsFiltered = enhancedTags.filter(t => t.level === 'tertiary')
 
-    setSelectedPrimary(primaryTag?.tag || "")
-    setSelectedSecondary(secondaryTag?.tag || "")
-    setSelectedTertiary(tertiaryTag?.tag || "")
+    // Reset to the tag with highest confidence
+    if (primaryTagsFiltered.length > 0) {
+      const topPrimary = primaryTagsFiltered.reduce((prev, current) =>
+        (prev.confidence > current.confidence) ? prev : current
+      )
+      setSelectedPrimary(topPrimary.tag)
+    } else {
+      setSelectedPrimary("")
+    }
+
+    if (secondaryTagsFiltered.length > 0) {
+      const topSecondary = secondaryTagsFiltered.reduce((prev, current) =>
+        (prev.confidence > current.confidence) ? prev : current
+      )
+      setSelectedSecondary(topSecondary.tag)
+    } else {
+      setSelectedSecondary("")
+    }
+
+    if (tertiaryTagsFiltered.length > 0) {
+      const topTertiary = tertiaryTagsFiltered.reduce((prev, current) =>
+        (prev.confidence > current.confidence) ? prev : current
+      )
+      setSelectedTertiary(topTertiary.tag)
+    } else {
+      setSelectedTertiary("")
+    }
   }
 
-  const primaryTag = enhancedTags.find(t => t.level === 'primary')
-  const secondaryTag = enhancedTags.find(t => t.level === 'secondary')
-  const tertiaryTag = enhancedTags.find(t => t.level === 'tertiary')
+  const primaryTags = enhancedTags.filter(t => t.level === 'primary')
+  const secondaryTags = enhancedTags.filter(t => t.level === 'secondary')
+  const tertiaryTags = enhancedTags.filter(t => t.level === 'tertiary')
 
   // Helper function to get the source for displayed tags
-  const getTagSource = (selectedTag: string, originalTag: EnhancedTag | undefined) => {
-    if (!originalTag) return 'human'; // If no AI/LLM prediction, it's human selected
-    if (selectedTag === originalTag.tag) return originalTag.source; // Same as prediction
-    return 'human'; // User changed the selection
+  const getTagSource = (selectedTag: string, originalTags: EnhancedTag[]) => {
+    const matchingTag = originalTags.find(t => t.tag === selectedTag);
+    if (!matchingTag) return 'human'; // If no AI/LLM prediction, it's human selected
+    return matchingTag.source; // Return the source from matching tag
   }
 
   if (hierarchyLoading || dataLoading) {
@@ -435,23 +475,56 @@ export function HierarchyBasedConfirmTagsModal({
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="flex items-center gap-2 text-sm">
-                        {primaryTag && (
-                          <Badge variant="outline" className="bg-blue-100 text-blue-800">
-                            {primaryTag.tag}
-                          </Badge>
+                      <div className="space-y-3 text-sm">
+                        {/* Primary Tags */}
+                        {primaryTags.length > 0 && (
+                          <div>
+                            <div className="text-xs font-medium text-gray-600 mb-1">Primary:</div>
+                            <div className="flex flex-wrap gap-2">
+                              {primaryTags.map((tag, idx) => (
+                                <Badge key={idx} variant="outline" className="bg-blue-100 text-blue-800">
+                                  {tag.tag}
+                                  <span className="ml-1 text-xs opacity-75">
+                                    ({Math.round(tag.confidence * 100)}%)
+                                  </span>
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
                         )}
-                        {primaryTag && secondaryTag && <ArrowRight className="w-4 h-4 text-gray-400" />}
-                        {secondaryTag && (
-                          <Badge variant="outline" className="bg-green-100 text-green-800">
-                            {secondaryTag.tag}
-                          </Badge>
+
+                        {/* Secondary Tags */}
+                        {secondaryTags.length > 0 && (
+                          <div>
+                            <div className="text-xs font-medium text-gray-600 mb-1">Secondary:</div>
+                            <div className="flex flex-wrap gap-2">
+                              {secondaryTags.map((tag, idx) => (
+                                <Badge key={idx} variant="outline" className="bg-green-100 text-green-800">
+                                  {tag.tag}
+                                  <span className="ml-1 text-xs opacity-75">
+                                    ({Math.round(tag.confidence * 100)}%)
+                                  </span>
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
                         )}
-                        {secondaryTag && tertiaryTag && <ArrowRight className="w-4 h-4 text-gray-400" />}
-                        {tertiaryTag && (
-                          <Badge variant="outline" className="bg-orange-100 text-orange-800">
-                            {tertiaryTag.tag}
-                          </Badge>
+
+                        {/* Tertiary Tags */}
+                        {tertiaryTags.length > 0 && (
+                          <div>
+                            <div className="text-xs font-medium text-gray-600 mb-1">Tertiary:</div>
+                            <div className="flex flex-wrap gap-2">
+                              {tertiaryTags.map((tag, idx) => (
+                                <Badge key={idx} variant="outline" className="bg-orange-100 text-orange-800">
+                                  {tag.tag}
+                                  <span className="ml-1 text-xs opacity-75">
+                                    ({Math.round(tag.confidence * 100)}%)
+                                  </span>
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
                         )}
                       </div>
                     </CardContent>
@@ -575,7 +648,7 @@ export function HierarchyBasedConfirmTagsModal({
                           <div className="text-sm text-gray-600">Primary Classification</div>
                         </div>
                         {(() => {
-                          const source = getTagSource(selectedPrimary, primaryTag);
+                          const source = getTagSource(selectedPrimary, primaryTags);
                           return (
                             <Badge className={source === 'ai' ? 'bg-blue-100 text-blue-800' : source === 'llm' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
                               {source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : source === 'llm' ? <Brain className="w-3 h-3 mr-1" /> : <Tag className="w-3 h-3 mr-1" />}
@@ -600,7 +673,7 @@ export function HierarchyBasedConfirmTagsModal({
                             <div className="text-sm text-gray-600">Secondary Classification</div>
                           </div>
                           {(() => {
-                            const source = getTagSource(selectedSecondary, secondaryTag);
+                            const source = getTagSource(selectedSecondary, secondaryTags);
                             return (
                               <Badge className={source === 'ai' ? 'bg-blue-100 text-blue-800' : source === 'llm' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
                                 {source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : source === 'llm' ? <Brain className="w-3 h-3 mr-1" /> : <Tag className="w-3 h-3 mr-1" />}
@@ -626,7 +699,7 @@ export function HierarchyBasedConfirmTagsModal({
                             <div className="text-sm text-gray-600">Tertiary Classification</div>
                           </div>
                           {(() => {
-                            const source = getTagSource(selectedTertiary, tertiaryTag);
+                            const source = getTagSource(selectedTertiary, tertiaryTags);
                             return (
                               <Badge className={source === 'ai' ? 'bg-blue-100 text-blue-800' : source === 'llm' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
                                 {source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : source === 'llm' ? <Brain className="w-3 h-3 mr-1" /> : <Tag className="w-3 h-3 mr-1" />}

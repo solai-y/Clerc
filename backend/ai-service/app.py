@@ -120,13 +120,36 @@ async def predict(request: PredictRequest) -> Any:
     try:
         with _model_swap_lock:
             model = best_model
-        result = model.predict([processed_text])[0]
+        raw_result = model.predict([processed_text])[0]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")
     elapsed = time.time() - t0
 
+    # Transform multi-class result to prediction service format
+    # The model returns: {'primary': [{label, confidence, key_evidence}, ...], 'secondary': [...], 'tertiary': [...]}
+    # Prediction service expects: {'primary': {pred, confidence, reasoning, key_evidence}, ...}
+
+    transformed_result = {}
+
+    for level in ['primary', 'secondary', 'tertiary']:
+        if level in raw_result and isinstance(raw_result[level], list) and len(raw_result[level]) > 0:
+            # Get the prediction with highest confidence for this level
+            top_prediction = max(raw_result[level], key=lambda x: x.get('confidence', 0))
+
+            transformed_result[level] = {
+                "pred": top_prediction.get('label', ''),
+                "confidence": top_prediction.get('confidence', 0.0),
+                "reasoning": f"AI model prediction (confidence: {top_prediction.get('confidence', 0.0):.2%})",
+                "key_evidence": top_prediction.get('key_evidence', {}),
+                # Include primary/secondary context for child levels
+                "primary": top_prediction.get('primary'),
+                "secondary": top_prediction.get('secondary'),
+            }
+
+    # Also include the raw multi-class predictions for the frontend
     return {
-        "prediction": result,
+        "prediction": transformed_result,
+        "raw_predictions": raw_result,  # Keep full multi-class data for frontend
         "elapsed_seconds": round(elapsed, 6),
         "processed_text": processed_text
     }
