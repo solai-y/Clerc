@@ -375,27 +375,22 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         name: file.name,
         uploadDate: new Date().toISOString().split("T")[0],
         tags: extractedTags.map((t: any) => t.tag),
-        subtags: {
-          "Model Tags (w/ confidence)": extractedTags.map(
-            (t: any) => `${t.tag} (${Math.round((t.score ?? 0) * 100)}%)`
-          ),
-          "Explanations": explanations.map(
-            (e: any) => `${e.level}: ${e.reasoning?.substring(0, 100)}...`
-          ),
-        },
         size: formatFileSize(file.size),
-        status: "Success",
+        type: file.type || "application/pdf",
+        link: "",
+        company: null,
+        companyName: null,
+        uploaded_by: null,
+        status: "processing",
         modelGeneratedTags: extractedTags.map((t: any) => ({
           tag: t.tag,
           score: t.score,
           isConfirmed: false,
-          hierarchy_level: t.hierarchy_level,
-          source: t.source,
-          is_primary: t.is_primary,
-          is_secondary: t.is_secondary,
-          is_tertiary: t.is_tertiary
         })),
-        userAddedTags: []
+        userAddedTags: [],
+        primaryTags: [],
+        secondaryTags: [],
+        tertiaryTags: [],
       };
       
       setUploadProgress(100)

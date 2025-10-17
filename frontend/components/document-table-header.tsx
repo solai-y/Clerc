@@ -63,15 +63,18 @@ export function DocumentTableHeader({ sortBy, sortOrder, onSort }: DocumentTable
           active={sortBy === "name"}
           order={sortOrder}
           onClick={() => onSort("name")}
-          className="w-[400px]"
+          className="w-[280px]"
         />
-        <TableHead>Tags</TableHead>
+        <TableHead className="w-[140px]">Primary</TableHead>
+        <TableHead className="w-[140px]">Secondary</TableHead>
+        <TableHead className="w-[140px]">Tertiary</TableHead>
         <SortHeaderCell
           label="Upload Date"
           column="date"
           active={sortBy === "date"}
           order={sortOrder}
           onClick={() => onSort("date")}
+          className="w-[120px]"
         />
         <SortHeaderCell
           label="Size"
@@ -79,8 +82,9 @@ export function DocumentTableHeader({ sortBy, sortOrder, onSort }: DocumentTable
           active={sortBy === "size"}
           order={sortOrder}
           onClick={() => onSort("size")}
+          className="w-[80px]"
         />
-        <TableHead>Actions</TableHead>
+        <TableHead className="w-[130px]">Actions</TableHead>
       </TableRow>
     </TableHeader>
   )

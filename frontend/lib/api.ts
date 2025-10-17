@@ -372,10 +372,10 @@ export interface Document {
   status: string;
   modelGeneratedTags: Array<{ tag: string; score: number; isConfirmed: boolean }>;
   userAddedTags: string[];
-  // Hierarchical tags
-  primaryTag?: { tag: string; source: string; confidence: number };
-  secondaryTag?: { tag: string; source: string; confidence: number };
-  tertiaryTag?: { tag: string; source: string; confidence: number };
+  // Hierarchical tags - now supporting multiclass (arrays)
+  primaryTags: Array<{ tag: string; source: string; confidence: number }>;
+  secondaryTags: Array<{ tag: string; source: string; confidence: number }>;
+  tertiaryTags: Array<{ tag: string; source: string; confidence: number }>;
 }
 
 export function transformBackendDocument(processedDoc: BackendProcessedDocument): Document {
@@ -391,10 +391,10 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
   const modelGeneratedTags: Array<{ tag: string; score: number; isConfirmed: boolean }> = [];
   const userAddedTags: string[] = [];
 
-  // Extract hierarchical tags from new JSONB format
-  let primaryTag: { tag: string; source: string; confidence: number } | undefined;
-  let secondaryTag: { tag: string; source: string; confidence: number } | undefined;
-  let tertiaryTag: { tag: string; source: string; confidence: number } | undefined;
+  // Extract hierarchical tags from new JSONB format - supporting multiclass (arrays)
+  const primaryTags: Array<{ tag: string; source: string; confidence: number }> = [];
+  const secondaryTags: Array<{ tag: string; source: string; confidence: number }> = [];
+  const tertiaryTags: Array<{ tag: string; source: string; confidence: number }> = [];
 
   // Process the new JSONB confirmed_tags structure
   const processConfirmedTags = (confirmedTagsObj: any): string[] => {
@@ -415,31 +415,25 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
 
     console.log('🆕 [API Transform] Found tags array:', tagsArray);
 
-    // Process hierarchical tags from JSONB format
+    // Process hierarchical tags from JSONB format - now supporting multiple tags per level
     tagsArray.forEach((tagObj: any) => {
       console.log('🔍 [API Transform] Processing tag object:', tagObj);
 
+      const tagData = {
+        tag: tagObj.tag,
+        source: tagObj.source || 'unknown',
+        confidence: tagObj.confidence || 0
+      };
+
       if (tagObj.level === 'primary') {
-        primaryTag = {
-          tag: tagObj.tag,
-          source: tagObj.source || 'unknown',
-          confidence: tagObj.confidence || 0
-        };
-        console.log('🔵 [API Transform] Found primary tag:', primaryTag);
+        primaryTags.push(tagData);
+        console.log('🔵 [API Transform] Added primary tag:', tagData);
       } else if (tagObj.level === 'secondary') {
-        secondaryTag = {
-          tag: tagObj.tag,
-          source: tagObj.source || 'unknown',
-          confidence: tagObj.confidence || 0
-        };
-        console.log('🟢 [API Transform] Found secondary tag:', secondaryTag);
+        secondaryTags.push(tagData);
+        console.log('🟢 [API Transform] Added secondary tag:', tagData);
       } else if (tagObj.level === 'tertiary') {
-        tertiaryTag = {
-          tag: tagObj.tag,
-          source: tagObj.source || 'unknown',
-          confidence: tagObj.confidence || 0
-        };
-        console.log('🟠 [API Transform] Found tertiary tag:', tertiaryTag);
+        tertiaryTags.push(tagData);
+        console.log('🟠 [API Transform] Added tertiary tag:', tagData);
       }
     });
 
@@ -473,9 +467,9 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
   console.log('📊 [API Transform] Final tag processing results:', {
     document_id: processedDoc.document_id,
     legacy_tags: tags,
-    primaryTag,
-    secondaryTag,
-    tertiaryTag,
+    primaryTags,
+    secondaryTags,
+    tertiaryTags,
     userAddedTags,
     modelGeneratedTags: modelGeneratedTags.length
   });
@@ -498,19 +492,19 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     status: processedDoc.status || "processed",
     modelGeneratedTags,
     userAddedTags,
-    // Hierarchical tags
-    primaryTag,
-    secondaryTag,
-    tertiaryTag,
+    // Hierarchical tags - now arrays supporting multiclass
+    primaryTags,
+    secondaryTags,
+    tertiaryTags,
   };
 
   console.log('✅ [API Transform] Transformed document:', {
     id: transformedDocument.id,
     name: transformedDocument.name,
     tags: transformedDocument.tags,
-    primaryTag: transformedDocument.primaryTag,
-    secondaryTag: transformedDocument.secondaryTag,
-    tertiaryTag: transformedDocument.tertiaryTag,
+    primaryTags: transformedDocument.primaryTags,
+    secondaryTags: transformedDocument.secondaryTags,
+    tertiaryTags: transformedDocument.tertiaryTags,
     userAddedTags: transformedDocument.userAddedTags
   });
 
