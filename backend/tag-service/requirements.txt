@@ -3,3 +3,4 @@ uvicorn
 supabase
 asyncpg
 python-dotenv==1.0.0
+pydantic
