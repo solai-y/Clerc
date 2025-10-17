@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
 import {
   Tag,
   CheckCircle,
@@ -25,7 +25,6 @@ import {
   TrendingUp,
   Eye,
   MessageSquare,
-  ArrowRight,
   AlertCircle,
   RefreshCw,
   X,
@@ -283,19 +282,24 @@ export function HierarchyBasedConfirmTagsModal({
 
   const tertiaryOptions = useMemo(() => {
     // Get all possible tertiary tags across all selected primary and secondary combinations
+    // Only include tertiaries where the secondary actually belongs to a selected primary
     const allTertiaryOptions = new Set<string>()
-    selectedPrimaryTags.forEach(primary => {
-      selectedSecondaryTags.forEach(secondary => {
+
+    selectedSecondaryTags.forEach(secondary => {
+      // Find which primary this secondary belongs to
+      selectedPrimaryTags.forEach(primary => {
         if (hierarchy[primary]?.[secondary]) {
           const tertiaries = hierarchy[primary][secondary]
           if (tertiaries.length > 0) {
             tertiaries.forEach(tertiary => allTertiaryOptions.add(tertiary))
           } else {
+            // If no tertiary options, the secondary itself is the tertiary
             allTertiaryOptions.add(secondary)
           }
         }
       })
     })
+
     return Array.from(allTertiaryOptions)
   }, [selectedPrimaryTags, selectedSecondaryTags, hierarchy])
 
