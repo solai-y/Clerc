@@ -146,6 +146,10 @@ async def predict(request: PredictRequest) -> Any:
                 "secondary": top_prediction.get('secondary'),
             }
 
+    # Include model_version if present in raw_result
+    if 'model_version' in raw_result:
+        transformed_result['model_version'] = raw_result['model_version']
+
     # Also include the raw multi-class predictions for the frontend
     return {
         "prediction": transformed_result,
