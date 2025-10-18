@@ -1,8 +1,10 @@
-flask
-werkzeug
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart
 joblib
 pandas
 numpy
 scikit-learn
 shap
-gunicorn
+httpx  # Required for FastAPI TestClient
+pytest>=8.2.0

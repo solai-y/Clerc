@@ -41,7 +41,7 @@ passed_tests=0
 
 # Run unit tests
 total_tests=$((total_tests + 1))
-if run_tests_in_container "Unit" "cd /app/tests && python unit/test_document_model.py"; then
+if run_tests_in_container "Unit" "cd /app/tests && python -m pytest unit/ -v"; then
     passed_tests=$((passed_tests + 1))
 fi
 
@@ -56,12 +56,37 @@ echo ""
 echo "🌐 Running E2E tests from host..."
 echo "--------------------------------------------------"
 cd tests
-total_tests=$((total_tests + 1))
-if python3 e2e/test_e2e.py; then
-    echo "✅ E2E tests: PASSED"
-    passed_tests=$((passed_tests + 1))
+
+# Check if pytest is available in host system
+if ! command -v python3 &> /dev/null || ! python3 -c "import pytest" &> /dev/null; then
+    echo "⚠️  pytest not available on host system"
+    echo "Running E2E tests individually with python3..."
+    
+    total_tests=$((total_tests + 5))  # 5 E2E test files
+    e2e_passed=0
+    
+    for test_file in e2e/*.py; do
+        if [ -f "$test_file" ]; then
+            echo "Running $test_file..."
+            if python3 "$test_file"; then
+                echo "✅ $(basename $test_file): PASSED"
+                e2e_passed=$((e2e_passed + 1))
+            else
+                echo "❌ $(basename $test_file): FAILED"
+            fi
+        fi
+    done
+    
+    passed_tests=$((passed_tests + e2e_passed))
+    echo "E2E Results: $e2e_passed/5 tests passed"
 else
-    echo "❌ E2E tests: FAILED"
+    total_tests=$((total_tests + 1))
+    if python3 -m pytest e2e/ -v; then
+        echo "✅ E2E tests: PASSED"
+        passed_tests=$((passed_tests + 1))
+    else
+        echo "❌ E2E tests: FAILED"
+    fi
 fi
 
 echo ""

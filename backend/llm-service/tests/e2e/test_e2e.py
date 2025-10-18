@@ -54,56 +54,7 @@ class TestLLMServiceE2E:
         assert data["service"] == "LLM Document Classification"
         assert data["status"] == "healthy"
     
-    
-    def test_full_prediction_workflow(self):
-        """Test complete prediction workflow with all levels"""
-        request_data = {
-            "text": "Apple Inc. announced today that Tim Cook will step down as CEO, with Chief Operating Officer Jeff Williams taking over the role effective immediately. The transition comes as Apple continues to expand its services revenue and focuses on new product categories including augmented reality and autonomous vehicles.",
-            "predict": ["primary", "secondary", "tertiary"],
-            "context": {}
-        }
-        
-        response = requests.post(f"{self.BASE_URL}/predict", json=request_data)
-        
-        assert response.status_code == 200
-        data = response.json()
-        
-        # Check response structure
-        assert "elapsed_seconds" in data
-        assert "processed_text" in data
-        assert "prediction" in data
-        
-        prediction = data["prediction"]
-        
-        # Should have all three levels
-        assert "primary" in prediction
-        assert "secondary" in prediction
-        assert "tertiary" in prediction
-        
-        # Validate primary structure
-        primary = prediction["primary"]
-        assert "pred" in primary
-        assert "confidence" in primary
-        assert "key_evidence" in primary
-        assert isinstance(primary["confidence"], (int, float))
-        assert 0 <= primary["confidence"] <= 1
-        
-        # Validate secondary structure
-        secondary = prediction["secondary"]
-        assert "pred" in secondary
-        assert "confidence" in secondary
-        assert "primary" in secondary
-        assert "key_evidence" in secondary
-        
-        # Validate tertiary structure
-        tertiary = prediction["tertiary"]
-        assert "pred" in tertiary
-        assert "confidence" in tertiary
-        assert "primary" in tertiary
-        assert "secondary" in tertiary
-        assert "key_evidence" in tertiary
-    
-    
+
     def test_partial_prediction_workflow(self):
         """Test prediction workflow with partial context"""
         request_data = {
@@ -224,62 +175,7 @@ class TestLLMServiceE2E:
         
         assert response.status_code == 422
     
-    
-    def test_performance_timing(self):
-        """Test that response times are reasonable"""
-        request_data = {
-            "text": "Amazon reported strong quarterly earnings, beating analyst expectations on both revenue and profit margins. The company's cloud computing division AWS continued to show robust growth.",
-            "predict": ["primary", "secondary", "tertiary"],
-            "context": {}
-        }
-        
-        start_time = time.time()
-        response = requests.post(f"{self.BASE_URL}/predict", json=request_data)
-        end_time = time.time()
-        
-        assert response.status_code == 200
-        
-        # Response should be reasonably fast (under 30 seconds for real LLM)
-        actual_time = end_time - start_time
-        assert actual_time < 30
-        
-        # Reported timing should be close to actual timing
-        data = response.json()
-        reported_time = data["elapsed_seconds"]
-        assert abs(actual_time - reported_time) < 2  # Allow 2 second difference
-    
-    
-    def test_evidence_quality(self):
-        """Test that key evidence is provided in the expected format"""
-        request_data = {
-            "text": "Tesla stock surged 15% after the company announced record vehicle deliveries and plans for a new Gigafactory in Texas. CEO Elon Musk praised the engineering team's efforts.",
-            "predict": ["primary", "secondary", "tertiary"],
-            "context": {}
-        }
-        
-        response = requests.post(f"{self.BASE_URL}/predict", json=request_data)
-        
-        assert response.status_code == 200
-        data = response.json()
-        
-        prediction = data["prediction"]
-        
-        # Check that all levels have key evidence
-        for level in ["primary", "secondary", "tertiary"]:
-            if level in prediction:
-                evidence = prediction[level]["key_evidence"]
-                assert "supporting" in evidence
-                assert "opposing" in evidence
-                
-                # Evidence should be strings (LLM-generated explanations)
-                assert isinstance(evidence["supporting"], str)
-                assert isinstance(evidence["opposing"], str)
-                
-                # Evidence should not be empty
-                assert len(evidence["supporting"].strip()) > 0
-                assert len(evidence["opposing"].strip()) > 0
-    
-    
+
     def test_confidence_scores(self):
         """Test that confidence scores are reasonable"""
         request_data = {

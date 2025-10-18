@@ -63,111 +63,185 @@ class PredictionService:
             logger.error(f"Prediction failed: {str(e)}")
             raise
     
-    def _process_claude_result(self, claude_result: Dict[str, Any], 
+    def _process_claude_result(self, claude_result: Dict[str, Any],
                               predict_levels: List[str], context: Dict[str, str],
                               text: str) -> Dict[str, Any]:
         """
-        Process Claude's result and format it according to AI service format
-        
+        Process Claude's result and format it according to AI service format (multi-label support)
+
         Args:
-            claude_result: Raw result from Claude
+            claude_result: Raw result from Claude (now with arrays per level)
             predict_levels: Levels that were requested
             context: Context provided in request
             text: Original document text
-            
+
         Returns:
-            Formatted prediction response
+            Formatted prediction response with arrays
         """
         result = {}
-        
-        # Extract predictions from Claude result
+
+        # Extract predictions from Claude result (now expects arrays)
         predictions = self._extract_predictions(claude_result, predict_levels, context)
-        
-        # Validate and fix predictions
-        validated_predictions = self.validator.validate_and_fix_prediction(predictions)
-        
-        # Generate response for each level
-        if "primary" in predict_levels and "primary" in validated_predictions:
-            result["primary"] = self._create_prediction_level(
-                validated_predictions["primary"],
-                claude_result.get("confidence_primary", 0.85),
-                text,
+
+        # Process each level - return single best prediction per level (not arrays)
+        # Only add levels that were actually requested and have valid predictions
+        if "primary" in predict_levels and "primary" in predictions:
+            primary_list = self._create_prediction_levels(
+                predictions["primary"],
                 level="primary",
-                reasoning=claude_result.get("reasoning")
+                context=context
             )
-        
-        if "secondary" in predict_levels and "secondary" in validated_predictions:
-            result["secondary"] = self._create_prediction_level(
-                validated_predictions["secondary"],
-                claude_result.get("confidence_secondary", 0.80),
-                text,
+            # Only add to result if we got a valid prediction
+            if primary_list:
+                result["primary"] = primary_list[0]
+
+        if "secondary" in predict_levels and "secondary" in predictions:
+            secondary_list = self._create_prediction_levels(
+                predictions["secondary"],
                 level="secondary",
-                primary=validated_predictions.get("primary") or context.get("primary"),
-                reasoning=claude_result.get("reasoning")
+                context={
+                    **context,
+                    "primary": result.get("primary", {}).get("pred") if result.get("primary") else context.get("primary")
+                }
             )
-        
-        if "tertiary" in predict_levels and "tertiary" in validated_predictions:
-            result["tertiary"] = self._create_prediction_level(
-                validated_predictions["tertiary"],
-                claude_result.get("confidence_tertiary", 0.75),
-                text,
+            # Only add to result if we got a valid prediction
+            if secondary_list:
+                result["secondary"] = secondary_list[0]
+
+        if "tertiary" in predict_levels and "tertiary" in predictions:
+            tertiary_list = self._create_prediction_levels(
+                predictions["tertiary"],
                 level="tertiary",
-                primary=validated_predictions.get("primary") or context.get("primary"),
-                secondary=validated_predictions.get("secondary") or context.get("secondary"),
-                reasoning=claude_result.get("reasoning")
+                context={
+                    **context,
+                    "primary": result.get("primary", {}).get("pred") if result.get("primary") else context.get("primary"),
+                    "secondary": result.get("secondary", {}).get("pred") if result.get("secondary") else context.get("secondary")
+                }
             )
-        
+            # Only add to result if we got a valid prediction
+            if tertiary_list:
+                result["tertiary"] = tertiary_list[0]
+
         return result
     
-    def _extract_predictions(self, claude_result: Dict[str, Any], 
-                            predict_levels: List[str], context: Dict[str, str]) -> Dict[str, str]:
-        """Extract predictions from Claude result"""
+    def _extract_predictions(self, claude_result: Dict[str, Any],
+                            predict_levels: List[str], context: Dict[str, str]) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Extract predictions from Claude result and convert to list of dicts format
+
+        Claude can return two formats:
+        1. Array format (new): {"primary": [{"tag": "News", "confidence": 0.9, "reasoning": "..."}]}
+        2. Flat format (legacy): {"primary": "News", "confidence_primary": 0.9, "reasoning": "..."}
+
+        We normalize both to the array format.
+        """
         predictions = {}
-        
-        # Add context to predictions
-        predictions.update(context)
-        
-        # Extract from Claude result
-        if "primary" in predict_levels and "primary" in claude_result:
-            predictions["primary"] = claude_result["primary"]
-        
-        if "secondary" in predict_levels and "secondary" in claude_result:
-            predictions["secondary"] = claude_result["secondary"]
-        
-        if "tertiary" in predict_levels and "tertiary" in claude_result:
-            predictions["tertiary"] = claude_result["tertiary"]
-        
+
+        # Add context to predictions (keep as-is for string context)
+        for key, value in context.items():
+            if isinstance(value, str):
+                predictions[key] = value
+
+        # Extract from Claude result and convert to expected format
+        for level in ["primary", "secondary", "tertiary"]:
+            if level not in predict_levels or level not in claude_result:
+                continue
+
+            level_data = claude_result[level]
+
+            # If already in array format, use as-is
+            if isinstance(level_data, list):
+                predictions[level] = level_data
+            # If in flat format, convert to array
+            elif isinstance(level_data, str):
+                # Legacy flat format: {"primary": "News", "confidence_primary": 0.9}
+                tag = level_data
+                confidence = claude_result.get(f"confidence_{level}", 0.0)
+                reasoning = claude_result.get("reasoning", "No reasoning provided")
+
+                predictions[level] = [{
+                    "tag": tag,
+                    "confidence": confidence,
+                    "reasoning": reasoning
+                }]
+            # If it's a dict, convert to array with single item
+            elif isinstance(level_data, dict):
+                predictions[level] = [level_data]
+
         return predictions
     
-    def _create_prediction_level(self, prediction: str, confidence: float, text: str,
-                               level: str, primary: str = None, secondary: str = None, 
-                               reasoning: str = None) -> Dict[str, Any]:
+    def _create_prediction_levels(self, predictions: List[Dict[str, Any]],
+                                 level: str, context: Dict[str, str]) -> List[Dict[str, Any]]:
         """
-        Create a prediction level response in AI service format
-        
+        Create prediction level responses in AI service format (multi-label support)
+
         Args:
-            prediction: The predicted tag
-            confidence: Confidence score
-            text: Original document text  
+            predictions: List of predictions from Claude (each with tag, confidence, reasoning)
             level: Current level (primary, secondary, tertiary)
-            primary: Primary context (for secondary/tertiary)
-            secondary: Secondary context (for tertiary)
-            reasoning: Claude's reasoning for the classification
-            
+            context: Context dictionary with primary/secondary values
+
         Returns:
-            Formatted prediction level
+            List of formatted prediction levels matching AI service format
         """
-        result = {
-            "pred": prediction,
-            "confidence": confidence,
-            "reasoning": reasoning or "No reasoning provided"
-        }
-        
-        # Add context references
-        if level in ["secondary", "tertiary"] and primary:
-            result["primary"] = primary
-        
-        if level == "tertiary" and secondary:
-            result["secondary"] = secondary
-        
-        return result
+        if not predictions or not isinstance(predictions, list):
+            logger.warning(f"No predictions or invalid format for level {level}")
+            return []
+
+        formatted_predictions = []
+
+        for pred_data in predictions:
+            # Extract fields from Claude's response
+            tag = pred_data.get("tag", "")
+            confidence = pred_data.get("confidence", 0.0)
+            reasoning = pred_data.get("reasoning", "No reasoning provided")
+
+            # Validate the tag exists in hierarchy
+            if not self._validate_tag(tag, level, context):
+                logger.warning(f"Invalid tag '{tag}' for level {level}, skipping")
+                continue
+
+            # Create formatted prediction
+            result = {
+                "pred": tag,
+                "confidence": confidence,
+                "reasoning": reasoning
+            }
+
+            # Add context references for secondary/tertiary
+            if level in ["secondary", "tertiary"] and context.get("primary"):
+                result["primary"] = context.get("primary")
+
+            if level == "tertiary" and context.get("secondary"):
+                result["secondary"] = context.get("secondary")
+
+            formatted_predictions.append(result)
+
+        return formatted_predictions
+
+    def _validate_tag(self, tag: str, level: str, context: Dict[str, str]) -> bool:
+        """
+        Validate that a tag is valid for the given level and context
+
+        Args:
+            tag: The tag to validate
+            level: The level (primary, secondary, tertiary)
+            context: Context with primary/secondary values
+
+        Returns:
+            True if valid, False otherwise
+        """
+        if level == "primary":
+            return self.validator.is_valid_primary(tag)
+        elif level == "secondary":
+            primary = context.get("primary")
+            if not primary:
+                return False
+            return self.validator.is_valid_secondary(primary, tag)
+        elif level == "tertiary":
+            primary = context.get("primary")
+            secondary = context.get("secondary")
+            if not primary or not secondary:
+                return False
+            return self.validator.is_valid_tertiary(primary, secondary, tag)
+
+        return False

@@ -329,31 +329,48 @@ export interface Document {
   status: string;
   modelGeneratedTags: Array<{ tag: string; score: number; isConfirmed: boolean }>;
   userAddedTags: string[];
-  primaryTag?: { tag: string; source: string; confidence: number };
-  secondaryTag?: { tag: string; source: string; confidence: number };
-  tertiaryTag?: { tag: string; source: string; confidence: number };
+  // Hierarchical tags - now supporting multiclass (arrays)
+  primaryTags: Array<{ tag: string; source: string; confidence: number }>;
+  secondaryTags: Array<{ tag: string; source: string; confidence: number }>;
+  tertiaryTags: Array<{ tag: string; source: string; confidence: number }>;
 }
 
 export function transformBackendDocument(processedDoc: BackendProcessedDocument): Document {
   const tags: string[] = [];
   const modelGeneratedTags: Array<{ tag: string; score: number; isConfirmed: boolean }> = [];
   const userAddedTags: string[] = [];
-  let primaryTag: { tag: string; source: string; confidence: number } | undefined;
-  let secondaryTag: { tag: string; source: string; confidence: number } | undefined;
-  let tertiaryTag: { tag: string; source: string; confidence: number } | undefined;
+
+  // Extract hierarchical tags from new JSONB format - supporting multiclass (arrays)
+  const primaryTags: Array<{ tag: string; source: string; confidence: number }> = [];
+  const secondaryTags: Array<{ tag: string; source: string; confidence: number }> = [];
+  const tertiaryTags: Array<{ tag: string; source: string; confidence: number }> = [];
 
   const processConfirmedTags = (confirmedTagsObj: any): string[] => {
     if (!confirmedTagsObj) return [];
     const tagsArray = confirmedTagsObj.confirmed_tags?.tags;
     if (!Array.isArray(tagsArray)) return [];
 
+    console.log('🆕 [API Transform] Found tags array:', tagsArray);
+
+    // Process hierarchical tags from JSONB format - now supporting multiple tags per level
     tagsArray.forEach((tagObj: any) => {
+      console.log('🔍 [API Transform] Processing tag object:', tagObj);
+
+      const tagData = {
+        tag: tagObj.tag,
+        source: tagObj.source || 'unknown',
+        confidence: tagObj.confidence || 0
+      };
+
       if (tagObj.level === 'primary') {
-        primaryTag = { tag: tagObj.tag, source: tagObj.source || 'unknown', confidence: tagObj.confidence || 0 };
+        primaryTags.push(tagData);
+        console.log('🔵 [API Transform] Added primary tag:', tagData);
       } else if (tagObj.level === 'secondary') {
-        secondaryTag = { tag: tagObj.tag, source: tagObj.source || 'unknown', confidence: tagObj.confidence || 0 };
+        secondaryTags.push(tagData);
+        console.log('🟢 [API Transform] Added secondary tag:', tagData);
       } else if (tagObj.level === 'tertiary') {
-        tertiaryTag = { tag: tagObj.tag, source: tagObj.source || 'unknown', confidence: tagObj.confidence || 0 };
+        tertiaryTags.push(tagData);
+        console.log('🟠 [API Transform] Added tertiary tag:', tagData);
       }
     });
 
@@ -381,11 +398,21 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     if (!tags.includes(ct)) tags.push(ct);
   });
 
+  console.log('📊 [API Transform] Final tag processing results:', {
+    document_id: processedDoc.document_id,
+    legacy_tags: tags,
+    primaryTags,
+    secondaryTags,
+    tertiaryTags,
+    userAddedTags,
+    modelGeneratedTags: modelGeneratedTags.length
+  });
+
   const sizeEstimate = processedDoc.raw_documents?.file_size
     ? formatFileSize(processedDoc.raw_documents.file_size)
     : "Size unavailable";
 
-  return {
+  const transformedDocument = {
     id: processedDoc.document_id.toString(),
     name: processedDoc.raw_documents?.document_name || "[Document name unavailable]",
     uploadDate: processedDoc.raw_documents?.upload_date.split("T")[0] || "[Date unavailable]",
@@ -399,10 +426,23 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     status: processedDoc.status || "processed",
     modelGeneratedTags,
     userAddedTags,
-    primaryTag,
-    secondaryTag,
-    tertiaryTag,
+    // Hierarchical tags - now arrays supporting multiclass
+    primaryTags,
+    secondaryTags,
+    tertiaryTags,
   };
+
+  console.log('✅ [API Transform] Transformed document:', {
+    id: transformedDocument.id,
+    name: transformedDocument.name,
+    tags: transformedDocument.tags,
+    primaryTags: transformedDocument.primaryTags,
+    secondaryTags: transformedDocument.secondaryTags,
+    tertiaryTags: transformedDocument.tertiaryTags,
+    userAddedTags: transformedDocument.userAddedTags
+  });
+
+  return transformedDocument;
 }
 
 function formatFileSize(bytes: number): string {

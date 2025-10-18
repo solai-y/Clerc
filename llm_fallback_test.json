@@ -1,0 +1,9 @@
+{
+  "text": "The board of directors discussed various operational matters and strategic initiatives during today's meeting. Some members raised concerns about market conditions. The company is exploring new opportunities in emerging sectors. Management provided updates on quarterly performance metrics without detailed financial figures. Several recommendations were made regarding potential investment areas, though no specific advice was given. The meeting concluded with plans to reconvene next month to review progress on these initiatives.",
+  "predict_levels": ["primary", "secondary", "tertiary"],
+  "confidence_thresholds": {
+    "primary": 0.90,
+    "secondary": 0.90,
+    "tertiary": 0.90
+  }
+}

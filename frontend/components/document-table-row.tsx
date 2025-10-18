@@ -17,11 +17,11 @@ export function DocumentTableRow({ document, onViewDetails }: DocumentTableRowPr
     documentId: document.id,
     documentName: document.name,
     tags: document.tags,
-    primaryTag: document.primaryTag,
-    secondaryTag: document.secondaryTag,
-    tertiaryTag: document.tertiaryTag,
+    primaryTags: document.primaryTags,
+    secondaryTags: document.secondaryTags,
+    tertiaryTags: document.tertiaryTags,
     userAddedTags: document.userAddedTags,
-    hasHierarchicalTags: !!(document.primaryTag || document.secondaryTag || document.tertiaryTag)
+    hasHierarchicalTags: !!(document.primaryTags?.length || document.secondaryTags?.length || document.tertiaryTags?.length)
   });
 
   const formatDate = (dateString: string) => {
@@ -34,69 +34,78 @@ export function DocumentTableRow({ document, onViewDetails }: DocumentTableRowPr
 
   return (
     <TableRow className="hover:bg-gray-50">
-      <TableCell className="font-medium w-[400px]">
+      <TableCell className="font-medium w-[280px]">
         <div className="flex items-center space-x-2">
           <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
           <span className="truncate">{document.name}</span>
         </div>
       </TableCell>
-      <TableCell>
-        <div className="flex flex-col gap-1">
-          {/* Primary Tag */}
-          {document.primaryTag && (
-            <div className="flex items-center gap-1">
-              <Badge variant="secondary" className="bg-blue-50 text-blue-800 hover:bg-blue-100">
-                <span className="w-2 h-2 rounded-full bg-blue-500 mr-1"></span>
-                {document.primaryTag.tag}
+
+      {/* Primary Tags Column */}
+      <TableCell className="w-[140px]">
+        <div className="flex flex-wrap gap-1">
+          {document.primaryTags && document.primaryTags.length > 0 ? (
+            document.primaryTags.map((tagData, index) => (
+              <Badge
+                key={`primary-${index}`}
+                variant="secondary"
+                className="bg-blue-50 text-blue-800 hover:bg-blue-100 text-xs"
+              >
+                {tagData.tag}
               </Badge>
-            </div>
-          )}
-
-          {/* Secondary Tag */}
-          {document.secondaryTag && (
-            <div className="flex items-center gap-1">
-              <Badge variant="secondary" className="bg-green-50 text-green-800 hover:bg-green-100">
-                <span className="w-2 h-2 rounded-full bg-green-500 mr-1"></span>
-                {document.secondaryTag.tag}
-              </Badge>
-            </div>
-          )}
-
-          {/* Tertiary Tag */}
-          {document.tertiaryTag && (
-            <div className="flex items-center gap-1">
-              <Badge variant="secondary" className="bg-orange-50 text-orange-800 hover:bg-orange-100">
-                <span className="w-2 h-2 rounded-full bg-orange-500 mr-1"></span>
-                {document.tertiaryTag.tag}
-              </Badge>
-            </div>
-          )}
-
-          {/* No tags message if none found */}
-          {!document.primaryTag && !document.secondaryTag && !document.tertiaryTag && (!document.userAddedTags || document.userAddedTags.length === 0) && (
-            <div className="text-gray-400 italic text-sm">No tags assigned</div>
-          )}
-
-          {/* User Added Tags */}
-          {document.userAddedTags && document.userAddedTags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1">
-              {document.userAddedTags.map((tag, index) => (
-                <Badge key={`user-${index}`} variant="outline" className="bg-yellow-50 text-yellow-800 border-yellow-200">
-                  {tag}
-                </Badge>
-              ))}
-            </div>
+            ))
+          ) : (
+            <span className="text-gray-400 italic text-xs">-</span>
           )}
         </div>
       </TableCell>
-      <TableCell>
-        <div className="flex items-center space-x-1 text-gray-600">
+
+      {/* Secondary Tags Column */}
+      <TableCell className="w-[140px]">
+        <div className="flex flex-wrap gap-1">
+          {document.secondaryTags && document.secondaryTags.length > 0 ? (
+            document.secondaryTags.map((tagData, index) => (
+              <Badge
+                key={`secondary-${index}`}
+                variant="secondary"
+                className="bg-green-50 text-green-800 hover:bg-green-100 text-xs"
+              >
+                {tagData.tag}
+              </Badge>
+            ))
+          ) : (
+            <span className="text-gray-400 italic text-xs">-</span>
+          )}
+        </div>
+      </TableCell>
+
+      {/* Tertiary Tags Column */}
+      <TableCell className="w-[140px]">
+        <div className="flex flex-wrap gap-1">
+          {document.tertiaryTags && document.tertiaryTags.length > 0 ? (
+            document.tertiaryTags.map((tagData, index) => (
+              <Badge
+                key={`tertiary-${index}`}
+                variant="secondary"
+                className="bg-orange-50 text-orange-800 hover:bg-orange-100 text-xs"
+              >
+                {tagData.tag}
+              </Badge>
+            ))
+          ) : (
+            <span className="text-gray-400 italic text-xs">-</span>
+          )}
+        </div>
+      </TableCell>
+
+      <TableCell className="w-[120px]">
+        <div className="flex items-center space-x-1 text-gray-600 text-sm">
           <Calendar className="w-4 h-4" />
           <span>{formatDate(document.uploadDate)}</span>
         </div>
       </TableCell>
-      <TableCell>{document.size}</TableCell>
-      <TableCell>
+      <TableCell className="w-[80px] text-sm">{document.size}</TableCell>
+      <TableCell className="w-[130px]">
         <Button
           size="sm"
           variant="outline"
@@ -104,7 +113,7 @@ export function DocumentTableRow({ document, onViewDetails }: DocumentTableRowPr
           className="border-blue-200 text-blue-700 hover:bg-blue-50"
         >
           <Eye className="w-4 h-4 mr-1" />
-          View Details
+          Details
         </Button>
       </TableCell>
     </TableRow>
