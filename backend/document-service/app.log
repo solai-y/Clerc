@@ -1,0 +1,12 @@
+2025-10-18 14:07:44,960 - services.database - INFO - Database connection initialized
+2025-10-18 14:07:44,962 - app - INFO - Document service initialized successfully
+2025-10-18 14:07:44,972 - app - INFO - POST /documents - testclient
+2025-10-18 14:07:44,974 - routes.documents - INFO - POST /documents - Request from testclient
+2025-10-18 14:07:45,084 - httpx - INFO - HTTP Request: POST https://yzglzhrvzzrpgrpeegqh.supabase.co/rest/v1/raw_documents "HTTP/1.1 201 Created"
+2025-10-18 14:07:45,091 - services.database - INFO - Created document with ID: None
+2025-10-18 14:07:45,092 - routes.documents - INFO - Successfully created document with ID: None
+2025-10-18 14:07:45,093 - app - INFO - Response: 201 - POST /documents
+2025-10-18 14:07:45,096 - httpx - INFO - HTTP Request: POST http://testserver/documents "HTTP/1.1 201 Created"
+2025-10-18 14:07:45,101 - app - INFO - POST /documents/processed - testclient
+2025-10-18 14:07:45,103 - app - INFO - Response: 400 - POST /documents/processed
+2025-10-18 14:07:45,106 - httpx - INFO - HTTP Request: POST http://testserver/documents/processed "HTTP/1.1 400 Bad Request"

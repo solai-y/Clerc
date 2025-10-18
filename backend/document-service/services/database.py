@@ -456,7 +456,7 @@ class DatabaseService:
                 'model_id': document_data.get('model_id'),
                 'threshold_pct': document_data.get('threshold_pct', 60),
                 'suggested_tags': document_data.get('suggested_tags'),
-                'confirmed_tags': [],  # Empty array (or JSONB in your schema)
+                'confirmed_tags': None,  # JSONB field - start as None
                 'user_added_labels': [],  # Empty array
                 'user_removed_tags': [],  # Empty array
                 'user_reviewed': False,
