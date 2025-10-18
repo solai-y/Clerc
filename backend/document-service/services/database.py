@@ -51,7 +51,10 @@ class DatabaseService:
         sort_by: SortBy = None,          # "name" | "date" | "size"
         sort_order: SortOrder = None,    # "asc" | "desc"
         limit: Optional[int] = None,
-        offset: Optional[int] = None
+        offset: Optional[int] = None,
+        primary_tags: Optional[List[str]] = None,
+        secondary_tags: Optional[List[str]] = None,
+        tertiary_tags: Optional[List[str]] = None
     ) -> Tuple[List[Dict], Optional[str]]:
         """
         List processed_documents joined with raw_documents, applying server-side
@@ -63,7 +66,8 @@ class DatabaseService:
         self.logger.debug(
             "[DB] query_documents params: "
             f"search={search!r}, status={status!r}, company_id={company_id!r}, "
-            f"sort_by={sort_by!r}, sort_order={sort_order!r}, limit={limit!r}, offset={offset!r}"
+            f"sort_by={sort_by!r}, sort_order={sort_order!r}, limit={limit!r}, offset={offset!r}, "
+            f"primary_tags={primary_tags}, secondary_tags={secondary_tags}, tertiary_tags={tertiary_tags}"
         )
 
         # Join selector: use INNER join if searching on related table so PostgREST can filter
@@ -97,6 +101,44 @@ class DatabaseService:
                 )
             """
             self.logger.debug("[DB] Using LEFT join (no search)")
+
+        # If tag filters are present, use Python-side filtering (JSONB queries are complex in PostgREST)
+        has_tag_filters = (primary_tags and len(primary_tags) > 0) or \
+                         (secondary_tags and len(secondary_tags) > 0) or \
+                         (tertiary_tags and len(tertiary_tags) > 0)
+
+        if has_tag_filters:
+            self.logger.debug("[DB] Tag filters present, using Python-side filtering")
+            try:
+                # Fetch all documents (or a large window)
+                fetch_limit = 1000  # Adjust based on your dataset size
+                response = self.supabase.table('processed_documents').select(join_selector).limit(fetch_limit).execute()
+
+                all_rows = response.data or []
+                self._attach_company_names_inplace(all_rows)
+
+                # Apply all filters in Python
+                filtered = self._filter_in_python(
+                    all_rows,
+                    search=search,
+                    status=status,
+                    company_id=company_id,
+                    primary_tags=primary_tags,
+                    secondary_tags=secondary_tags,
+                    tertiary_tags=tertiary_tags
+                )
+                self.logger.debug(f"[DB] Filtered rows with tags: {len(filtered)}")
+
+                # Sort and paginate
+                sorted_rows = self._sort_in_python(filtered, sort_by=sort_by, sort_order=sort_order)
+                paged = self._paginate_in_python(sorted_rows, limit=limit, offset=offset)
+
+                self.logger.info(f"Retrieved {len(paged)} processed documents (tag-filtered)")
+                return paged, None
+            except Exception as e:
+                error_msg = f"Failed to query documents with tag filters: {e}"
+                self.logger.error(error_msg)
+                return [], error_msg
 
         try:
             query = self.supabase.table('processed_documents').select(join_selector)
@@ -168,7 +210,15 @@ class DatabaseService:
                 all_rows = response.data or []
                 self._attach_company_names_inplace(all_rows)
 
-                filtered = self._filter_in_python(all_rows, search=search, status=status, company_id=company_id)
+                filtered = self._filter_in_python(
+                    all_rows,
+                    search=search,
+                    status=status,
+                    company_id=company_id,
+                    primary_tags=primary_tags,
+                    secondary_tags=secondary_tags,
+                    tertiary_tags=tertiary_tags
+                )
                 self.logger.debug(f"[DB] Fallback filtered rows: {len(filtered)}")
 
                 sorted_rows = self._sort_in_python(filtered, sort_by=sort_by, sort_order=sort_order)
@@ -182,12 +232,60 @@ class DatabaseService:
                 self.logger.error(error_msg)
                 return [], error_msg
     
-    def get_total_documents_count(self, search: Optional[str] = None, status: Optional[str] = None, company_id: Optional[int] = None) -> tuple[int, Optional[str]]:
+    def get_total_documents_count(
+        self,
+        search: Optional[str] = None,
+        status: Optional[str] = None,
+        company_id: Optional[int] = None,
+        primary_tags: Optional[List[str]] = None,
+        secondary_tags: Optional[List[str]] = None,
+        tertiary_tags: Optional[List[str]] = None
+    ) -> tuple[int, Optional[str]]:
         """Get total count of processed documents with optional filters (matches query_documents)."""
         self.logger.debug(
             "[DB] get_total_documents_count params: "
-            f"search={search!r}, status={status!r}, company_id={company_id!r}"
+            f"search={search!r}, status={status!r}, company_id={company_id!r}, "
+            f"primary_tags={primary_tags}, secondary_tags={secondary_tags}, tertiary_tags={tertiary_tags}"
         )
+        # If tag filters are present, use Python-side counting
+        has_tag_filters = (primary_tags and len(primary_tags) > 0) or \
+                         (secondary_tags and len(secondary_tags) > 0) or \
+                         (tertiary_tags and len(tertiary_tags) > 0)
+
+        if has_tag_filters:
+            self.logger.debug("[DB] Tag filters present in count, using Python-side counting")
+            try:
+                response = self.supabase.table('processed_documents').select("""
+                    *,
+                    raw_documents(
+                        document_name,
+                        document_type,
+                        link,
+                        uploaded_by,
+                        upload_date,
+                        file_size,
+                        file_hash,
+                        status
+                    )
+                """).limit(1000).execute()
+                rows = response.data or []
+                filtered = self._filter_in_python(
+                    rows,
+                    search=search,
+                    status=status,
+                    company_id=company_id,
+                    primary_tags=primary_tags,
+                    secondary_tags=secondary_tags,
+                    tertiary_tags=tertiary_tags
+                )
+                count = len(filtered)
+                self.logger.info(f"Total processed documents count (tag-filtered): {count}")
+                return count, None
+            except Exception as e:
+                error_msg = f"Failed to get processed documents count with tag filters: {str(e)}"
+                self.logger.error(error_msg)
+                return 0, error_msg
+
         try:
             # If searching on related field, use inner join in select so ilike works
             if search:
@@ -196,14 +294,14 @@ class DatabaseService:
                 select_expr = "process_id"
 
             query = self.supabase.table('processed_documents').select(select_expr, count="exact")
-            
+
             if status:
                 query = query.eq('status', status)
             if company_id:
                 query = query.eq('company', company_id)
             if search:
                 query = query.ilike('raw_documents.document_name', f'%{search}%')
-            
+
             response = query.execute()
             total_count = response.count if response.count is not None else 0
             self.logger.info(f"Total processed documents count: {total_count} (server-side)")
@@ -226,7 +324,15 @@ class DatabaseService:
                     )
                 """).limit(1000).execute()
                 rows = response.data or []
-                filtered = self._filter_in_python(rows, search=search, status=status, company_id=company_id)
+                filtered = self._filter_in_python(
+                    rows,
+                    search=search,
+                    status=status,
+                    company_id=company_id,
+                    primary_tags=primary_tags,
+                    secondary_tags=secondary_tags,
+                    tertiary_tags=tertiary_tags
+                )
                 count = len(filtered)
                 self.logger.info(f"Total processed documents count (fallback): {count}")
                 return count, None
@@ -384,7 +490,10 @@ class DatabaseService:
         *,
         search: Optional[str],
         status: Optional[str],
-        company_id: Optional[int]
+        company_id: Optional[int],
+        primary_tags: Optional[List[str]] = None,
+        secondary_tags: Optional[List[str]] = None,
+        tertiary_tags: Optional[List[str]] = None
     ) -> List[Dict]:
         term = (search or "").strip().lower()
         out: List[Dict] = []
@@ -400,6 +509,39 @@ class DatabaseService:
                     name = ""
                 if term not in name.lower():
                     continue
+
+            # Tag filtering: extract tags from confirmed_tags JSONB structure
+            if primary_tags or secondary_tags or tertiary_tags:
+                confirmed = r.get('confirmed_tags', {})
+
+                # Handle nested structure: confirmed_tags.confirmed_tags.tags[]
+                if isinstance(confirmed, dict):
+                    tags_list = confirmed.get('confirmed_tags', {}).get('tags', [])
+                else:
+                    tags_list = []
+
+                # Skip documents with no tags
+                if not tags_list:
+                    continue
+
+                # Extract tags by level
+                doc_primary = {t['tag'] for t in tags_list if t.get('level') == 'primary'}
+                doc_secondary = {t['tag'] for t in tags_list if t.get('level') == 'secondary'}
+                doc_tertiary = {t['tag'] for t in tags_list if t.get('level') == 'tertiary'}
+
+                # OR logic within each tier, AND logic across tiers
+                if primary_tags and len(primary_tags) > 0:
+                    if not any(tag in doc_primary for tag in primary_tags):
+                        continue
+
+                if secondary_tags and len(secondary_tags) > 0:
+                    if not any(tag in doc_secondary for tag in secondary_tags):
+                        continue
+
+                if tertiary_tags and len(tertiary_tags) > 0:
+                    if not any(tag in doc_tertiary for tag in tertiary_tags):
+                        continue
+
             out.append(r)
         return out
 

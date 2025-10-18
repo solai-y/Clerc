@@ -33,10 +33,16 @@ def get_documents():
         sort_by = request.args.get('sort_by', default='date', type=str)        # name|date|size
         sort_order = request.args.get('sort_order', default='desc', type=str)  # asc|desc
 
-        logger.debug(
+        # Tag filter params (multi-select for each tier)
+        primary_tags = request.args.getlist('primary_tags[]')
+        secondary_tags = request.args.getlist('secondary_tags[]')
+        tertiary_tags = request.args.getlist('tertiary_tags[]')
+
+        logger.info(
             "[ROUTE] /documents params: "
             f"limit={limit}, offset={offset}, search={search!r}, status={status!r}, "
-            f"company_id={company_id}, sort_by={sort_by!r}, sort_order={sort_order!r}"
+            f"company_id={company_id}, sort_by={sort_by!r}, sort_order={sort_order!r}, "
+            f"primary_tags={primary_tags}, secondary_tags={secondary_tags}, tertiary_tags={tertiary_tags}"
         )
 
         # Basic validation
@@ -49,15 +55,20 @@ def get_documents():
         if sort_order not in (None, 'asc', 'desc'):
             return APIResponse.validation_error("sort_order must be 'asc' or 'desc'")
 
-        # Count with the SAME filters (incl. search)
+        # Count with the SAME filters (incl. search + tag filters)
         total_count, count_error = db_service.get_total_documents_count(
-            search=search, status=status, company_id=company_id
+            search=search,
+            status=status,
+            company_id=company_id,
+            primary_tags=primary_tags,
+            secondary_tags=secondary_tags,
+            tertiary_tags=tertiary_tags
         )
         if count_error:
             logger.error(f"[ROUTE] Count error: {count_error}")
             return APIResponse.internal_error("Failed to retrieve documents count")
 
-        # Query documents (unified: search + filter + sort + pagination)
+        # Query documents (unified: search + filter + sort + pagination + tag filters)
         documents, error = db_service.query_documents(
             search=search,
             status=status,
@@ -65,7 +76,10 @@ def get_documents():
             sort_by=sort_by,
             sort_order=sort_order,
             limit=limit,
-            offset=offset
+            offset=offset,
+            primary_tags=primary_tags,
+            secondary_tags=secondary_tags,
+            tertiary_tags=tertiary_tags
         )
         if error:
             logger.error(f"[ROUTE] Query error: {error}")
