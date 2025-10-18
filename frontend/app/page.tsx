@@ -13,8 +13,9 @@ import { DocumentPagination } from "@/components/document-pagination"
 import { UserMenu } from "@/components/auth/user-menu"
 import { useDocuments } from "@/hooks/use-documents"
 import { useAuth } from "@/contexts/auth-context"
-import { Document, apiClient } from "@/lib/api"
+import { Document, apiClient, BackendProcessedDocument } from "@/lib/api"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import FilterPanel, { TagFilters } from "@/components/filters/filter-panel"
 
 export default function HomePage() {
   // Auth state
@@ -26,7 +27,13 @@ export default function HomePage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [detailsDocument, setDetailsDocument] = useState<Document | null>(null)
-  const [filterTag, setFilterTag] = useState<string>("")
+
+  // Tag filters state
+  const [tagFilters, setTagFilters] = useState<TagFilters>({
+    primary: [],
+    secondary: [],
+    tertiary: [],
+  })
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -42,13 +49,13 @@ export default function HomePage() {
     return () => clearTimeout(t)
   }, [searchTerm])
 
-  // Reset to page 1 when search or sort changes
+  // Reset to page 1 when search, sort, or filters change
   useEffect(() => {
-    console.log("[page] 📄 reset page due to search/sort change")
+    console.log("[page] 📄 reset page due to search/sort/filter change")
     setCurrentPage(1)
-  }, [debouncedSearchTerm, sortBy, sortOrder])
+  }, [debouncedSearchTerm, sortBy, sortOrder, tagFilters])
 
-  // Fetch documents (server-side search + sort)
+  // Fetch documents (server-side search + sort + tag filtering)
   const {
     documents,
     pagination,
@@ -64,20 +71,61 @@ export default function HomePage() {
     offset: (currentPage - 1) * itemsPerPage,
     sortBy,
     sortOrder,
+    primaryTags: tagFilters.primary.length > 0 ? tagFilters.primary : undefined,
+    secondaryTags: tagFilters.secondary.length > 0 ? tagFilters.secondary : undefined,
+    tertiaryTags: tagFilters.tertiary.length > 0 ? tagFilters.tertiary : undefined,
   })
 
-  // Client-side TAG filter only (sorting handled server-side)
-  const filteredDocuments = useMemo(() => {
-    const filtered = !filterTag ? documents : documents.filter(d => d.tags.includes(filterTag))
-    console.log("[page] 🏷️ tag filter ->", { filterTag, before: documents.length, after: filtered.length })
-    return filtered
-  }, [documents, filterTag])
+  // Fetch ALL available tags (independent of current filters)
+  const [availableTags, setAvailableTags] = useState<{
+    primary: string[]
+    secondary: string[]
+    tertiary: string[]
+  }>({
+    primary: [],
+    secondary: [],
+    tertiary: [],
+  })
 
-  const availableTags = useMemo(() => {
-    const tags = new Set<string>()
-    documents.forEach((doc) => doc.tags.forEach((tag) => tags.add(tag)))
-    return Array.from(tags).sort()
-  }, [documents])
+  // Fetch all tags on mount (once) - independent of current filters
+  useEffect(() => {
+    const fetchAllTags = async () => {
+      try {
+        console.log('[page] 🏷️ Fetching all available tags...')
+        // Fetch a large sample of documents to get all possible tags
+        const { documents: allDocs } = await apiClient.getDocuments({ limit: 1000 })
+
+        const primary = new Set<string>()
+        const secondary = new Set<string>()
+        const tertiary = new Set<string>()
+
+        allDocs.forEach((doc) => {
+          // Extract from confirmed_tags structure
+          const confirmedTags = doc.confirmed_tags as any
+          if (confirmedTags?.confirmed_tags?.tags) {
+            confirmedTags.confirmed_tags.tags.forEach((tagObj: any) => {
+              if (tagObj.level === 'primary') primary.add(tagObj.tag)
+              if (tagObj.level === 'secondary') secondary.add(tagObj.tag)
+              if (tagObj.level === 'tertiary') tertiary.add(tagObj.tag)
+            })
+          }
+        })
+
+        const tagLists = {
+          primary: Array.from(primary).sort(),
+          secondary: Array.from(secondary).sort(),
+          tertiary: Array.from(tertiary).sort(),
+        }
+
+        console.log('[page] 🏷️ Available tags loaded:', tagLists)
+        setAvailableTags(tagLists)
+      } catch (err) {
+        console.error('[page] ❌ Failed to fetch available tags:', err)
+      }
+    }
+
+    fetchAllTags()
+  }, []) // Empty dependency array = runs once on mount
 
   const handleSort = (column: "name" | "date" | "size") => {
     if (sortBy === column) {
@@ -147,49 +195,37 @@ export default function HomePage() {
           </Alert>
         )}
 
-        {/* Search & Filters */}
-        <Card className="mb-6">
+        {/* Search */}
+        <Card className="mb-4">
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <Search className="w-5 h-5" />
-              <span>Search & Filter Documents</span>
+              <span>Search Documents</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col gap-4">
-              <div className="flex-1">
-                <Input
-                  placeholder="Search by document name..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full"
-                />
-              </div>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Select
-                  value={filterTag || "all-tags"}
-                  onValueChange={(value: string) => {
-                    const val = value === "all-tags" ? "" : value
-                    console.log("[page] 🏷️ tag select", { value, normalized: val })
-                    setFilterTag(val)
-                  }}
-                >
-                  <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="Filter by tag" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all-tags">All Tags</SelectItem>
-                    {availableTags.map((tag) => (
-                      <SelectItem key={tag} value={tag}>
-                        {tag}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            <Input
+              placeholder="Search by document name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full"
+            />
           </CardContent>
         </Card>
+
+        {/* Tag Filters */}
+        <div className="mb-6">
+          <FilterPanel
+            availableTags={availableTags}
+            selectedFilters={tagFilters}
+            onFilterChange={(filters) => {
+              console.log("[page] 🏷️ tag filters changed", filters)
+              setTagFilters(filters)
+            }}
+            filteredCount={pagination?.totalItems}
+            totalCount={pagination?.totalItems}
+          />
+        </div>
 
         {/* Documents Table */}
         <Card>
@@ -203,7 +239,7 @@ export default function HomePage() {
                     ? "Loading..."
                     : pagination
                     ? `Page ${pagination.currentPage} of ${pagination.totalPages} (${pagination.totalItems} total)`
-                    : `${filteredDocuments.length} documents`}
+                    : `${documents.length} documents`}
                 </span>
               </div>
 
@@ -253,7 +289,7 @@ export default function HomePage() {
             ) : (
               <>
                 <DocumentTable
-                  documents={filteredDocuments}
+                  documents={documents}
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={handleSort}
