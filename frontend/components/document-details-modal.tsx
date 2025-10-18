@@ -64,6 +64,8 @@ export function DocumentDetailsModal({
 }: DocumentDetailsModalProps) {
   const { toast } = useToast()
 
+  // Stabilize explanations prop to prevent infinite re-renders
+  const [propsExplanations] = useState(explanations)
 
   // Load hierarchy from JSON file
   const [hierarchy, setHierarchy] = useState<TagHierarchy>({})
@@ -111,6 +113,8 @@ export function DocumentDetailsModal({
         const explanationsResponse = await apiClient.getDocumentExplanations(parseInt(document.id))
         setDbExplanations(explanationsResponse)
 
+        console.log("🗄️ Database - predictions:", documentResponse.confirmed_tags)
+        console.log("🗄️ Database - explanations:", explanationsResponse)
 
       } catch (error) {
         console.error('Failed to fetch database data:', error)
@@ -129,13 +133,58 @@ export function DocumentDetailsModal({
     }
   }, [document.id, toast])
 
-  // Process prediction data into enhanced tags (using database data only)
+  // Process prediction data into enhanced tags (from database OR props)
   const enhancedTags = useMemo<EnhancedTag[]>(() => {
     const tags: EnhancedTag[] = []
     const processedTags = new Set<string>()
 
-    // First, process confirmed_tags with JSONB structure (priority for view details)
+    // Determine which explanations to use: database or props
+    const explanationsToUse = dbExplanations.length > 0 ? dbExplanations : propsExplanations
+
+    // First, process explanations to get the correct hierarchy levels and sources
+    if (explanationsToUse && explanationsToUse.length > 0) {
+      console.log("📊 Processing explanations for hierarchy:", explanationsToUse)
+
+      for (const explanation of explanationsToUse) {
+        // Handle both database format (predicted_tag, classification_level)
+        // and props format (tag, level)
+        const tagName = (explanation as any).predicted_tag || (explanation as any).tag
+        const tagLevel = (explanation as any).classification_level || (explanation as any).level
+        const tagSource = (explanation as any).source_service || (explanation as any).source
+        const tagConfidence = explanation.confidence || 0
+
+        console.log("🔍 Processing explanation:", {
+          tagName,
+          tagLevel,
+          tagSource,
+          tagConfidence
+        })
+
+        if (tagName && tagLevel && !processedTags.has(tagName)) {
+          processedTags.add(tagName)
+
+          // Use the actual classification level
+          const level = tagLevel as 'primary' | 'secondary' | 'tertiary'
+
+          const enhancedTag = {
+            tag: tagName,
+            confidence: tagConfidence,
+            source: tagSource as 'ai' | 'llm' | 'human',
+            level: level,
+            reasoning: explanation.reasoning || `${tagSource?.toUpperCase()} prediction`,
+            isConfirmed: true
+          }
+
+          console.log("✅ Adding enhanced tag:", enhancedTag)
+          tags.push(enhancedTag)
+        }
+      }
+    }
+
+    // Also process confirmed_tags directly (not just as fallback)
+    // This ensures we capture all tags even if explanations don't cover everything
     if (dbPredictions) {
+      console.log("📊 Processing database confirmed_tags:", dbPredictions)
 
       // Handle JSONB confirmed_tags structure: {confirmed_tags: {tags: [...]}}
       let confirmedTagsArray = [];
@@ -151,43 +200,24 @@ export function DocumentDetailsModal({
         if (confirmedTag.tag && !processedTags.has(confirmedTag.tag)) {
           processedTags.add(confirmedTag.tag)
 
-          tags.push({
+          const enhancedTag = {
             tag: confirmedTag.tag,
             confidence: confirmedTag.confidence || 1.0,
             source: (confirmedTag.source || 'human') as 'ai' | 'llm' | 'human',
             level: confirmedTag.level as 'primary' | 'secondary' | 'tertiary',
             reasoning: `${(confirmedTag.source || 'human').toUpperCase()} confirmed classification`,
             isConfirmed: true
-          })
-        }
-      }
-    }
-
-    // Fallback: if no confirmed tags, use explanations
-    if (tags.length === 0 && dbExplanations && dbExplanations.length > 0) {
-      for (const explanation of dbExplanations) {
-        if (explanation.predicted_tag && explanation.classification_level && !processedTags.has(explanation.predicted_tag)) {
-          processedTags.add(explanation.predicted_tag)
-
-          const level = explanation.classification_level as 'primary' | 'secondary' | 'tertiary'
-          const confidence = explanation.confidence || 0
-
-          const enhancedTag = {
-            tag: explanation.predicted_tag,
-            confidence: confidence,
-            source: explanation.source_service as 'ai' | 'llm',
-            level: level,
-            reasoning: explanation.reasoning || `${explanation.source_service?.toUpperCase()} prediction`,
-            isConfirmed: false
           }
 
+          console.log("✅ Adding confirmed tag:", enhancedTag)
           tags.push(enhancedTag)
         }
       }
     }
 
+    console.log("✅ Enhanced tags result:", tags)
     return tags
-  }, [dbPredictions, dbExplanations])
+  }, [dbPredictions, dbExplanations, propsExplanations])
 
   // State for multi-tag selection - arrays instead of single strings
   const [selectedPrimaryTags, setSelectedPrimaryTags] = useState<string[]>([])
@@ -698,26 +728,77 @@ export function DocumentDetailsModal({
             <TabsContent value="explanations" className="h-full overflow-y-auto mt-4">
               {(() => {
                 // Use database explanations if available, fallback to props explanations for SHAP data
-                const explanationData = dbExplanations.length > 0 ? dbExplanations : explanations
+                const explanationData = dbExplanations.length > 0 ? dbExplanations : propsExplanations
+
+                console.log("🔍 Raw explanations data:", explanationData)
+                console.log("🔍 Explanations length:", explanationData.length)
+                console.log("🔍 DB explanations:", dbExplanations)
+                console.log("🔍 Props explanations:", propsExplanations)
+
+                // Debug each explanation's service_response
+                explanationData.forEach((exp: any, idx: number) => {
+                  console.log(`🔍 Explanation ${idx}:`, {
+                    tag: exp.predicted_tag || exp.tag,
+                    source: exp.source_service || exp.source,
+                    service_response: exp.service_response,
+                    has_shap_explainability: !!exp.service_response?.shap_explainability,
+                    has_key_evidence: !!exp.service_response?.key_evidence,
+                    shap_data: exp.shap_data,
+                    full_response: exp.full_response
+                  })
+                })
 
                 // Filter out AI explanations that were overridden by LLM
                 const filteredExplanations = explanationData.filter((explanation: any) => {
                   return explanation.reasoning !== "AI model prediction (overridden by LLM)"
                 })
 
+                console.log("🔍 Filtered explanations:", filteredExplanations)
+
                 // Enhanced explanations with SHAP data extracted from backend service_response
                 const enhancedExplanations = filteredExplanations.map((explanation: any) => {
-                  // Extract SHAP data from service_response.shap_explainability (backend data)
+                  // Extract SHAP data from multiple possible locations
                   let shapData = null;
 
+                  // Check service_response.shap_explainability (database format)
                   if (explanation.service_response?.shap_explainability) {
                     shapData = explanation.service_response.shap_explainability;
                   }
+                  // Check service_response.key_evidence (alternative format)
+                  else if (explanation.service_response?.key_evidence) {
+                    shapData = explanation.service_response.key_evidence;
+                  }
+                  // Check direct shap_data property (props format from upload)
+                  else if (explanation.shap_data) {
+                    shapData = explanation.shap_data;
+                  }
+                  // Check full_response.key_evidence (another possible format)
+                  else if (explanation.full_response?.key_evidence) {
+                    shapData = explanation.full_response.key_evidence;
+                  }
 
+                  // Parse SHAP data if it's a string (from database)
+                  if (shapData && typeof shapData === 'string') {
+                    try {
+                      // Replace single quotes with double quotes for valid JSON
+                      const jsonString = shapData.replace(/'/g, '"');
+                      shapData = JSON.parse(jsonString);
+                      console.log('✅ Parsed SHAP data for', explanation.predicted_tag || explanation.tag, ':', shapData);
+                    } catch (e) {
+                      console.error('❌ Failed to parse SHAP data:', e, shapData);
+                      shapData = null;
+                    }
+                  }
+
+                  console.log('🧠 SHAP data for', explanation.predicted_tag || explanation.tag, ':', {
+                    shapData,
+                    service_response: explanation.service_response,
+                    raw_explanation: explanation
+                  });
 
                   return {
                     ...explanation,
-                    shap_data: shapData || explanation.shap_data
+                    shap_data: shapData
                   };
                 });
 
