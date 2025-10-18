@@ -1,5 +1,5 @@
 import pytest
-from flask.testing import FlaskClient
+from fastapi.testclient import TestClient
 import sys
 import os
 import json
@@ -10,15 +10,13 @@ from app import app
 
 @pytest.fixture
 def client():
-    print("\n[INFO] Setting up Flask test client...")
-    with app.test_client() as client:
-        yield client
-    print("[INFO] Flask test client teardown complete.")
+    print("\n[INFO] Setting up FastAPI test client...")
+    return TestClient(app)
 
 class TestMissingEndpoints:
     """Test suite for previously untested endpoints"""
     
-    def test_root_endpoint(self, client: FlaskClient):
+    def test_root_endpoint(self, client: TestClient):
         """Test the root endpoint GET /"""
         print("\n[TEST] Running GET / (root endpoint) test...")
         
@@ -26,7 +24,7 @@ class TestMissingEndpoints:
         print(f"[DEBUG] Response status: {response.status_code}")
         
         assert response.status_code == 200
-        data = response.get_json()
+        data = response.json()
         print(f"[DEBUG] Response data: {data}")
         
         # Check API response structure
@@ -45,7 +43,7 @@ class TestMissingEndpoints:
         
         print("[PASS] Root endpoint test completed successfully")
     
-    def test_update_document_status_valid(self, client: FlaskClient):
+    def test_update_document_status_valid(self, client: TestClient):
         """Test updating document status with valid data"""
         print("\n[TEST] Running PATCH /documents/{id}/status with valid data...")
         
@@ -57,14 +55,10 @@ class TestMissingEndpoints:
             "uploaded_by": None
         }
         
-        create_response = client.post(
-            '/documents',
-            data=json.dumps(create_data),
-            content_type='application/json'
-        )
+        create_response = client.post('/documents', json=create_data)
         
         # Handle creation failure gracefully
-        create_json = create_response.get_json()
+        create_json = create_response.json()
         if create_response.status_code != 201 or "data" not in create_json:
             print(f"[ERROR] Failed to create document for status test: {create_json}")
             pytest.skip("Cannot test status update without successful document creation")
@@ -75,14 +69,10 @@ class TestMissingEndpoints:
         # Test updating the status
         status_data = {"status": "processing"}
         
-        response = client.patch(
-            f'/documents/{document_id}/status',
-            data=json.dumps(status_data),
-            content_type='application/json'
-        )
+        response = client.patch(f'/documents/{document_id}/status', json=status_data)
         
         print(f"[DEBUG] Response status: {response.status_code}")
-        data = response.get_json()
+        data = response.json()
         print(f"[DEBUG] Response data: {data}")
         
         assert response.status_code == 200
@@ -91,7 +81,7 @@ class TestMissingEndpoints:
         
         # Verify the status was actually updated by fetching the document
         get_response = client.get(f'/documents/{document_id}')
-        get_data = get_response.get_json()
+        get_data = get_response.json()
         # Note: The actual status field might be in different location depending on data model
         
         print("[PASS] Document status updated successfully")
@@ -99,18 +89,14 @@ class TestMissingEndpoints:
         # Clean up - delete the test document
         client.delete(f'/documents/{document_id}')
     
-    def test_update_document_status_invalid_data(self, client: FlaskClient):
+    def test_update_document_status_invalid_data(self, client: TestClient):
         """Test updating document status with invalid data"""
         print("\n[TEST] Running PATCH /documents/{id}/status with invalid data...")
         
         # Test with missing status field
-        response = client.patch(
-            '/documents/1/status',
-            data=json.dumps({}),
-            content_type='application/json'
-        )
+        response = client.patch('/documents/1/status', json={})
         
-        data = response.get_json()
+        data = response.json()
         print(f"[DEBUG] Response status: {response.status_code}")
         print(f"[DEBUG] Response data: {data}")
         
@@ -120,20 +106,16 @@ class TestMissingEndpoints:
         
         print("[PASS] Validation error returned for missing status field")
     
-    def test_update_document_status_invalid_type(self, client: FlaskClient):
+    def test_update_document_status_invalid_type(self, client: TestClient):
         """Test updating document status with invalid data type"""
         print("\n[TEST] Running PATCH /documents/{id}/status with invalid data type...")
         
         # Test with non-string status
         status_data = {"status": 123}  # Should be string
         
-        response = client.patch(
-            '/documents/1/status',
-            data=json.dumps(status_data),
-            content_type='application/json'
-        )
+        response = client.patch('/documents/1/status', json=status_data)
         
-        data = response.get_json()
+        data = response.json()
         print(f"[DEBUG] Response status: {response.status_code}")
         
         assert response.status_code == 400
@@ -142,19 +124,15 @@ class TestMissingEndpoints:
         
         print("[PASS] Validation error returned for invalid status data type")
     
-    def test_update_document_status_nonexistent(self, client: FlaskClient):
+    def test_update_document_status_nonexistent(self, client: TestClient):
         """Test updating status for non-existent document"""
         print("\n[TEST] Running PATCH /documents/{id}/status for non-existent document...")
         
         status_data = {"status": "processing"}
         
-        response = client.patch(
-            '/documents/99999/status',
-            data=json.dumps(status_data),
-            content_type='application/json'
-        )
+        response = client.patch('/documents/99999/status', json=status_data)
         
-        data = response.get_json()
+        data = response.json()
         print(f"[DEBUG] Response status: {response.status_code}")
         
         assert response.status_code == 404

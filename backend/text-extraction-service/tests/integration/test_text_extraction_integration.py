@@ -14,7 +14,7 @@ class TestTextExtractionIntegration:
         response = client.get('/health')
 
         assert response.status_code == 200
-        data = response.get_json()
+        data = response.json()
 
         # Verify structure
         assert 'status' in data
@@ -118,29 +118,27 @@ class TestTextExtractionIntegration:
     def test_endpoint_with_invalid_json(self, client):
         """Test /extract-text with invalid JSON"""
         response = client.post('/extract-text',
-                              data='{"invalid json',
-                              content_type='application/json')
+                              content='{"invalid json',
+                              headers={"Content-Type": "application/json"})
 
         assert response.status_code == 400
 
     def test_endpoint_with_missing_field(self, client):
         """Test /extract-text with missing required field"""
         response = client.post('/extract-text',
-                              json={'wrong_field': 'value'},
-                              content_type='application/json')
+                              json={'wrong_field': 'value'})
 
         assert response.status_code == 400
-        data = response.get_json()
+        data = response.json()
         assert data['success'] is False
-        assert 'pdf_url is required' in data['error']
+        assert 'pdf_url' in data['error'].lower()
 
     def test_endpoint_with_invalid_url(self, client):
         """Test /extract-text with invalid URL"""
         response = client.post('/extract-text',
-                              json={'pdf_url': 'https://invalid-url-that-does-not-exist.com/file.pdf'},
-                              content_type='application/json')
+                              json={'pdf_url': 'https://invalid-url-that-does-not-exist.com/file.pdf'})
 
         assert response.status_code == 500
-        data = response.get_json()
+        data = response.json()
         assert data['success'] is False
         assert 'error' in data

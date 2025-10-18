@@ -10,6 +10,7 @@ import fitz  # PyMuPDF
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
 
 # Configure logging
@@ -237,12 +238,47 @@ async def extract_text(request: ExtractTextRequest):
 
     except Exception as e:
         logger.error(f"Text extraction failed: {str(e)}")
-        raise HTTPException(
+        return JSONResponse(
             status_code=500,
-            detail=f"Text extraction failed: {str(e)}"
+            content={
+                "success": False,
+                "error": f"Text extraction failed: {str(e)}"
+            }
         )
 
 # Custom exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors"""
+    errors = exc.errors()
+    if errors:
+        error = errors[0]
+        field = error.get('loc', [''])[-1] if error.get('loc') else 'field'
+        error_type = error.get('type', '')
+        
+        if error_type == 'missing':
+            message = f"Missing required field: {field}"
+        elif error_type == 'string_type':
+            message = f"{field} must be a string"
+        elif error_type == 'list_type':
+            message = f"{field} must be an array"
+        else:
+            error_msg = error.get('msg', '').lower()
+            if 'list' in error_msg or 'array' in error_msg:
+                message = f"{field} must be an array"
+            else:
+                message = "Validation failed"
+    else:
+        message = "Validation failed"
+    
+    return JSONResponse(
+        status_code=400,
+        content={
+            "success": False,
+            "error": message
+        }
+    )
+
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
     return JSONResponse(

@@ -3,6 +3,7 @@ import json
 from unittest.mock import Mock, patch, MagicMock
 import sys
 import os
+from fastapi.testclient import TestClient
 
 # Add the parent directory (which contains app.py) to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -11,11 +12,9 @@ from services.database import DatabaseService
 
 @pytest.fixture
 def client():
-    """Flask test client fixture"""
-    print("\n[INFO] Setting up Flask test client for tag operations...")
-    with app.test_client() as client:
-        yield client
-    print("[INFO] Flask test client teardown complete.")
+    """FastAPI test client fixture"""
+    print("\n[INFO] Setting up FastAPI test client for tag operations...")
+    return TestClient(app)
 
 @pytest.fixture
 def mock_db_service():
@@ -52,12 +51,11 @@ class TestTagUpdateOperations:
         
         response = client.patch(
             '/documents/123/tags',
-            data=json.dumps(tag_data),
-            content_type='application/json'
+            json=tag_data
         )
         
         print(f"[DEBUG] Response status: {response.status_code}")
-        data = response.get_json()
+        data = response.json()
         print(f"[DEBUG] Response data: {data}")
         
         assert response.status_code == 200
@@ -99,12 +97,11 @@ class TestTagUpdateOperations:
         
         response = client.patch(
             '/documents/123/tags',
-            data=json.dumps(tag_data),
-            content_type='application/json'
+            json=tag_data
         )
         
         assert response.status_code == 200
-        data = response.get_json()
+        data = response.json()
         assert data["status"] == "success"
         assert data["data"]["user_added_labels"] == ["custom-tag", "user-category"]
         
@@ -136,12 +133,11 @@ class TestTagUpdateOperations:
         
         response = client.patch(
             '/documents/123/tags',
-            data=json.dumps(tag_data),
-            content_type='application/json'
+            json=tag_data
         )
         
         assert response.status_code == 200
-        data = response.get_json()
+        data = response.json()
         assert data["status"] == "success"
 
         # Check confirmed_tags - can be list or JSONB structure
@@ -165,12 +161,11 @@ class TestTagUpdateOperations:
         
         response = client.patch(
             '/documents/123/tags',
-            data=json.dumps(tag_data),
-            content_type='application/json'
+            json=tag_data
         )
         
         print(f"[DEBUG] Response status: {response.status_code}")
-        data = response.get_json()
+        data = response.json()
         
         assert response.status_code == 400
         assert data["status"] == "error"
@@ -192,12 +187,11 @@ class TestTagUpdateOperations:
         
         response = client.patch(
             '/documents/123/tags',
-            data=json.dumps(tag_data),
-            content_type='application/json'
+            json=tag_data
         )
         
         assert response.status_code == 400
-        data = response.get_json()
+        data = response.json()
         assert data["status"] == "error"
         assert "must be an array" in data["message"]
         
@@ -215,12 +209,11 @@ class TestTagUpdateOperations:
         
         response = client.patch(
             '/documents/99999/tags',
-            data=json.dumps(tag_data),
-            content_type='application/json'
+            json=tag_data
         )
         
         assert response.status_code == 404
-        data = response.get_json()
+        data = response.json()
         assert data["status"] == "error"
         assert "not found" in data["message"].lower()
         
@@ -232,12 +225,12 @@ class TestTagUpdateOperations:
         
         response = client.patch(
             '/documents/123/tags',
-            data="invalid json",
-            content_type='application/json'
+            content="invalid json",
+            headers={"Content-Type": "application/json"}
         )
         
         assert response.status_code == 400
-        data = response.get_json()
+        data = response.json()
         assert data["status"] == "error"
         
         print("[PASS] Error returned for invalid JSON")
@@ -248,12 +241,11 @@ class TestTagUpdateOperations:
 
         response = client.patch(
             '/documents/123/tags',
-            data=json.dumps({}),
-            content_type='application/json'
+            json={}
         )
 
         assert response.status_code == 400
-        data = response.get_json()
+        data = response.json()
         assert data["status"] == "error"
         # Error message can be either "cannot be empty" or "at least one"
         assert "at least one" in data["message"].lower() or "cannot be empty" in data["message"].lower()
@@ -272,12 +264,11 @@ class TestTagUpdateOperations:
         
         response = client.patch(
             '/documents/123/tags',
-            data=json.dumps(tag_data),
-            content_type='application/json'
+            json=tag_data
         )
         
         assert response.status_code == 500
-        data = response.get_json()
+        data = response.json()
         assert data["status"] == "error"
         assert "failed to update" in data["message"].lower()
         
@@ -307,12 +298,11 @@ class TestTagUpdateOperations:
         
         response = client.patch(
             '/documents/123/tags',
-            data=json.dumps(tag_data),
-            content_type='application/json'
+            json=tag_data
         )
         
         assert response.status_code == 200
-        data = response.get_json()
+        data = response.json()
         assert data["status"] == "success"
         assert data["data"]["user_removed_tags"] == ["old-tag", "deprecated"]
         
@@ -341,12 +331,11 @@ class TestTagUpdateOperations:
         
         response = client.patch(
             '/documents/123/tags',
-            data=json.dumps(tag_data),
-            content_type='application/json'
+            json=tag_data
         )
         
         assert response.status_code == 200
-        data = response.get_json()
+        data = response.json()
         assert data["status"] == "success"
 
         # Check confirmed_tags (empty case) - can be list or JSONB structure
@@ -391,8 +380,7 @@ class TestTagValidation:
         
         response = client.patch(
             '/documents/123/tags',
-            data=json.dumps(tag_data),
-            content_type='application/json'
+            json=tag_data
         )
         
         assert response.status_code == 200
@@ -419,8 +407,7 @@ class TestTagValidation:
         
         response = client.patch(
             '/documents/123/tags',
-            data=json.dumps(tag_data),
-            content_type='application/json'
+            json=tag_data
         )
         
         assert response.status_code == 200

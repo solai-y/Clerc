@@ -51,7 +51,10 @@
       "Bash(wc:*)",
       "Bash(ls:*)",
       "Bash(for service in ai-service company-service s3-service text-extraction-service)",
-      "Bash(for service in ai-service company-service document-service llm-service prediction-service s3-service text-extraction-service)"
+      "Bash(for service in ai-service company-service document-service llm-service prediction-service s3-service text-extraction-service)",
+      "Bash(docker restart:*)",
+      "Bash(docker ps:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": []
   }

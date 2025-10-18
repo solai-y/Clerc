@@ -4,6 +4,7 @@ from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from dotenv import load_dotenv
 
 # Import custom modules
@@ -59,6 +60,36 @@ async def log_requests(request: Request, call_next):
     return response
 
 # Exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors"""
+    errors = exc.errors()
+    if errors:
+        # Create a more descriptive error message based on the validation error
+        error = errors[0]
+        field = error.get('loc', [''])[-1] if error.get('loc') else 'field'
+        error_type = error.get('type', '')
+        
+        if error_type == 'missing':
+            message = f"{field} field is required"
+        elif error_type == 'string_type':
+            message = f"{field} must be a string"
+        elif error_type == 'list_type':
+            message = f"{field} must be an array"
+        elif 'validation' in error_type:
+            message = f"Validation failed for {field}"
+        else:
+            # Look at the actual error message for more context
+            error_msg = error.get('msg', '').lower()
+            if 'list' in error_msg or 'array' in error_msg:
+                message = f"{field} must be an array"
+            else:
+                message = "Validation failed"
+    else:
+        message = "Validation failed"
+    
+    return APIResponse.error(message, 400, "VALIDATION_ERROR")
+
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
     """Handle 404 errors"""

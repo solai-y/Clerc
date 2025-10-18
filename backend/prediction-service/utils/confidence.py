@@ -8,64 +8,121 @@ logger = logging.getLogger(__name__)
 
 class ConfidenceEvaluator:
     """Evaluates confidence thresholds and determines LLM triggering"""
-    
+
     @staticmethod
-    def evaluate_thresholds(ai_predictions: Dict[str, Any], 
-                          thresholds: Dict[str, float], 
+    def prune_low_confidence_tags(ai_predictions: Dict[str, Any],
+                                   thresholds: Dict[str, float]) -> Dict[str, Any]:
+        """
+        Prune tags below confidence threshold from multi-label predictions
+
+        Args:
+            ai_predictions: AI service predictions with multi-label arrays
+            thresholds: Confidence thresholds per level
+
+        Returns:
+            Pruned predictions with only tags above threshold
+        """
+        pruned_predictions = {"prediction": {}}
+
+        for level in ["primary", "secondary", "tertiary"]:
+            level_predictions = ai_predictions.get("prediction", {}).get(level, [])
+            threshold = thresholds.get(level, 0.8)
+
+            if isinstance(level_predictions, list):
+                # Filter predictions that meet threshold
+                pruned = [
+                    pred for pred in level_predictions
+                    if pred.get("confidence", 0.0) >= threshold
+                ]
+                pruned_predictions["prediction"][level] = pruned
+
+                if pruned:
+                    logger.info(f"Level {level}: kept {len(pruned)}/{len(level_predictions)} tags above threshold {threshold}")
+                else:
+                    logger.info(f"Level {level}: no tags above threshold {threshold}, removed all {len(level_predictions)} predictions")
+            else:
+                pruned_predictions["prediction"][level] = []
+
+        # Copy over other fields
+        for key in ai_predictions:
+            if key != "prediction":
+                pruned_predictions[key] = ai_predictions[key]
+
+        return pruned_predictions
+
+    @staticmethod
+    def evaluate_thresholds(ai_predictions: Dict[str, Any],
+                          thresholds: Dict[str, float],
                           predict_levels: List[str]) -> Tuple[bool, str, List[str]]:
         """
-        Evaluate AI predictions against confidence thresholds
-        
+        Evaluate AI predictions against confidence thresholds for multi-label support
+
+        For multi-label predictions:
+        - If ALL tags in a level are below threshold (or level has no tags), trigger LLM
+        - This means the level has no confident predictions
+
         Args:
-            ai_predictions: AI service predictions
+            ai_predictions: AI service predictions with multi-label arrays
             thresholds: Confidence thresholds per level
             predict_levels: Requested prediction levels
-            
+
         Returns:
             Tuple of (needs_llm, trigger_level, levels_below_threshold)
         """
         levels_below_threshold = []
         trigger_level = None
-        
+
         # Check hierarchically: primary -> secondary -> tertiary
         hierarchy = ["primary", "secondary", "tertiary"]
-        
+
         for level in hierarchy:
             if level not in predict_levels:
                 continue
-                
-            # Get AI prediction for this level
-            ai_pred = ai_predictions.get("prediction", {}).get(level, {})
-            if not ai_pred:
-                logger.warning(f"No AI prediction found for level: {level}")
-                continue
-                
-            confidence = ai_pred.get("confidence", 0.0)
+
+            # Get AI predictions for this level (now an array)
+            ai_preds = ai_predictions.get("prediction", {}).get(level, [])
+            if not isinstance(ai_preds, list):
+                logger.warning(f"Expected list for level {level}, got {type(ai_preds)}")
+                ai_preds = []
+
             threshold = thresholds.get(level, 0.8)
-            
-            logger.info(f"Level {level}: confidence={confidence:.3f}, threshold={threshold:.3f}")
-            
-            if confidence < threshold:
-                # This level is below threshold
+
+            # Check if ALL predictions are below threshold
+            predictions_above_threshold = [
+                pred for pred in ai_preds
+                if pred.get("confidence", 0.0) >= threshold
+            ]
+
+            # Log all predictions
+            for pred in ai_preds:
+                conf = pred.get("confidence", 0.0)
+                label = pred.get("label", "")
+                logger.info(f"Level {level}, tag '{label}': confidence={conf:.3f}, threshold={threshold:.3f}")
+
+            # If no predictions meet threshold, this level needs LLM
+            if not predictions_above_threshold:
+                logger.info(f"Level {level}: ALL {len(ai_preds)} tags below threshold {threshold}")
                 levels_below_threshold.append(level)
-                
+
                 if trigger_level is None:
                     trigger_level = level
-                
+
                 # If this level is below threshold, all child levels must use LLM too
                 # Add remaining levels in hierarchy
                 remaining_levels = hierarchy[hierarchy.index(level)+1:]
                 for child_level in remaining_levels:
                     if child_level in predict_levels and child_level not in levels_below_threshold:
                         levels_below_threshold.append(child_level)
-                
+
                 break  # Stop checking once we hit the first below-threshold level
-        
+            else:
+                logger.info(f"Level {level}: {len(predictions_above_threshold)}/{len(ai_preds)} tags above threshold {threshold}")
+
         needs_llm = len(levels_below_threshold) > 0
-        
+
         logger.info(f"Confidence evaluation: needs_llm={needs_llm}, trigger_level={trigger_level}, "
                    f"levels_below_threshold={levels_below_threshold}")
-        
+
         return needs_llm, trigger_level, levels_below_threshold
     
     @staticmethod
@@ -99,26 +156,31 @@ class ConfidenceEvaluator:
         return llm_levels
     
     @staticmethod
-    def build_llm_context(ai_predictions: Dict[str, Any], 
-                         llm_levels: List[str]) -> Dict[str, str]:
+    def build_llm_context(ai_predictions: Dict[str, Any],
+                         llm_levels: List[str]) -> Dict[str, Any]:
         """
         Build context for LLM service call using AI predictions that are kept
-        
+
         Args:
-            ai_predictions: AI service predictions
+            ai_predictions: AI service predictions with multi-label arrays
             llm_levels: Levels that LLM will process
-            
+
         Returns:
-            Context dictionary for LLM service
+            Context dictionary for LLM service with multi-label support
         """
         context = {}
         hierarchy = ["primary", "secondary", "tertiary"]
-        
+
         for level in hierarchy:
             if level not in llm_levels:  # Only include levels that LLM is NOT processing
-                ai_pred = ai_predictions.get("prediction", {}).get(level, {})
-                if ai_pred and ai_pred.get("pred"):
-                    context[level] = ai_pred["pred"]
-        
+                ai_preds = ai_predictions.get("prediction", {}).get(level, [])
+                if isinstance(ai_preds, list) and ai_preds:
+                    # Pass top label as context for hierarchical classification
+                    # LLM service expects single string per level, not array
+                    labels = [pred.get("label", "") for pred in ai_preds if pred.get("label")]
+                    if labels:
+                        # Always pass first/top label as string (highest confidence from AI)
+                        context[level] = labels[0]
+
         logger.info(f"Built LLM context: {context}")
         return context

@@ -191,12 +191,24 @@ async def classify_document(request: PredictionRequest) -> FullPredictionRespons
         logger.info("Step 1: Calling AI service...")
         ai_predictions = await ai_client.predict(request.text, request.predict_levels)
         ai_success = True
+
+        # Debug: Log what we received from AI service
+        logger.info(f"AI service response type: {type(ai_predictions)}")
+        logger.info(f"AI service response: {ai_predictions}")
+
         ai_duration = ai_predictions.get("duration", 0.0)
-        
-        # Step 2: Evaluate confidence thresholds
-        logger.info("Step 2: Evaluating confidence thresholds...")
+
+        # Step 2: Prune low-confidence tags from AI predictions
+        logger.info("Step 2: Pruning low-confidence tags from AI predictions...")
+        pruned_ai_predictions = ConfidenceEvaluator.prune_low_confidence_tags(
+            ai_predictions, thresholds
+        )
+        logger.info(f"Pruned AI predictions: {pruned_ai_predictions}")
+
+        # Step 3: Evaluate confidence thresholds (check if any level has ALL tags pruned)
+        logger.info("Step 3: Evaluating confidence thresholds after pruning...")
         needs_llm, trigger_level, levels_below_threshold = ConfidenceEvaluator.evaluate_thresholds(
-            ai_predictions, thresholds, request.predict_levels
+            pruned_ai_predictions, thresholds, request.predict_levels
         )
         
         # Initialize LLM variables
@@ -204,38 +216,38 @@ async def classify_document(request: PredictionRequest) -> FullPredictionRespons
         llm_success = False
         llm_duration = 0.0
         llm_levels = []
-        
-        # Step 3: Call LLM service if needed
+
+        # Step 4: Call LLM service if needed
         if needs_llm:
-            logger.info(f"Step 3: Calling LLM service for levels: {levels_below_threshold}")
-            
+            logger.info(f"Step 4: Calling LLM service for levels: {levels_below_threshold}")
+
             try:
                 # Determine which levels LLM should process
                 llm_levels = ConfidenceEvaluator.determine_llm_levels(trigger_level, request.predict_levels)
-                
-                # Build context from AI predictions that we're keeping
-                context = ConfidenceEvaluator.build_llm_context(ai_predictions, llm_levels)
-                
+
+                # Build context from AI predictions that we're keeping (use pruned predictions)
+                context = ConfidenceEvaluator.build_llm_context(pruned_ai_predictions, llm_levels)
+
                 # Call LLM service
                 llm_predictions = await llm_client.predict(request.text, llm_levels, context)
                 llm_success = True
                 llm_duration = llm_predictions.get("duration", 0.0)
-                
+
             except Exception as e:
                 logger.error(f"LLM service call failed: {str(e)}")
                 # Continue with AI predictions only
                 llm_success = False
         else:
-            logger.info("Step 3: Skipping LLM service (all confidence levels met)")
-        
-        # Step 4: Aggregate responses
-        logger.info("Step 4: Aggregating responses...")
+            logger.info("Step 4: Skipping LLM service (confidence levels met after pruning)")
+
+        # Step 5: Aggregate responses
+        logger.info("Step 5: Aggregating responses...")
         final_predictions = ResponseAggregator.aggregate_predictions(
-            ai_predictions, llm_predictions, llm_levels, request.predict_levels
+            pruned_ai_predictions, llm_predictions, llm_levels, request.predict_levels
         )
-        
+
         # Calculate total elapsed time
-        total_elapsed = ResponseAggregator.merge_service_timing(ai_predictions, llm_predictions)
+        total_elapsed = ResponseAggregator.merge_service_timing(pruned_ai_predictions, llm_predictions)
         
         # Build service call information
         service_calls = ServiceCalls(
@@ -264,7 +276,7 @@ async def classify_document(request: PredictionRequest) -> FullPredictionRespons
         response = FullPredictionResponse(
             prediction=final_predictions,
             elapsed_seconds=time.time() - start_time,
-            processed_text=ai_predictions.get("processed_text", request.text),
+            processed_text=pruned_ai_predictions.get("processed_text", request.text),
             service_calls=service_calls,
             confidence_analysis=confidence_analysis
         )

@@ -79,7 +79,7 @@ async def health_check():
         "aws_region": Config.AWS_REGION
     }
 
-@app.post("/predict", response_model=FullResponse)
+@app.post("/predict", response_model=FullResponse, response_model_exclude_none=True)
 async def predict_document(request: PredictionRequest) -> FullResponse:
     """
     Classify document using Claude Sonnet 4

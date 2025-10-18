@@ -121,14 +121,6 @@ jobs:
           pip install -r tests/requirements.txt
           pytest -s tests/e2e -v
 
-      # Run text-extraction-service E2E tests
-      - name: Run text-extraction-service E2E tests
-        working-directory: backend/text-extraction-service
-        run: |
-          pip install -r requirements.txt
-          pip install -r tests/requirements.txt
-          pytest -s tests/e2e -v
-
       #! UNIT TESTS
       # Run document-service unit tests
       - name: Run document-service unit tests

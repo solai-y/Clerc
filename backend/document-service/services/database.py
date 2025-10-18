@@ -456,7 +456,7 @@ class DatabaseService:
                 'model_id': document_data.get('model_id'),
                 'threshold_pct': document_data.get('threshold_pct', 60),
                 'suggested_tags': document_data.get('suggested_tags'),
-                'confirmed_tags': [],  # Empty array (or JSONB in your schema)
+                'confirmed_tags': None,  # JSONB field - start as None
                 'user_added_labels': [],  # Empty array
                 'user_removed_tags': [],  # Empty array
                 'user_reviewed': False,
@@ -647,47 +647,26 @@ class DatabaseService:
             if explanation_records:
                 self.logger.info(f"Attempting to insert {len(explanation_records)} explanation records for process_id {process_id}")
 
-                explanation_groups: Dict[str, Dict[str, Dict[str, Any]]] = {}
-                for record in explanation_records:
-                    level = record['classification_level']
-                    source = record['source_service']
-                    if level not in explanation_groups:
-                        explanation_groups[level] = {}
-                    explanation_groups[level][source] = record
-
+                # Insert ALL explanation records (support multi-label: multiple tags per level)
                 successful_inserts = 0
                 failed_inserts = 0
 
-                for level, sources in explanation_groups.items():
-                    if 'llm' in sources and 'ai' in sources:
-                        llm_record = sources['llm']
-                        ai_record = sources['ai'].copy()
-                        ai_record['source_service'] = 'ai_override'
-                        ai_record['reasoning'] = f"AI prediction (overridden by LLM): {ai_record.get('reasoning')}"
-                        records_to_insert = [llm_record, ai_record]
-                    elif 'llm' in sources:
-                        records_to_insert = [sources['llm']]
-                    elif 'ai' in sources:
-                        records_to_insert = [sources['ai']]
-                    else:
-                        records_to_insert = []
-
-                    for rec in records_to_insert:
-                        try:
-                            response = self.supabase.table('explanations').insert([rec]).execute()
-                            if response.data:
-                                successful_inserts += 1
-                                self.logger.info(f"Inserted {rec['source_service']} explanation for {level}")
-                            else:
-                                failed_inserts += 1
-                                self.logger.warning(f"Failed to insert {rec['source_service']} explanation for {level}")
-                        except Exception as insert_error:
-                            if "duplicate key value violates unique constraint" in str(insert_error):
-                                self.logger.warning(f"Skipping duplicate explanation for {level} ({rec['source_service']})")
-                                failed_inserts += 1
-                            else:
-                                self.logger.warning(f"Failed to insert {rec['source_service']} explanation for {level}: {insert_error}")
-                                failed_inserts += 1
+                for rec in explanation_records:
+                    try:
+                        response = self.supabase.table('explanations').insert([rec]).execute()
+                        if response.data:
+                            successful_inserts += 1
+                            self.logger.info(f"Inserted {rec['source_service']} explanation for {rec['classification_level']}: {rec['predicted_tag']}")
+                        else:
+                            failed_inserts += 1
+                            self.logger.warning(f"Failed to insert {rec['source_service']} explanation for {rec['classification_level']}: {rec['predicted_tag']}")
+                    except Exception as insert_error:
+                        if "duplicate key value violates unique constraint" in str(insert_error):
+                            self.logger.warning(f"Skipping duplicate explanation for {rec['classification_level']} ({rec['source_service']}): {rec['predicted_tag']}")
+                            failed_inserts += 1
+                        else:
+                            self.logger.warning(f"Failed to insert {rec['source_service']} explanation for {rec['classification_level']}: {rec['predicted_tag']} - {insert_error}")
+                            failed_inserts += 1
 
                 if successful_inserts > 0:
                     self.logger.info(f"Successfully created {successful_inserts} explanation records for process_id {process_id}")

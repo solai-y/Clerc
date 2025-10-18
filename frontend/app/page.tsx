@@ -36,7 +36,7 @@ export default function HomePage() {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   useEffect(() => {
     const t = setTimeout(() => {
-      console.log("[page] 🔎 debounced search ->", searchTerm)
+      // console.log("[page] 🔎 debounced search ->", searchTerm)
       setDebouncedSearchTerm(searchTerm)
     }, 500)
     return () => clearTimeout(t)
@@ -44,7 +44,7 @@ export default function HomePage() {
 
   // Reset to page 1 when search or sort changes
   useEffect(() => {
-    console.log("[page] 📄 reset page due to search/sort change")
+    // console.log("[page] 📄 reset page due to search/sort change")
     setCurrentPage(1)
   }, [debouncedSearchTerm, sortBy, sortOrder])
 
@@ -69,7 +69,7 @@ export default function HomePage() {
   // Client-side TAG filter only (sorting handled server-side)
   const filteredDocuments = useMemo(() => {
     const filtered = !filterTag ? documents : documents.filter(d => d.tags.includes(filterTag))
-    console.log("[page] 🏷️ tag filter ->", { filterTag, before: documents.length, after: filtered.length })
+    // console.log("[page] 🏷️ tag filter ->", { filterTag, before: documents.length, after: filtered.length })
     return filtered
   }, [documents, filterTag])
 
@@ -82,10 +82,10 @@ export default function HomePage() {
   const handleSort = (column: "name" | "date" | "size") => {
     if (sortBy === column) {
       const next = sortOrder === "asc" ? "desc" : "asc"
-      console.log("[page] ↕️ toggle sort order", { column, from: sortOrder, to: next })
+      // console.log("[page] ↕️ toggle sort order", { column, from: sortOrder, to: next })
       setSortOrder(next)
     } else {
-      console.log("[page] 🔃 change sort column", { from: sortBy, to: column })
+      // console.log("[page] 🔃 change sort column", { from: sortBy, to: column })
       setSortBy(column)
       setSortOrder("asc")
     }
@@ -170,7 +170,7 @@ export default function HomePage() {
                   value={filterTag || "all-tags"}
                   onValueChange={(value: string) => {
                     const val = value === "all-tags" ? "" : value
-                    console.log("[page] 🏷️ tag select", { value, normalized: val })
+                    // console.log("[page] 🏷️ tag select", { value, normalized: val })
                     setFilterTag(val)
                   }}
                 >
@@ -213,7 +213,7 @@ export default function HomePage() {
                 <Select
                   value={sortBy}
                   onValueChange={(value: "name" | "date" | "size") => {
-                    console.log("[page] 🔃 sort select", { value })
+                    // console.log("[page] 🔃 sort select", { value })
                     setSortBy(value)
                   }}
                   disabled={loading}
@@ -233,7 +233,7 @@ export default function HomePage() {
                   size="sm"
                   onClick={() => {
                     const next = sortOrder === "asc" ? "desc" : "asc"
-                    console.log("[page] ↕️ sort order button", { from: sortOrder, to: next })
+                    // console.log("[page] ↕️ sort order button", { from: sortOrder, to: next })
                     setSortOrder(next)
                   }}
                   disabled={loading}
@@ -268,7 +268,7 @@ export default function HomePage() {
                       totalItems={pagination.totalItems}
                       itemsPerPage={pagination.itemsPerPage}
                       onPageChange={(p) => {
-                        console.log("[page] 📄 page change", { from: currentPage, to: p })
+                        // console.log("[page] 📄 page change", { from: currentPage, to: p })
                         setCurrentPage(p)
                       }}
                       loading={loading}

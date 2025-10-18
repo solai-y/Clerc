@@ -33,6 +33,18 @@ class DocumentStatusRequest(BaseModel):
 
 class ProcessedDocumentRequest(BaseModel):
     document_id: int
+    suggested_tags: Optional[list] = None
+    threshold_pct: Optional[int] = None
+    ocr_used: Optional[bool] = None
+    processing_ms: Optional[int] = None
+    explanations: Optional[list] = None
+    prediction_response: Optional[dict] = None
+    model_id: Optional[int] = None
+    user_id: Optional[int] = None
+    company: Optional[int] = None
+    errors: Optional[list] = None
+    request_id: Optional[str] = None
+    status: Optional[str] = None
 
 class DocumentTagsRequest(BaseModel):
     confirmed_tags: Optional[Any] = None
