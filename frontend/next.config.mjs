@@ -1,25 +1,29 @@
 /** @type {import('next').NextConfig} */
 
 // Detect environment
-const isVercel = !!process.env.VERCEL; // true on Vercel (preview/prod)
+const isVercel = !!process.env.VERCEL;
 const isProd = process.env.VERCEL_ENV === "production";
-const isEC2 = !!process.env.EC2_DEPLOYMENT; // Set this env var for EC2 deployments
+const isEC2 = !!process.env.EC2_DEPLOYMENT;
 
-// Backend origin for rewrites - prioritize explicit env var, then fallback to platform detection
-const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN ||
+// Backend origin for rewrites - prioritize explicit env var, then fallback
+const BACKEND_ORIGIN =
+  process.env.BACKEND_ORIGIN ||
   (process.env.VERCEL ? "https://clercbackend.clerc.uk" : "http://localhost");
 
-// Debug logging (will show in build logs)
+// Optional: tag service can be a different origin/port
+const TAG_SERVICE_ORIGIN = process.env.TAG_SERVICE_ORIGIN || BACKEND_ORIGIN;
+
+// Debug logging
 console.log("Next.js Config Debug:");
 console.log("- VERCEL:", process.env.VERCEL);
 console.log("- VERCEL_ENV:", process.env.VERCEL_ENV);
 console.log("- EC2_DEPLOYMENT:", process.env.EC2_DEPLOYMENT);
 console.log("- BACKEND_ORIGIN env:", process.env.BACKEND_ORIGIN);
+console.log("- TAG_SERVICE_ORIGIN env:", process.env.TAG_SERVICE_ORIGIN);
 console.log("- Computed BACKEND_ORIGIN:", BACKEND_ORIGIN);
+console.log("- Computed TAG_SERVICE_ORIGIN:", TAG_SERVICE_ORIGIN);
 console.log("- Environment detected:", { isVercel, isProd, isEC2 });
 
-
-// Validate configuration
 if (!BACKEND_ORIGIN) {
   throw new Error("BACKEND_ORIGIN must be set for proper API routing");
 }
@@ -29,15 +33,18 @@ const nextConfig = {
   typescript: { ignoreBuildErrors: true },
   images: { unoptimized: true },
 
-  // Add output for static export if needed for EC2
-  ...(isEC2 && process.env.STATIC_EXPORT === 'true' && { output: 'export' }),
+  ...(isEC2 && process.env.STATIC_EXPORT === "true" && { output: "export" }),
 
   async rewrites() {
     const rewrites = [
-      // --- Match /documents with or without paths ---
+      // --- Documents ---
       { source: "/documents", destination: `${BACKEND_ORIGIN}/documents` },
       { source: "/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },
-      
+
+      // --- Tag service (use a prefix so it doesn't collide with /tags page) ---
+      { source: "/tag-service/tags", destination: `${TAG_SERVICE_ORIGIN}/tags` },
+      { source: "/tag-service/tags/:path*", destination: `${TAG_SERVICE_ORIGIN}/tags/:path*` },
+
       // --- Other services ---
       { source: "/s3", destination: `${BACKEND_ORIGIN}/s3` },
       { source: "/s3/:path*", destination: `${BACKEND_ORIGIN}/s3/:path*` },
@@ -53,12 +60,9 @@ const nextConfig = {
       // --- Backward-compat ---
       { source: "/api/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },
     ];
-    
+
     console.log("Next.js Rewrites:");
-    rewrites.forEach(rewrite => {
-      console.log(`- ${rewrite.source} -> ${rewrite.destination}`);
-    });
-    
+    rewrites.forEach((r) => console.log(`- ${r.source} -> ${r.destination}`));
     return rewrites;
   },
 };
