@@ -86,7 +86,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch('/s3/upload', {
+      const response = await fetch('/api/s3/upload', {
         method: 'POST',
         body: formData,
       })
@@ -137,7 +137,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       confidence_thresholds: confidenceThresholds
     };
 
-    const res = await fetch("/predict/classify", {
+    const res = await fetch("/api/predict/classify", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"

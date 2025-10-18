@@ -1,27 +1,15 @@
 /** @type {import('next').NextConfig} */
 
 // Detect environment
-const isVercel = !!process.env.VERCEL; // true on Vercel (preview/prod)
-const isProd = process.env.VERCEL_ENV === "production";
-const isEC2 = !!process.env.EC2_DEPLOYMENT; // Set this env var for EC2 deployments
-
-// Backend origin for rewrites - prioritize explicit env var, then fallback to platform detection
+const isVercel = !!process.env.VERCEL;
 const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN ||
-  (process.env.VERCEL ? "https://clercbackend.clerc.uk" : "http://localhost");
+  (isVercel ? "https://clercbackend.clerc.uk" : "http://localhost");
 
-// Debug logging (will show in build logs)
-console.log("Next.js Config Debug:");
-console.log("- VERCEL:", process.env.VERCEL);
-console.log("- VERCEL_ENV:", process.env.VERCEL_ENV);
-console.log("- EC2_DEPLOYMENT:", process.env.EC2_DEPLOYMENT);
-console.log("- BACKEND_ORIGIN env:", process.env.BACKEND_ORIGIN);
-console.log("- Computed BACKEND_ORIGIN:", BACKEND_ORIGIN);
-console.log("- Environment detected:", { isVercel, isProd, isEC2 });
+// This log is crucial for debugging Vercel builds.
+console.log(`[Next.js Config] Build environment detected. Vercel: ${isVercel}. Backend Origin: ${BACKEND_ORIGIN}`);
 
-
-// Validate configuration
 if (!BACKEND_ORIGIN) {
-  throw new Error("BACKEND_ORIGIN must be set for proper API routing");
+  throw new Error("FATAL: BACKEND_ORIGIN environment variable is not set.");
 }
 
 const nextConfig = {
@@ -29,38 +17,42 @@ const nextConfig = {
   typescript: { ignoreBuildErrors: true },
   images: { unoptimized: true },
 
-  // Add output for static export if needed for EC2
-  ...(isEC2 && process.env.STATIC_EXPORT === 'true' && { output: 'export' }),
-
   async rewrites() {
-    const rewrites = [
-      // --- Match /documents with or without paths ---
-      { source: "/documents", destination: `${BACKEND_ORIGIN}/documents` },
-      { source: "/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },
-      
-      // --- Other services ---
-      { source: "/s3", destination: `${BACKEND_ORIGIN}/s3` },
-      { source: "/s3/:path*", destination: `${BACKEND_ORIGIN}/s3/:path*` },
-      { source: "/company", destination: `${BACKEND_ORIGIN}/company` },
-      { source: "/company/:path*", destination: `${BACKEND_ORIGIN}/company/:path*` },
-      { source: "/ai", destination: `${BACKEND_ORIGIN}/ai` },
-      { source: "/ai/:path*", destination: `${BACKEND_ORIGIN}/ai/:path*` },
-      { source: "/predict", destination: `${BACKEND_ORIGIN}/predict` },
-      { source: "/predict/:path*", destination: `${BACKEND_ORIGIN}/predict/:path*` },
-      { source: "/text-extract", destination: `${BACKEND_ORIGIN}/text-extract` },
-      { source: "/text-extract/:path*", destination: `${BACKEND_ORIGIN}/text-extract/:path*` },
-
-      // --- Backward-compat ---
+    // ALL sources are now consistently prefixed with /api to avoid conflicts
+    // with page routes. We also now include rules for BOTH the base path
+    // (e.g., /api/documents) and nested paths (e.g., /api/documents/123).
+    const apiRewrites = [
+      // Documents Service
+      { source: "/api/documents", destination: `${BACKEND_ORIGIN}/documents` },
       { source: "/api/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },
+      
+      // S3 Service
+      { source: "/api/s3", destination: `${BACKEND_ORIGIN}/s3` },
+      { source: "/api/s3/:path*", destination: `${BACKEND_ORIGIN}/s3/:path*` },
+      
+      // Company Service
+      { source: "/api/company", destination: `${BACKEND_ORIGIN}/company` },
+      { source: "/api/company/:path*", destination: `${BACKEND_ORIGIN}/company/:path*` },
+      
+      // AI Service
+      { source: "/api/ai", destination: `${BACKEND_ORIGIN}/ai` },
+      { source: "/api/ai/:path*", destination: `${BACKEND_ORIGIN}/ai/:path*` },
+      
+      // Prediction Service
+      { source: "/api/predict", destination: `${BACKEND_ORIGIN}/predict` },
+      { source: "/api/predict/:path*", destination: `${BACKEND_ORIGIN}/predict/:path*` },
+      
+      // Text Extraction Service
+      { source: "/api/text-extract", destination: `${BACKEND_ORIGIN}/text-extract` },
+      { source: "/api/text-extract/:path*", destination: `${BACKEND_ORIGIN}/text-extract/:path*` },
     ];
     
-    console.log("Next.js Rewrites:");
-    rewrites.forEach(rewrite => {
-      console.log(`- ${rewrite.source} -> ${rewrite.destination}`);
-    });
+    console.log("[Next.js Config] API rewrite rules configured.");
+    apiRewrites.forEach(r => console.log(`- ${r.source} -> ${r.destination}`));
     
-    return rewrites;
+    return apiRewrites;
   },
 };
 
 export default nextConfig;
+
