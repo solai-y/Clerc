@@ -59,6 +59,9 @@ export interface GetDocumentsOptions {
   sortOrder?: "asc" | "desc";
   status?: string;
   companyId?: number;
+  primaryTags?: string[];
+  secondaryTags?: string[];
+  tertiaryTags?: string[];
 }
 
 class APIClient {
@@ -108,6 +111,17 @@ class APIClient {
     if (options.companyId != null) params.append("company_id", String(options.companyId));
     if (options.sortBy) params.append("sort_by", options.sortBy);
     if (options.sortOrder) params.append("sort_order", options.sortOrder);
+
+    // Add tag filters
+    if (options.primaryTags && options.primaryTags.length > 0) {
+      options.primaryTags.forEach((tag) => params.append("primary_tags[]", tag));
+    }
+    if (options.secondaryTags && options.secondaryTags.length > 0) {
+      options.secondaryTags.forEach((tag) => params.append("secondary_tags[]", tag));
+    }
+    if (options.tertiaryTags && options.tertiaryTags.length > 0) {
+      options.tertiaryTags.forEach((tag) => params.append("tertiary_tags[]", tag));
+    }
 
     const url = apiUrl(`/documents${params.toString() ? `?${params}` : ""}`);
 

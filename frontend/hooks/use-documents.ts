@@ -18,6 +18,9 @@ interface UseDocumentsParams {
   sortOrder?: 'asc' | 'desc'
   status?: string
   companyId?: number
+  primaryTags?: string[]
+  secondaryTags?: string[]
+  tertiaryTags?: string[]
   autoFetch?: boolean
 }
 
@@ -50,6 +53,9 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
     sortOrder,
     status,
     companyId,
+    primaryTags,
+    secondaryTags,
+    tertiaryTags,
     autoFetch = true
   } = params
   
@@ -62,7 +68,7 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
     setLoading(true)
     setError(null)
     console.log('[useDocuments] fetchDocuments -> params', {
-      limit, offset, search, sortBy, sortOrder, status, companyId
+      limit, offset, search, sortBy, sortOrder, status, companyId, primaryTags, secondaryTags, tertiaryTags
     })
 
     try {
@@ -76,6 +82,9 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
           sortOrder,
           status,
           companyId,
+          primaryTags,
+          secondaryTags,
+          tertiaryTags,
         })
 
       const transformed = (backendDocs || []).map(transformBackendDocument)
@@ -116,7 +125,7 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
     } finally {
       setLoading(false)
     }
-  }, [limit, offset, search, sortBy, sortOrder, status, companyId])
+  }, [limit, offset, search, sortBy, sortOrder, status, companyId, primaryTags, secondaryTags, tertiaryTags])
 
   // CRUD helpers
   const createDocument = useCallback(async (
