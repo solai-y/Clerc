@@ -470,9 +470,9 @@ class DatabaseService:
                 'request_id': document_data.get('request_id'),
                 'status': document_data.get('status', 'api_processed')
             }
-            
+
             response = self.supabase.table('processed_documents').insert(processed_data).execute()
-            
+
             if response.data:
                 created_doc = response.data[0]
                 process_id = created_doc.get('process_id')

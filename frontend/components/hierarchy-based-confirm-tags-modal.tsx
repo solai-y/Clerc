@@ -544,7 +544,7 @@ export function HierarchyBasedConfirmTagsModal({
                     </div>
 
                     {/* Add Primary Tag Dropdown */}
-                    <Select onValueChange={(value) => { addPrimaryTag(value) }}>
+                    <Select key={selectedPrimaryTags.join(',')} onValueChange={(value) => { addPrimaryTag(value) }}>
                       <SelectTrigger className="w-full">
                         <div className="flex items-center gap-2">
                           <Plus className="w-4 h-4" />
@@ -608,6 +608,7 @@ export function HierarchyBasedConfirmTagsModal({
 
                     {/* Add Secondary Tag Dropdown */}
                     <Select
+                      key={selectedSecondaryTags.join(',')}
                       onValueChange={(value) => { addSecondaryTag(value) }}
                       disabled={selectedPrimaryTags.length === 0}
                     >
@@ -677,6 +678,7 @@ export function HierarchyBasedConfirmTagsModal({
 
                     {/* Add Tertiary Tag Dropdown */}
                     <Select
+                      key={selectedTertiaryTags.join(',')}
                       onValueChange={(value) => { addTertiaryTag(value) }}
                       disabled={selectedSecondaryTags.length === 0}
                     >
@@ -722,18 +724,27 @@ export function HierarchyBasedConfirmTagsModal({
 
                 // Enhanced explanations with SHAP data extracted from backend service_response
                 const enhancedExplanations = filteredExplanations.map((explanation: any) => {
-                  // Extract SHAP data from service_response.shap_explainability (backend data)
+                  // Extract SHAP data from multiple possible locations
                   let shapData = null;
 
+                  // Check service_response.shap_explainability (database format)
                   if (explanation.service_response?.shap_explainability) {
                     shapData = explanation.service_response.shap_explainability;
                   }
+                  // Check direct shap_data property (props format from upload)
+                  else if (explanation.shap_data) {
+                    shapData = explanation.shap_data;
+                  }
+                  // Check full_response (another possible format)
+                  else if (explanation.full_response?.key_evidence) {
+                    shapData = explanation.full_response.key_evidence;
+                  }
 
-                  console.log('🧠 SHAP data for', explanation.predicted_tag, ':', shapData);
+                  console.log('🧠 SHAP data for', explanation.predicted_tag || explanation.tag, ':', shapData);
 
                   return {
                     ...explanation,
-                    shap_data: shapData || explanation.shap_data
+                    shap_data: shapData
                   };
                 });
 

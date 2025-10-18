@@ -555,7 +555,7 @@ export function DocumentDetailsModal({
 
                     {/* Add Primary Tag Dropdown */}
                     {isEditMode && (
-                      <Select onValueChange={(value) => { addPrimaryTag(value) }}>
+                      <Select key={selectedPrimaryTags.join(',')} onValueChange={(value) => { addPrimaryTag(value) }}>
                         <SelectTrigger className="w-full">
                           <div className="flex items-center gap-2">
                             <Plus className="w-4 h-4" />
@@ -623,6 +623,7 @@ export function DocumentDetailsModal({
                     {isEditMode && (
                       <>
                         <Select
+                          key={selectedSecondaryTags.join(',')}
                           onValueChange={(value) => { addSecondaryTag(value) }}
                           disabled={selectedPrimaryTags.length === 0}
                         >
@@ -697,6 +698,7 @@ export function DocumentDetailsModal({
                     {isEditMode && (
                       <>
                         <Select
+                          key={selectedTertiaryTags.join(',')}
                           onValueChange={(value) => { addTertiaryTag(value) }}
                           disabled={selectedSecondaryTags.length === 0}
                         >
