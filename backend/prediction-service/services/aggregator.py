@@ -81,20 +81,23 @@ class ResponseAggregator:
         llm_pred_for_level = None
         if llm_predictions:
             llm_pred_for_level = llm_predictions.get("prediction", {}).get(level)
+            # Handle case where LLM returns empty list - convert to None
+            if isinstance(llm_pred_for_level, list) and not llm_pred_for_level:
+                llm_pred_for_level = None
 
         # Create PredictionLevel for each AI prediction
         prediction_levels = []
         for ai_pred in ai_preds:
-            # Convert key_evidence to string if it's a dict
-            key_evidence = ai_pred.get("key_evidence")
-            if isinstance(key_evidence, dict):
-                # Convert SHAP evidence dict to readable string
-                key_evidence = str(key_evidence)
+            # Keep key_evidence as dict for SHAP explainability
+            key_evidence = ai_pred.get("key_evidence", {})
+
+            # Create a readable reasoning string from key_evidence
+            reasoning = f"AI model prediction (confidence: {ai_pred.get('confidence', 0.0):.2%})"
 
             prediction_levels.append(PredictionLevel(
                 pred=ai_pred.get("label", ""),
                 confidence=ai_pred.get("confidence", 0.0),
-                reasoning=key_evidence,
+                reasoning=reasoning,
                 source="ai",
                 primary=context.get("primary"),
                 secondary=context.get("secondary"),

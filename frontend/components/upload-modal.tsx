@@ -130,12 +130,17 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     request_id?: string
   }
 
-  async function predictTags(text: string, confidenceThresholds = { primary: 0.90, secondary: 0.85, tertiary: 0.80 }) {
-    const requestData = {
+  async function predictTags(text: string, confidenceThresholds?: { primary?: number, secondary?: number, tertiary?: number }) {
+    const requestData: any = {
       text: text,
-      predict_levels: ["primary", "secondary", "tertiary"],
-      confidence_thresholds: confidenceThresholds
+      predict_levels: ["primary", "secondary", "tertiary"]
     };
+
+    // Only include confidence_thresholds if explicitly provided
+    // Otherwise, let the backend use database thresholds
+    if (confidenceThresholds) {
+      requestData.confidence_thresholds = confidenceThresholds;
+    }
 
     const res = await fetch("/api/predict/classify", {
       method: "POST",
@@ -234,23 +239,11 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       
       // Extract text from file using S3 URL
       const documentText = await extractTextFromFile(file, s3Link || "")
-      
-      // Get current confidence thresholds from localStorage or use defaults
-      let thresholds = { primary: 0.90, secondary: 0.85, tertiary: 0.80 };
-      try {
-        const saved = localStorage.getItem('confidence_thresholds');
-        if (saved) {
-          const savedThresholds = JSON.parse(saved);
-          thresholds = { ...thresholds, ...savedThresholds };
-        }
-      } catch (error) {
-        console.warn('Failed to load saved thresholds:', error);
-      }
 
-      console.log("📊 Using confidence thresholds:", thresholds);
-
-      // Call prediction service with confidence thresholds
-      const predictionResponse = await predictTags(documentText, thresholds)
+      // Call prediction service (will use database thresholds)
+      // No need to pass thresholds from frontend - backend manages this
+      console.log("📊 Using database-managed confidence thresholds");
+      const predictionResponse = await predictTags(documentText)
       console.log("🤖 Prediction service response:", predictionResponse)
       console.log("🔍 Response keys:", Object.keys(predictionResponse))
       console.log("🔍 Has prediction?:", !!predictionResponse.prediction)
