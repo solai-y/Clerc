@@ -31,14 +31,14 @@ class PredictionLevel(BaseModel):
     source: str = Field(..., description="Source service: 'ai' or 'llm'")
     primary: Optional[str] = Field(None, description="Primary context for secondary/tertiary")
     secondary: Optional[str] = Field(None, description="Secondary context for tertiary")
-    ai_prediction: Optional[Dict[str, Any]] = Field(None, description="Original AI prediction if available")
+    ai_prediction: Optional[Any] = Field(None, description="Original AI prediction(s) if available (dict or list)")
     llm_prediction: Optional[Dict[str, Any]] = Field(None, description="LLM prediction if available")
 
 class PredictionResponse(BaseModel):
-    """Complete prediction response"""
-    primary: Optional[PredictionLevel] = None
-    secondary: Optional[PredictionLevel] = None
-    tertiary: Optional[PredictionLevel] = None
+    """Complete prediction response with multi-label support"""
+    primary: Optional[List[PredictionLevel]] = None
+    secondary: Optional[List[PredictionLevel]] = None
+    tertiary: Optional[List[PredictionLevel]] = None
 
 class ConfidenceAnalysis(BaseModel):
     """Analysis of confidence thresholds and triggering"""

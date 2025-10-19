@@ -43,7 +43,22 @@
       "Bash(sed:*)",
       "Bash(\"C:\\Users\\I757760\\Downloads\\FYP\\Clerc-1\\.venv\\Scripts\\python.exe\" -m pytest tests/unit/test_tag_filtering.py -v)",
       "Bash(\"C:\\Users\\I757760\\Downloads\\FYP\\Clerc-1\\.venv\\Scripts\\python.exe\" -m pytest tests/unit/test_tag_filtering.py::TestTagFilteringMinimal::test_ac2_or_logic_within_same_tier -v)",
-      "Bash(\"C:\\Users\\I757760\\Downloads\\FYP\\Clerc-1\\.venv\\Scripts\\python.exe\" -m pytest tests/unit/test_tag_filtering.py::TestTagFilteringMinimal::test_ac1_filter_endpoint_accepts_tag_parameters -v -s)"
+      "Bash(\"C:\\Users\\I757760\\Downloads\\FYP\\Clerc-1\\.venv\\Scripts\\python.exe\" -m pytest tests/unit/test_tag_filtering.py::TestTagFilteringMinimal::test_ac1_filter_endpoint_accepts_tag_parameters -v -s)",
+      "Bash(awk:*)",
+      "Bash(docker compose:*)",
+      "Bash(pytest:*)",
+      "Bash(for service in ai-service company-service document-service s3-service text-extraction-service)",
+      "Bash(do echo \"=== $service ===\")",
+      "Bash(head:*)",
+      "Bash(done)",
+      "Bash(wc:*)",
+      "Bash(ls:*)",
+      "Bash(for service in ai-service company-service s3-service text-extraction-service)",
+      "Bash(for service in ai-service company-service document-service llm-service prediction-service s3-service text-extraction-service)",
+      "Bash(docker restart:*)",
+      "Bash(docker ps:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }

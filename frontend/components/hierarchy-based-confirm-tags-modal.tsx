@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
 import {
   Tag,
   CheckCircle,
@@ -25,9 +25,10 @@ import {
   TrendingUp,
   Eye,
   MessageSquare,
-  ArrowRight,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  X,
+  Plus
 } from "lucide-react"
 import { Document, apiClient } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
@@ -104,8 +105,8 @@ export function HierarchyBasedConfirmTagsModal({
         const documentResponse = await apiClient.getCompleteDocument(parseInt(document.id))
         setDbPredictions(documentResponse.suggested_tags)
 
-        // Extract document link - check both locations
-        const link = documentResponse.link || documentResponse.raw_documents?.link
+        // Extract document link from raw_documents
+        const link = documentResponse.raw_documents?.link
         if (link) {
           setDocumentLink(link)
         }
@@ -135,44 +136,52 @@ export function HierarchyBasedConfirmTagsModal({
     }
   }, [document.id, toast])
 
-  // Process prediction data into enhanced tags (using database data only)
+  // Process prediction data into enhanced tags (from database OR props)
   const enhancedTags = useMemo<EnhancedTag[]>(() => {
     const tags: EnhancedTag[] = []
     const processedTags = new Set<string>()
 
-    // First, process explanations to get the correct hierarchy levels and sources
-    if (dbExplanations && dbExplanations.length > 0) {
-      console.log("📊 Processing database explanations for hierarchy:", dbExplanations)
+    // Determine which explanations to use: database or props
+    const explanationsToUse = dbExplanations.length > 0 ? dbExplanations : explanations
 
-      for (const explanation of dbExplanations) {
+    // First, process explanations to get the correct hierarchy levels and sources
+    if (explanationsToUse && explanationsToUse.length > 0) {
+      console.log("📊 Processing explanations for hierarchy:", explanationsToUse)
+
+      for (const explanation of explanationsToUse) {
+        // Handle both database format (predicted_tag, classification_level)
+        // and props format (tag, level)
+        const tagName = (explanation as any).predicted_tag || (explanation as any).tag
+        const tagLevel = (explanation as any).classification_level || (explanation as any).level
+        const tagSource = (explanation as any).source_service || (explanation as any).source
+        const tagConfidence = explanation.confidence || 0
+
         console.log("🔍 Processing explanation:", {
-          predicted_tag: explanation.predicted_tag,
-          classification_level: explanation.classification_level,
-          source_service: explanation.source_service,
-          confidence: explanation.confidence
+          tagName,
+          tagLevel,
+          tagSource,
+          tagConfidence
         })
 
-        if (explanation.predicted_tag && explanation.classification_level && !processedTags.has(explanation.predicted_tag)) {
-          processedTags.add(explanation.predicted_tag)
+        if (tagName && tagLevel && !processedTags.has(tagName)) {
+          processedTags.add(tagName)
 
-          // Use the actual classification level from the database
-          const level = explanation.classification_level as 'primary' | 'secondary' | 'tertiary'
+          // Use the actual classification level
+          const level = tagLevel as 'primary' | 'secondary' | 'tertiary'
 
-          // Find matching prediction data for confidence score
-          let confidence = 0
+          // Find matching prediction data for confidence score (if using db explanations)
+          let confidence = tagConfidence
           if (dbPredictions && Array.isArray(dbPredictions)) {
-            const matchingPred = dbPredictions.find(pred => pred.tag === explanation.predicted_tag)
-            confidence = matchingPred?.score || explanation.confidence || 0
-          } else {
-            confidence = explanation.confidence || 0
+            const matchingPred = dbPredictions.find(pred => pred.tag === tagName)
+            confidence = matchingPred?.score || confidence
           }
 
           const enhancedTag = {
-            tag: explanation.predicted_tag,
+            tag: tagName,
             confidence: confidence,
-            source: explanation.source_service as 'ai' | 'llm',
+            source: tagSource as 'ai' | 'llm',
             level: level,
-            reasoning: explanation.reasoning || `${explanation.source_service?.toUpperCase()} prediction`,
+            reasoning: explanation.reasoning || `${tagSource?.toUpperCase()} prediction`,
             isConfirmed: true
           }
 
@@ -182,9 +191,10 @@ export function HierarchyBasedConfirmTagsModal({
       }
     }
 
-    // Fallback: if no explanations, process predictions with database hierarchy levels
-    if (tags.length === 0 && dbPredictions && Array.isArray(dbPredictions)) {
-      console.log("📊 Fallback: Processing database predictions:", dbPredictions)
+    // Also process predictions directly (not just as fallback)
+    // This ensures we capture all predictions even if explanations don't cover everything
+    if (dbPredictions && Array.isArray(dbPredictions)) {
+      console.log("📊 Processing database predictions:", dbPredictions)
 
       for (const pred of dbPredictions) {
         if (pred.tag && !processedTags.has(pred.tag)) {
@@ -193,88 +203,142 @@ export function HierarchyBasedConfirmTagsModal({
           // Use the hierarchy_level from the database instead of reassigning based on confidence
           const level = pred.hierarchy_level as 'primary' | 'secondary' | 'tertiary'
 
-          tags.push({
+          const enhancedTag = {
             tag: pred.tag,
             confidence: pred.score || 0,
             source: (pred.source || 'ai') as 'ai' | 'llm',
             level: level,
             reasoning: `${(pred.source || 'ai').toUpperCase()} prediction from database`,
             isConfirmed: true
-          })
+          }
+
+          console.log("✅ Adding prediction tag:", enhancedTag)
+          tags.push(enhancedTag)
         }
       }
     }
 
     console.log("✅ Enhanced tags result:", tags)
     return tags
-  }, [dbPredictions, dbExplanations])
+  }, [dbPredictions, dbExplanations, explanations])
 
-  // State for hierarchy-based selection
-  const [selectedPrimary, setSelectedPrimary] = useState<string>("")
-  const [selectedSecondary, setSelectedSecondary] = useState<string>("")
-  const [selectedTertiary, setSelectedTertiary] = useState<string>("")
+  // State for multi-tag selection - arrays instead of single strings
+  const [selectedPrimaryTags, setSelectedPrimaryTags] = useState<string[]>([])
+  const [selectedSecondaryTags, setSelectedSecondaryTags] = useState<string[]>([])
+  const [selectedTertiaryTags, setSelectedTertiaryTags] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState("selection")
+  const [activeTab, setActiveTab] = useState("classification")
 
-  // Initialize selections with AI/LLM predictions
+  // Keep old state variables for backward compatibility with hierarchy tab
+  const selectedPrimary = selectedPrimaryTags[0] || ""
+  const selectedSecondary = selectedSecondaryTags[0] || ""
+  const selectedTertiary = selectedTertiaryTags[0] || ""
+
+  // Initialize selections with all AI/LLM predictions
   useEffect(() => {
-    const primaryTag = enhancedTags.find(t => t.level === 'primary')
-    const secondaryTag = enhancedTags.find(t => t.level === 'secondary')
-    const tertiaryTag = enhancedTags.find(t => t.level === 'tertiary')
+    console.log("🎯 Initializing tags from enhancedTags:", enhancedTags)
 
-    if (primaryTag) setSelectedPrimary(primaryTag.tag)
-    if (secondaryTag) setSelectedSecondary(secondaryTag.tag)
-    if (tertiaryTag) setSelectedTertiary(tertiaryTag.tag)
+    const primaryTagsFiltered = enhancedTags.filter(t => t.level === 'primary')
+    const secondaryTagsFiltered = enhancedTags.filter(t => t.level === 'secondary')
+    const tertiaryTagsFiltered = enhancedTags.filter(t => t.level === 'tertiary')
+
+    console.log("🎯 Filtered tags:", {
+      primary: primaryTagsFiltered,
+      secondary: secondaryTagsFiltered,
+      tertiary: tertiaryTagsFiltered
+    })
+
+    // Select all predicted tags as default
+    if (primaryTagsFiltered.length > 0) {
+      const primaryTags = primaryTagsFiltered.map(t => t.tag)
+      console.log("🎯 Setting primary tags:", primaryTags)
+      setSelectedPrimaryTags(primaryTags)
+    }
+    if (secondaryTagsFiltered.length > 0) {
+      const secondaryTags = secondaryTagsFiltered.map(t => t.tag)
+      console.log("🎯 Setting secondary tags:", secondaryTags)
+      setSelectedSecondaryTags(secondaryTags)
+    }
+    if (tertiaryTagsFiltered.length > 0) {
+      const tertiaryTags = tertiaryTagsFiltered.map(t => t.tag)
+      console.log("🎯 Setting tertiary tags:", tertiaryTags)
+      setSelectedTertiaryTags(tertiaryTags)
+    }
   }, [enhancedTags])
 
-  // Get available options based on current selection
+  // Get available options based on hierarchy
   const primaryOptions = useMemo(() => Object.keys(hierarchy), [hierarchy])
 
   const secondaryOptions = useMemo(() => {
-    if (!selectedPrimary || !hierarchy[selectedPrimary]) return []
-    return Object.keys(hierarchy[selectedPrimary])
-  }, [selectedPrimary, hierarchy])
+    // Get all possible secondary tags across all selected primary tags
+    const allSecondaryOptions = new Set<string>()
+    selectedPrimaryTags.forEach(primary => {
+      if (hierarchy[primary]) {
+        Object.keys(hierarchy[primary]).forEach(secondary => allSecondaryOptions.add(secondary))
+      }
+    })
+    return Array.from(allSecondaryOptions)
+  }, [selectedPrimaryTags, hierarchy])
 
   const tertiaryOptions = useMemo(() => {
-    if (!selectedPrimary || !selectedSecondary || !hierarchy[selectedPrimary]?.[selectedSecondary]) return []
-    const tertiaries = hierarchy[selectedPrimary][selectedSecondary]
-    return tertiaries.length > 0 ? tertiaries : [selectedSecondary]
-  }, [selectedPrimary, selectedSecondary, hierarchy])
+    // Get all possible tertiary tags across all selected primary and secondary combinations
+    // Only include tertiaries where the secondary actually belongs to a selected primary
+    const allTertiaryOptions = new Set<string>()
 
-  // Handle hierarchy changes
-  const handlePrimaryChange = (value: string) => {
-    setSelectedPrimary(value)
-    setSelectedSecondary("")
-    setSelectedTertiary("")
-  }
+    selectedSecondaryTags.forEach(secondary => {
+      // Find which primary this secondary belongs to
+      selectedPrimaryTags.forEach(primary => {
+        if (hierarchy[primary]?.[secondary]) {
+          const tertiaries = hierarchy[primary][secondary]
+          if (tertiaries.length > 0) {
+            tertiaries.forEach(tertiary => allTertiaryOptions.add(tertiary))
+          } else {
+            // If no tertiary options, the secondary itself is the tertiary
+            allTertiaryOptions.add(secondary)
+          }
+        }
+      })
+    })
 
-  const handleSecondaryChange = (value: string) => {
-    setSelectedSecondary(value)
-    setSelectedTertiary("")
-  }
+    return Array.from(allTertiaryOptions)
+  }, [selectedPrimaryTags, selectedSecondaryTags, hierarchy])
 
-  const handleTertiaryChange = (value: string) => {
-    setSelectedTertiary(value)
-  }
-
-  // Auto-select when only one option is available
-  useEffect(() => {
-    if (secondaryOptions.length === 1 && !selectedSecondary) {
-      setSelectedSecondary(secondaryOptions[0])
+  // Functions to add/remove tags
+  const addPrimaryTag = (tag: string) => {
+    if (!selectedPrimaryTags.includes(tag)) {
+      setSelectedPrimaryTags([...selectedPrimaryTags, tag])
     }
-  }, [secondaryOptions, selectedSecondary])
+  }
 
-  useEffect(() => {
-    if (tertiaryOptions.length === 1 && !selectedTertiary) {
-      setSelectedTertiary(tertiaryOptions[0])
+  const removePrimaryTag = (tag: string) => {
+    setSelectedPrimaryTags(selectedPrimaryTags.filter(t => t !== tag))
+  }
+
+  const addSecondaryTag = (tag: string) => {
+    if (!selectedSecondaryTags.includes(tag)) {
+      setSelectedSecondaryTags([...selectedSecondaryTags, tag])
     }
-  }, [tertiaryOptions, selectedTertiary])
+  }
+
+  const removeSecondaryTag = (tag: string) => {
+    setSelectedSecondaryTags(selectedSecondaryTags.filter(t => t !== tag))
+  }
+
+  const addTertiaryTag = (tag: string) => {
+    if (!selectedTertiaryTags.includes(tag)) {
+      setSelectedTertiaryTags([...selectedTertiaryTags, tag])
+    }
+  }
+
+  const removeTertiaryTag = (tag: string) => {
+    setSelectedTertiaryTags(selectedTertiaryTags.filter(t => t !== tag))
+  }
 
   const handleConfirm = async () => {
-    if (!selectedPrimary || !selectedSecondary || !selectedTertiary) {
+    if (selectedPrimaryTags.length === 0 || selectedSecondaryTags.length === 0 || selectedTertiaryTags.length === 0) {
       toast({
         title: "Incomplete Selection",
-        description: "Please select primary, secondary, and tertiary tags.",
+        description: "Please select at least one tag for each level (primary, secondary, and tertiary).",
         variant: "destructive",
       })
       return
@@ -282,38 +346,54 @@ export function HierarchyBasedConfirmTagsModal({
 
     setIsLoading(true)
     try {
-      // Create the data structure for the backend API
+      // Create the data structure for the backend API with multiple tags per level
+      const confirmedTags: any[] = []
+
+      // Add all selected primary tags
+      selectedPrimaryTags.forEach(tag => {
+        const enhancedTag = enhancedTags.find(t => t.level === 'primary' && t.tag === tag)
+        confirmedTags.push({
+          tag,
+          source: enhancedTag?.source || 'human',
+          confidence: enhancedTag?.confidence || 1.0,
+          confirmed: true,
+          added_by: 'user',
+          added_at: new Date().toISOString(),
+          level: 'primary'
+        })
+      })
+
+      // Add all selected secondary tags
+      selectedSecondaryTags.forEach(tag => {
+        const enhancedTag = enhancedTags.find(t => t.level === 'secondary' && t.tag === tag)
+        confirmedTags.push({
+          tag,
+          source: enhancedTag?.source || 'human',
+          confidence: enhancedTag?.confidence || 1.0,
+          confirmed: true,
+          added_by: 'user',
+          added_at: new Date().toISOString(),
+          level: 'secondary'
+        })
+      })
+
+      // Add all selected tertiary tags
+      selectedTertiaryTags.forEach(tag => {
+        const enhancedTag = enhancedTags.find(t => t.level === 'tertiary' && t.tag === tag)
+        confirmedTags.push({
+          tag,
+          source: enhancedTag?.source || 'human',
+          confidence: enhancedTag?.confidence || 1.0,
+          confirmed: true,
+          added_by: 'user',
+          added_at: new Date().toISOString(),
+          level: 'tertiary'
+        })
+      })
+
       const confirmedTagsData = {
         confirmed_tags: {
-          tags: [
-            {
-              tag: selectedPrimary,
-              source: enhancedTags.find(t => t.level === 'primary')?.source || 'human',
-              confidence: enhancedTags.find(t => t.level === 'primary')?.confidence || 1.0,
-              confirmed: true,
-              added_by: 'user',
-              added_at: new Date().toISOString(),
-              level: 'primary'
-            },
-            {
-              tag: selectedSecondary,
-              source: enhancedTags.find(t => t.level === 'secondary')?.source || 'human',
-              confidence: enhancedTags.find(t => t.level === 'secondary')?.confidence || 1.0,
-              confirmed: true,
-              added_by: 'user',
-              added_at: new Date().toISOString(),
-              level: 'secondary'
-            },
-            {
-              tag: selectedTertiary,
-              source: enhancedTags.find(t => t.level === 'tertiary')?.source || 'human',
-              confidence: enhancedTags.find(t => t.level === 'tertiary')?.confidence || 1.0,
-              confirmed: true,
-              added_by: 'user',
-              added_at: new Date().toISOString(),
-              level: 'tertiary'
-            }
-          ]
+          tags: confirmedTags
         }
       }
 
@@ -321,7 +401,7 @@ export function HierarchyBasedConfirmTagsModal({
 
       toast({
         title: "Success!",
-        description: `Document classification updated: ${selectedPrimary} → ${selectedSecondary} → ${selectedTertiary}`,
+        description: `Document classification updated with ${confirmedTags.length} tags`,
         variant: "default",
       })
 
@@ -340,25 +420,16 @@ export function HierarchyBasedConfirmTagsModal({
   }
 
   const resetToAIPredictions = () => {
-    const primaryTag = enhancedTags.find(t => t.level === 'primary')
-    const secondaryTag = enhancedTags.find(t => t.level === 'secondary')
-    const tertiaryTag = enhancedTags.find(t => t.level === 'tertiary')
+    const primaryTagsFiltered = enhancedTags.filter(t => t.level === 'primary')
+    const secondaryTagsFiltered = enhancedTags.filter(t => t.level === 'secondary')
+    const tertiaryTagsFiltered = enhancedTags.filter(t => t.level === 'tertiary')
 
-    setSelectedPrimary(primaryTag?.tag || "")
-    setSelectedSecondary(secondaryTag?.tag || "")
-    setSelectedTertiary(tertiaryTag?.tag || "")
+    // Reset to all AI/LLM predicted tags
+    setSelectedPrimaryTags(primaryTagsFiltered.map(t => t.tag))
+    setSelectedSecondaryTags(secondaryTagsFiltered.map(t => t.tag))
+    setSelectedTertiaryTags(tertiaryTagsFiltered.map(t => t.tag))
   }
 
-  const primaryTag = enhancedTags.find(t => t.level === 'primary')
-  const secondaryTag = enhancedTags.find(t => t.level === 'secondary')
-  const tertiaryTag = enhancedTags.find(t => t.level === 'tertiary')
-
-  // Helper function to get the source for displayed tags
-  const getTagSource = (selectedTag: string, originalTag: EnhancedTag | undefined) => {
-    if (!originalTag) return 'human'; // If no AI/LLM prediction, it's human selected
-    if (selectedTag === originalTag.tag) return originalTag.source; // Same as prediction
-    return 'human'; // User changed the selection
-  }
 
   if (hierarchyLoading || dataLoading) {
     return (
@@ -393,14 +464,10 @@ export function HierarchyBasedConfirmTagsModal({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="grid w-full grid-cols-4 shrink-0">
-            <TabsTrigger value="selection" className="flex items-center gap-2">
+          <TabsList className="grid w-full grid-cols-3 shrink-0">
+            <TabsTrigger value="classification" className="flex items-center gap-2">
               <Tag className="w-4 h-4" />
-              Classification
-            </TabsTrigger>
-            <TabsTrigger value="hierarchy" className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" />
-              Current Path
+              Classifications
             </TabsTrigger>
             <TabsTrigger value="explanations" className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4" />
@@ -414,232 +481,227 @@ export function HierarchyBasedConfirmTagsModal({
 
           <div className="flex-1 overflow-hidden">
             {/* Classification Selection Tab */}
-            <TabsContent value="selection" className="h-full overflow-y-auto mt-4">
-              <div className="space-y-6">
-                {/* AI Predictions Summary */}
-                {enhancedTags.length > 0 && (
-                  <Card className="border-l-4 border-l-purple-500 bg-purple-50">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex items-center gap-2 text-lg">
-                        <Brain className="w-5 h-5 text-purple-600" />
-                        AI/LLM Predictions
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={resetToAIPredictions}
-                          className="ml-auto"
-                        >
-                          <RefreshCw className="w-4 h-4 mr-1" />
-                          Reset to AI
-                        </Button>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex items-center gap-2 text-sm">
-                        {primaryTag && (
-                          <Badge variant="outline" className="bg-blue-100 text-blue-800">
-                            {primaryTag.tag}
-                          </Badge>
-                        )}
-                        {primaryTag && secondaryTag && <ArrowRight className="w-4 h-4 text-gray-400" />}
-                        {secondaryTag && (
-                          <Badge variant="outline" className="bg-green-100 text-green-800">
-                            {secondaryTag.tag}
-                          </Badge>
-                        )}
-                        {secondaryTag && tertiaryTag && <ArrowRight className="w-4 h-4 text-gray-400" />}
-                        {tertiaryTag && (
-                          <Badge variant="outline" className="bg-orange-100 text-orange-800">
-                            {tertiaryTag.tag}
-                          </Badge>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
+            <TabsContent value="classification" className="h-full overflow-y-auto mt-4">
+              <div className="space-y-4">
+                {/* Reset Button */}
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={resetToAIPredictions}
+                  >
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    Reset to AI Predictions
+                  </Button>
+                </div>
 
-                {/* Hierarchy Selection */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Tag className="w-5 h-5 text-blue-600" />
-                      Select Classification Path
+                {/* Primary Tags Container */}
+                <Card className="border-l-4 border-l-blue-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center justify-between text-lg">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700">1</Badge>
+                        <span>Primary Classification</span>
+                      </div>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-6">
-                    {/* Primary Selection */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Primary Classification</label>
-                      <Select value={selectedPrimary} onValueChange={handlePrimaryChange}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select primary classification..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {primaryOptions.map((primary) => (
-                            <SelectItem key={primary} value={primary}>
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="bg-blue-50 text-blue-700">1</Badge>
-                                {primary}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2 mb-3 min-h-[40px]">
+                      {(() => {
+                        console.log("🏷️ Rendering Primary Tags:", selectedPrimaryTags)
+                        return null
+                      })()}
+                      {selectedPrimaryTags.length === 0 ? (
+                        <p className="text-sm text-gray-500 italic">No primary tags selected. Use the dropdown below to add tags.</p>
+                      ) : (
+                        selectedPrimaryTags.map((tag) => {
+                          const enhancedTag = enhancedTags.find(t => t.level === 'primary' && t.tag === tag)
+                          const isAiGenerated = enhancedTag !== undefined
+                          return (
+                            <Badge
+                              key={tag}
+                              className="bg-blue-100 text-blue-800 pr-1 flex items-center gap-1"
+                            >
+                              {isAiGenerated && (
+                                <Bot className="w-3 h-3" />
+                              )}
+                              <span>{tag}</span>
+                              {isAiGenerated && enhancedTag && (
+                                <span className="text-xs opacity-75">
+                                  ({Math.round(enhancedTag.confidence * 100)}%)
+                                </span>
+                              )}
+                              <button
+                                onClick={() => removePrimaryTag(tag)}
+                                className="ml-1 hover:bg-blue-200 rounded-full p-0.5"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          )
+                        })
+                      )}
                     </div>
 
-                    {/* Secondary Selection */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Secondary Classification</label>
-                      <Select
-                        value={selectedSecondary}
-                        onValueChange={handleSecondaryChange}
-                        disabled={!selectedPrimary}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select secondary classification..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {secondaryOptions.map((secondary) => (
-                            <SelectItem key={secondary} value={secondary}>
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="bg-green-50 text-green-700">2</Badge>
-                                {secondary}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Tertiary Selection */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Tertiary Classification</label>
-                      <Select
-                        value={selectedTertiary}
-                        onValueChange={handleTertiaryChange}
-                        disabled={!selectedSecondary}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select tertiary classification..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {tertiaryOptions.map((tertiary) => (
-                            <SelectItem key={tertiary} value={tertiary}>
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="bg-orange-50 text-orange-700">3</Badge>
-                                {tertiary}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Current Selection Preview */}
-                    {selectedPrimary && selectedSecondary && selectedTertiary && (
-                      <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                        <div className="text-sm font-medium text-gray-600 mb-2">Selected Classification Path:</div>
+                    {/* Add Primary Tag Dropdown */}
+                    <Select key={selectedPrimaryTags.join(',')} onValueChange={(value) => { addPrimaryTag(value) }}>
+                      <SelectTrigger className="w-full">
                         <div className="flex items-center gap-2">
-                          <Badge className="bg-blue-100 text-blue-800">{selectedPrimary}</Badge>
-                          <ArrowRight className="w-4 h-4 text-gray-400" />
-                          <Badge className="bg-green-100 text-green-800">{selectedSecondary}</Badge>
-                          <ArrowRight className="w-4 h-4 text-gray-400" />
-                          <Badge className="bg-orange-100 text-orange-800">{selectedTertiary}</Badge>
+                          <Plus className="w-4 h-4" />
+                          <span>Add primary tag</span>
                         </div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {primaryOptions.filter(opt => !selectedPrimaryTags.includes(opt)).map((primary) => (
+                          <SelectItem key={primary} value={primary}>
+                            {primary}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </CardContent>
+                </Card>
+
+                {/* Secondary Tags Container */}
+                <Card className="border-l-4 border-l-green-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center justify-between text-lg">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="bg-green-50 text-green-700">2</Badge>
+                        <span>Secondary Classification</span>
                       </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2 mb-3 min-h-[40px]">
+                      {selectedSecondaryTags.length === 0 ? (
+                        <p className="text-sm text-gray-500 italic">No secondary tags selected. Use the dropdown below to add tags.</p>
+                      ) : (
+                        selectedSecondaryTags.map((tag) => {
+                          const enhancedTag = enhancedTags.find(t => t.level === 'secondary' && t.tag === tag)
+                          const isAiGenerated = enhancedTag !== undefined
+                          return (
+                            <Badge
+                              key={tag}
+                              className="bg-green-100 text-green-800 pr-1 flex items-center gap-1"
+                            >
+                              {isAiGenerated && (
+                                <Bot className="w-3 h-3" />
+                              )}
+                              <span>{tag}</span>
+                              {isAiGenerated && enhancedTag && (
+                                <span className="text-xs opacity-75">
+                                  ({Math.round(enhancedTag.confidence * 100)}%)
+                                </span>
+                              )}
+                              <button
+                                onClick={() => removeSecondaryTag(tag)}
+                                className="ml-1 hover:bg-green-200 rounded-full p-0.5"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          )
+                        })
+                      )}
+                    </div>
+
+                    {/* Add Secondary Tag Dropdown */}
+                    <Select
+                      key={selectedSecondaryTags.join(',')}
+                      onValueChange={(value) => { addSecondaryTag(value) }}
+                      disabled={selectedPrimaryTags.length === 0}
+                    >
+                      <SelectTrigger className="w-full">
+                        <div className="flex items-center gap-2">
+                          <Plus className="w-4 h-4" />
+                          <span>Add secondary tag</span>
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {secondaryOptions.filter(opt => !selectedSecondaryTags.includes(opt)).map((secondary) => (
+                          <SelectItem key={secondary} value={secondary}>
+                            {secondary}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedPrimaryTags.length === 0 && (
+                      <p className="text-sm text-gray-500 mt-2">Select at least one primary tag first</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Tertiary Tags Container */}
+                <Card className="border-l-4 border-l-orange-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center justify-between text-lg">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="bg-orange-50 text-orange-700">3</Badge>
+                        <span>Tertiary Classification</span>
+                      </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2 mb-3 min-h-[40px]">
+                      {selectedTertiaryTags.length === 0 ? (
+                        <p className="text-sm text-gray-500 italic">No tertiary tags selected. Use the dropdown below to add tags.</p>
+                      ) : (
+                        selectedTertiaryTags.map((tag) => {
+                          const enhancedTag = enhancedTags.find(t => t.level === 'tertiary' && t.tag === tag)
+                          const isAiGenerated = enhancedTag !== undefined
+                          return (
+                            <Badge
+                              key={tag}
+                              className="bg-orange-100 text-orange-800 pr-1 flex items-center gap-1"
+                            >
+                              {isAiGenerated && (
+                                <Bot className="w-3 h-3" />
+                              )}
+                              <span>{tag}</span>
+                              {isAiGenerated && enhancedTag && (
+                                <span className="text-xs opacity-75">
+                                  ({Math.round(enhancedTag.confidence * 100)}%)
+                                </span>
+                              )}
+                              <button
+                                onClick={() => removeTertiaryTag(tag)}
+                                className="ml-1 hover:bg-orange-200 rounded-full p-0.5"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          )
+                        })
+                      )}
+                    </div>
+
+                    {/* Add Tertiary Tag Dropdown */}
+                    <Select
+                      key={selectedTertiaryTags.join(',')}
+                      onValueChange={(value) => { addTertiaryTag(value) }}
+                      disabled={selectedSecondaryTags.length === 0}
+                    >
+                      <SelectTrigger className="w-full">
+                        <div className="flex items-center gap-2">
+                          <Plus className="w-4 h-4" />
+                          <span>Add tertiary tag</span>
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tertiaryOptions.filter(opt => !selectedTertiaryTags.includes(opt)).map((tertiary) => (
+                          <SelectItem key={tertiary} value={tertiary}>
+                            {tertiary}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedSecondaryTags.length === 0 && (
+                      <p className="text-sm text-gray-500 mt-2">Select at least one secondary tag first</p>
                     )}
                   </CardContent>
                 </Card>
               </div>
-            </TabsContent>
-
-            {/* Current Path Tab */}
-            <TabsContent value="hierarchy" className="h-full overflow-y-auto mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-blue-600" />
-                    Classification Hierarchy
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-6">
-                    {/* Selected Path */}
-                    {selectedPrimary && (
-                      <div className="flex items-center gap-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50">
-                        <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-sm">
-                          1
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-lg">{selectedPrimary}</div>
-                          <div className="text-sm text-gray-600">Primary Classification</div>
-                        </div>
-                        {(() => {
-                          const source = getTagSource(selectedPrimary, primaryTag);
-                          return (
-                            <Badge className={source === 'ai' ? 'bg-blue-100 text-blue-800' : source === 'llm' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
-                              {source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : source === 'llm' ? <Brain className="w-3 h-3 mr-1" /> : <Tag className="w-3 h-3 mr-1" />}
-                              {source === 'ai' ? 'AI' : source === 'llm' ? 'LLM' : 'HUMAN'}
-                            </Badge>
-                          );
-                        })()}
-                      </div>
-                    )}
-
-                    {selectedPrimary && selectedSecondary && (
-                      <>
-                        <div className="flex justify-center">
-                          <div className="w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-gray-400"></div>
-                        </div>
-                        <div className="flex items-center gap-4 p-4 border-2 border-green-200 rounded-lg bg-green-50">
-                          <div className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold text-sm">
-                            2
-                          </div>
-                          <div className="flex-1">
-                            <div className="font-semibold text-lg">{selectedSecondary}</div>
-                            <div className="text-sm text-gray-600">Secondary Classification</div>
-                          </div>
-                          {(() => {
-                            const source = getTagSource(selectedSecondary, secondaryTag);
-                            return (
-                              <Badge className={source === 'ai' ? 'bg-blue-100 text-blue-800' : source === 'llm' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
-                                {source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : source === 'llm' ? <Brain className="w-3 h-3 mr-1" /> : <Tag className="w-3 h-3 mr-1" />}
-                                {source === 'ai' ? 'AI' : source === 'llm' ? 'LLM' : 'HUMAN'}
-                              </Badge>
-                            );
-                          })()}
-                        </div>
-                      </>
-                    )}
-
-                    {selectedSecondary && selectedTertiary && (
-                      <>
-                        <div className="flex justify-center">
-                          <div className="w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-gray-400"></div>
-                        </div>
-                        <div className="flex items-center gap-4 p-4 border-2 border-orange-200 rounded-lg bg-orange-50">
-                          <div className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold text-sm">
-                            3
-                          </div>
-                          <div className="flex-1">
-                            <div className="font-semibold text-lg">{selectedTertiary}</div>
-                            <div className="text-sm text-gray-600">Tertiary Classification</div>
-                          </div>
-                          {(() => {
-                            const source = getTagSource(selectedTertiary, tertiaryTag);
-                            return (
-                              <Badge className={source === 'ai' ? 'bg-blue-100 text-blue-800' : source === 'llm' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}>
-                                {source === 'ai' ? <Bot className="w-3 h-3 mr-1" /> : source === 'llm' ? <Brain className="w-3 h-3 mr-1" /> : <Tag className="w-3 h-3 mr-1" />}
-                                {source === 'ai' ? 'AI' : source === 'llm' ? 'LLM' : 'HUMAN'}
-                              </Badge>
-                            );
-                          })()}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
             </TabsContent>
 
             {/* AI Reasoning Tab */}
@@ -662,18 +724,27 @@ export function HierarchyBasedConfirmTagsModal({
 
                 // Enhanced explanations with SHAP data extracted from backend service_response
                 const enhancedExplanations = filteredExplanations.map((explanation: any) => {
-                  // Extract SHAP data from service_response.shap_explainability (backend data)
+                  // Extract SHAP data from multiple possible locations
                   let shapData = null;
 
+                  // Check service_response.shap_explainability (database format)
                   if (explanation.service_response?.shap_explainability) {
                     shapData = explanation.service_response.shap_explainability;
                   }
+                  // Check direct shap_data property (props format from upload)
+                  else if (explanation.shap_data) {
+                    shapData = explanation.shap_data;
+                  }
+                  // Check full_response (another possible format)
+                  else if (explanation.full_response?.key_evidence) {
+                    shapData = explanation.full_response.key_evidence;
+                  }
 
-                  console.log('🧠 SHAP data for', explanation.predicted_tag, ':', shapData);
+                  console.log('🧠 SHAP data for', explanation.predicted_tag || explanation.tag, ':', shapData);
 
                   return {
                     ...explanation,
-                    shap_data: shapData || explanation.shap_data
+                    shap_data: shapData
                   };
                 });
 
@@ -876,7 +947,7 @@ export function HierarchyBasedConfirmTagsModal({
             </Button>
             <Button
               onClick={handleConfirm}
-              disabled={isLoading || !selectedPrimary || !selectedSecondary || !selectedTertiary}
+              disabled={isLoading || selectedPrimaryTags.length === 0 || selectedSecondaryTags.length === 0 || selectedTertiaryTags.length === 0}
               className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
             >
               {isLoading ? (

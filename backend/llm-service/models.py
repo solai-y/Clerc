@@ -2,7 +2,7 @@
 Pydantic models for request/response validation
 """
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class PredictionRequest(BaseModel):
     """Request model for prediction endpoint"""
@@ -25,6 +25,8 @@ class PredictionLevel(BaseModel):
 
 class PredictionResponse(BaseModel):
     """Complete prediction response"""
+    model_config = ConfigDict(exclude_none=True)
+
     primary: Optional[PredictionLevel] = None
     secondary: Optional[PredictionLevel] = None
     tertiary: Optional[PredictionLevel] = None

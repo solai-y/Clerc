@@ -112,10 +112,10 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
         })
       }
 
-      console.log('[useDocuments] fetchDocuments -> success', {
-        returned: transformed.length,
-        pagination: apiPagination
-      })
+      // console.log('[useDocuments] fetchDocuments -> success', {
+      //   returned: transformed.length,
+      //   pagination: apiPagination
+      // })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch documents'
       setError(message)
