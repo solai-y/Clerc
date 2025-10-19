@@ -115,13 +115,19 @@ class DatabaseService:
             # Server-side sort (use fully qualified column so PostgREST orders on the related table)
             sort_map = {
                 'name':  ('document_name',  'raw_documents'),
-                'date':  ('upload_date',    'raw_documents'),
+                'date':  ('processing_date', 'processed_documents'),  # Sort by processing_date to show recently updated docs first
                 'size':  ('file_size',      'raw_documents'),
             }
             sort_key = (sort_by or 'date').lower()
-            col_name, foreign_table = sort_map.get(sort_key, ('upload_date', 'raw_documents'))
+            col_name, foreign_table = sort_map.get(sort_key, ('processing_date', 'processed_documents'))
             desc = (sort_order or 'desc').lower() == 'desc'
-            order_col = f"{foreign_table}.{col_name}"  # e.g. "raw_documents.document_name"
+
+            # For processed_documents columns, no need to qualify with table name
+            if foreign_table == 'processed_documents':
+                order_col = col_name
+            else:
+                order_col = f"{foreign_table}.{col_name}"  # e.g. "raw_documents.document_name"
+
             self.logger.debug(f"[DB] Applying server-side order: {order_col} desc={desc}")
             # IMPORTANT: pass a single fully-qualified column; don't use foreign_table arg (supabase-py ignores it)
             query = query.order(order_col, desc=desc)
@@ -427,8 +433,8 @@ class DatabaseService:
             rows.sort(key=lambda r: (safe_get(r, ['raw_documents', 'document_name'], "") or "").lower(), reverse=reverse)
         elif key == 'size':
             rows.sort(key=lambda r: safe_get(r, ['raw_documents', 'file_size'], -1) or -1, reverse=reverse)
-        else:  # 'date'
-            rows.sort(key=lambda r: safe_get(r, ['raw_documents', 'upload_date'], "") or "", reverse=reverse)
+        else:  # 'date' - sort by processing_date to show recently updated docs first
+            rows.sort(key=lambda r: r.get('processing_date', "") or "", reverse=reverse)
         return rows
 
     def _paginate_in_python(self, rows: List[Dict], *, limit: Optional[int], offset: Optional[int]) -> List[Dict]:
@@ -542,9 +548,13 @@ class DatabaseService:
                 if not isinstance(tag_data['user_removed_tags'], list):
                     return None, "user_removed_tags must be an array"
                 update_data['user_removed_tags'] = tag_data['user_removed_tags']
-            
+
+            from datetime import datetime, timezone
+
             update_data['user_reviewed'] = True
-            update_data['reviewed_at'] = 'now()'
+            current_time = datetime.now(timezone.utc).isoformat()
+            update_data['reviewed_at'] = current_time
+            update_data['processing_date'] = current_time  # Update processing_date so document appears at top when sorted by date
             if 'user_id' in tag_data:
                 update_data['user_id'] = tag_data['user_id']
 

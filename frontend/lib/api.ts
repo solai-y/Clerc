@@ -415,7 +415,7 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
   const transformedDocument = {
     id: processedDoc.document_id.toString(),
     name: processedDoc.raw_documents?.document_name || "[Document name unavailable]",
-    uploadDate: processedDoc.raw_documents?.upload_date.split("T")[0] || "[Date unavailable]",
+    uploadDate: processedDoc.processing_date?.split("T")[0] || processedDoc.raw_documents?.upload_date?.split("T")[0] || "[Date unavailable]",
     tags,
     size: sizeEstimate,
     type: processedDoc.raw_documents?.document_type || "[Type unavailable]",

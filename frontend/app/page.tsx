@@ -309,6 +309,14 @@ export default function HomePage() {
             try {
               const documentIdNum = parseInt(documentId)
               await apiClient.updateDocumentTags(documentIdNum, { confirmed_tags: confirmedTagsData })
+
+              // Reset to page 1 and clear filters to show the updated document at the top
+              setCurrentPage(1)
+              setSearchTerm("")
+              setFilterTag("")
+
+              // Close modal and refetch
+              setDetailsDocument(null)
               await refetch()
             } catch (err) {
               console.error("❌ [page] error updating document tags:", err)
