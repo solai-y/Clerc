@@ -139,6 +139,7 @@ export function HierarchyBasedConfirmTagsModal({
   // Process prediction data into enhanced tags (from database OR props)
   const enhancedTags = useMemo<EnhancedTag[]>(() => {
     const tags: EnhancedTag[] = []
+    // Track by tag name + level to allow same tag name at different hierarchy levels
     const processedTags = new Set<string>()
 
     // Determine which explanations to use: database or props
@@ -163,8 +164,10 @@ export function HierarchyBasedConfirmTagsModal({
           tagConfidence
         })
 
-        if (tagName && tagLevel && !processedTags.has(tagName)) {
-          processedTags.add(tagName)
+        // Use tag name + level as unique key to allow same tag at different levels
+        const tagKey = `${tagName}:${tagLevel}`
+        if (tagName && tagLevel && !processedTags.has(tagKey)) {
+          processedTags.add(tagKey)
 
           // Use the actual classification level
           const level = tagLevel as 'primary' | 'secondary' | 'tertiary'
@@ -172,7 +175,9 @@ export function HierarchyBasedConfirmTagsModal({
           // Find matching prediction data for confidence score (if using db explanations)
           let confidence = tagConfidence
           if (dbPredictions && Array.isArray(dbPredictions)) {
-            const matchingPred = dbPredictions.find(pred => pred.tag === tagName)
+            const matchingPred = dbPredictions.find(pred =>
+              pred.tag === tagName && pred.hierarchy_level === tagLevel
+            )
             confidence = matchingPred?.score || confidence
           }
 
@@ -197,8 +202,10 @@ export function HierarchyBasedConfirmTagsModal({
       console.log("📊 Processing database predictions:", dbPredictions)
 
       for (const pred of dbPredictions) {
-        if (pred.tag && !processedTags.has(pred.tag)) {
-          processedTags.add(pred.tag)
+        // Use tag name + level as unique key to allow same tag at different levels
+        const tagKey = `${pred.tag}:${pred.hierarchy_level}`
+        if (pred.tag && !processedTags.has(tagKey)) {
+          processedTags.add(tagKey)
 
           // Use the hierarchy_level from the database instead of reassigning based on confidence
           const level = pred.hierarchy_level as 'primary' | 'secondary' | 'tertiary'
