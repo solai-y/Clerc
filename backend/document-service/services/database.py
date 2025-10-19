@@ -145,11 +145,12 @@ class DatabaseService:
             return data, None
 
         except Exception as e:
-            # Fallback path: fetch a window and filter/sort locally to avoid 500s.
+            # Fallback path: fetch all documents and filter/sort locally to avoid 500s.
             self.logger.warning(f"[DB] Server-side query failed, falling back to Python filter/sort: {e}")
 
             try:
-                fetch_limit = max(limit or 50, 100)
+                # When searching, fetch ALL documents to ensure we don't miss results
+                fetch_limit = 10000 if search else max(limit or 50, 100)
                 self.logger.debug(f"[DB] Fallback fetch size: {fetch_limit}")
                 response = self.supabase.table('processed_documents').select("""
                     *,
