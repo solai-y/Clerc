@@ -532,5 +532,100 @@ class TestTagOperationsIntegration:
         
         # Cleanup
         client.delete(f'/documents/{document_id}')
-        
+
         print("[SUCCESS] Tag persistence test completed")
+
+    def test_hierarchical_suggested_tags(self, client: TestClient, test_model_id):
+        """Test that hierarchical/multiclass suggested_tags format is saved and retrieved correctly"""
+        print("\n[TEST] Testing hierarchical suggested_tags format...")
+
+        # Create document
+        raw_doc_data = {
+            "document_name": "Hierarchical Tags Test",
+            "document_type": "PDF",
+            "link": "https://test.com/hierarchical.pdf",
+            "uploaded_by": None,
+        }
+
+        raw_response = client.post('/documents', json=raw_doc_data)
+        document_id = raw_response.json()["data"]["document_id"]
+
+        # Create processed document with hierarchical suggested_tags
+        processed_data = {
+            "document_id": document_id,
+            "model_id": test_model_id,
+            "suggested_tags": [
+                {
+                    "tag": "Disclosure",
+                    "score": 0.88,
+                    "hierarchy_level": "primary",
+                    "source": "llm",
+                    "is_primary": True,
+                    "is_secondary": False,
+                    "is_tertiary": False
+                },
+                {
+                    "tag": "Tearsheet",
+                    "score": 0.85,
+                    "hierarchy_level": "secondary",
+                    "source": "llm",
+                    "is_primary": False,
+                    "is_secondary": True,
+                    "is_tertiary": False
+                },
+                {
+                    "tag": "Product Strategy",
+                    "score": 0.82,
+                    "hierarchy_level": "tertiary",
+                    "source": "ai",
+                    "is_primary": False,
+                    "is_secondary": False,
+                    "is_tertiary": True
+                }
+            ],
+            "threshold_pct": 80,
+            "ocr_used": False,
+            "processing_ms": 1500
+        }
+
+        processed_response = client.post('/documents/processed', json=processed_data)
+        assert processed_response.status_code == 201
+        print("  [PASS] Processed document created with hierarchical suggested_tags")
+
+        # Retrieve and verify suggested_tags structure
+        get_response = client.get(f'/documents/{document_id}/complete')
+        assert get_response.status_code == 200
+
+        doc_data = get_response.json()["data"]
+        assert doc_data["suggested_tags"] is not None
+        assert len(doc_data["suggested_tags"]) == 3
+
+        # Verify each tag has hierarchical metadata
+        for tag in doc_data["suggested_tags"]:
+            assert "tag" in tag
+            assert "score" in tag
+            assert "hierarchy_level" in tag
+            assert "source" in tag
+            assert "is_primary" in tag or "is_secondary" in tag or "is_tertiary" in tag
+
+        # Verify specific tags
+        tag_names = [tag["tag"] for tag in doc_data["suggested_tags"]]
+        assert "Disclosure" in tag_names
+        assert "Tearsheet" in tag_names
+        assert "Product Strategy" in tag_names
+
+        # Verify hierarchy levels
+        primary_tags = [tag for tag in doc_data["suggested_tags"] if tag.get("hierarchy_level") == "primary"]
+        secondary_tags = [tag for tag in doc_data["suggested_tags"] if tag.get("hierarchy_level") == "secondary"]
+        tertiary_tags = [tag for tag in doc_data["suggested_tags"] if tag.get("hierarchy_level") == "tertiary"]
+
+        assert len(primary_tags) == 1
+        assert len(secondary_tags) == 1
+        assert len(tertiary_tags) == 1
+
+        print("  [PASS] Hierarchical suggested_tags retrieved with correct structure")
+
+        # Cleanup
+        client.delete(f'/documents/{document_id}')
+
+        print("[SUCCESS] Hierarchical suggested_tags test completed")

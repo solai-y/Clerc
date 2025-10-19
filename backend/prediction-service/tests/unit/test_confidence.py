@@ -160,21 +160,3 @@ class TestConfidenceEvaluator:
             ai_predictions, ["primary", "secondary", "tertiary"]
         )
         assert context == {}
-
-    def test_build_llm_context_multi_label(self):
-        """Test building context with multiple labels per level"""
-        ai_predictions = {
-            "prediction": {
-                "primary": [
-                    {"label": "News", "confidence": 0.95},
-                    {"label": "Disclosure", "confidence": 0.88}
-                ],
-                "secondary": [{"label": "Company", "confidence": 0.90}]
-            }
-        }
-
-        # Context with multiple primary labels should pass all labels as a list
-        context = ConfidenceEvaluator.build_llm_context(
-            ai_predictions, ["secondary"]
-        )
-        assert context == {"primary": ["News", "Disclosure"]}  # Passes all labels

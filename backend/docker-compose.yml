@@ -49,6 +49,9 @@ services:
       - text-extraction-service
     env_file:
       - .env
+    environment:
+      - AI_SERVICE_TIMEONE=120
+      - LLM_SERVICE_TIMEOUT=120
 
   text-extraction-service:
     build: ./text-extraction-service

@@ -10,20 +10,28 @@ SERVICE_ROOT = HERE.parent.parent  # .../ai-service
 
 # ---------------- Dummy model used by tests ----------------
 class DummyHierModel:
-    """Mimics your wrapper's interface: .predict(List[str]) -> List[Dict]."""
+    """Mimics your wrapper's interface: .predict(List[str]) -> List[Dict].
+    Returns multiclass format with arrays of predictions per level."""
     def __init__(self, version="v1"):
         self.version = version
 
     def predict(self, texts):
         out = []
         for _t in texts:
+            # Return multiclass format: each level has an array of predictions
             out.append({
-                "primary":   {"pred": "Disclosure", "confidence": 0.91,
-                              "key_evidence": {"supporting": [], "opposing": []}},
-                "secondary": {"pred": "SEC_Filings", "confidence": 0.83, "primary": "Disclosure",
-                              "key_evidence": {"supporting": [], "opposing": []}},
-                "tertiary":  {"pred": "10-K", "confidence": 0.77, "primary": "Disclosure", "secondary": "SEC_Filings",
-                              "key_evidence": {"supporting": [], "opposing": []}},
+                "primary": [
+                    {"label": "Disclosure", "confidence": 0.91,
+                     "key_evidence": {"supporting": [], "opposing": []}}
+                ],
+                "secondary": [
+                    {"label": "SEC_Filings", "confidence": 0.83, "primary": "Disclosure",
+                     "key_evidence": {"supporting": [], "opposing": []}}
+                ],
+                "tertiary": [
+                    {"label": "10-K", "confidence": 0.77, "primary": "Disclosure", "secondary": "SEC_Filings",
+                     "key_evidence": {"supporting": [], "opposing": []}}
+                ],
                 "model_version": self.version,
             })
         return out
