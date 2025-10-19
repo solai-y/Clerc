@@ -59,6 +59,21 @@ services:
     environment:
       - PORT=5008
 
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - company-service
+      - document-service
+      - s3-service
+      - ai-service
+      - llm-service
+      - prediction-service
+      - text-extraction-service
+    env_file:
+      - .env
+
   nginx:
     image: nginx:latest
     ports:
