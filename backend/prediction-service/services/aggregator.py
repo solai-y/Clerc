@@ -108,26 +108,39 @@ class ResponseAggregator:
     def _create_prediction_level_from_llm(level: str,
                                         llm_predictions: Dict[str, Any],
                                         ai_predictions: Dict[str, Any]) -> Optional[List[PredictionLevel]]:
-        """Create prediction level using LLM service response (returns as list for consistency)"""
-        llm_pred = llm_predictions.get("prediction", {}).get(level, {})
-        if not llm_pred:
-            logger.warning(f"No LLM prediction found for level: {level}")
+        """Create prediction levels using LLM service response (multi-tag support)"""
+        llm_preds = llm_predictions.get("prediction", {}).get(level, [])
+
+        # Handle both old single-dict format and new list format
+        if isinstance(llm_preds, dict):
+            # Legacy single prediction format - wrap in list
+            llm_preds = [llm_preds]
+        elif not isinstance(llm_preds, list):
+            logger.warning(f"No LLM predictions found for level: {level}")
+            return None
+
+        if not llm_preds:
+            logger.warning(f"No LLM predictions found for level: {level}")
             return None
 
         # Get AI predictions for this level to preserve them
         ai_preds_for_level = ai_predictions.get("prediction", {}).get(level, [])
 
-        # LLM returns single prediction, wrap it in a list for multi-label consistency
-        return [PredictionLevel(
-            pred=llm_pred.get("pred", ""),
-            confidence=llm_pred.get("confidence", 0.0),
-            reasoning=llm_pred.get("reasoning"),
-            source="llm",
-            primary=llm_pred.get("primary"),
-            secondary=llm_pred.get("secondary"),
-            ai_prediction=ai_preds_for_level,  # Include all AI predictions
-            llm_prediction=llm_pred
-        )]
+        # Create PredictionLevel for each LLM prediction (multi-tag support)
+        prediction_levels = []
+        for llm_pred in llm_preds:
+            prediction_levels.append(PredictionLevel(
+                pred=llm_pred.get("pred", ""),
+                confidence=llm_pred.get("confidence", 0.0),
+                reasoning=llm_pred.get("reasoning"),
+                source="llm",
+                primary=llm_pred.get("primary"),
+                secondary=llm_pred.get("secondary"),
+                ai_prediction=ai_preds_for_level,  # Include all AI predictions
+                llm_prediction=llm_pred
+            ))
+
+        return prediction_levels
     
     @staticmethod
     def merge_service_timing(ai_predictions: Dict[str, Any],

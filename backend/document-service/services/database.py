@@ -555,13 +555,15 @@ class DatabaseService:
             if response.data:
                 updated_doc = response.data[0]
 
-                if 'explanations' in tag_data:
-                    self.logger.info(f"Creating explanations during tag update for process_id {process_id}: {len(tag_data['explanations'])} explanations")
-                    explanation_error = self.create_explanations(process_id, tag_data['explanations'])
-                    if explanation_error:
-                        self.logger.warning(f"Failed to create explanations during tag update for process_id {process_id}: {explanation_error}")
-                    else:
-                        self.logger.info(f"Successfully created explanations during tag update for process_id {process_id}")
+                # Don't re-create explanations when confirming tags - explanations should only be created once during initial processing
+                # Keeping this code commented out to prevent duplicate explanations on tag confirmation
+                # if 'explanations' in tag_data:
+                #     self.logger.info(f"Creating explanations during tag update for process_id {process_id}: {len(tag_data['explanations'])} explanations")
+                #     explanation_error = self.create_explanations(process_id, tag_data['explanations'])
+                #     if explanation_error:
+                #         self.logger.warning(f"Failed to create explanations during tag update for process_id {process_id}: {explanation_error}")
+                #     else:
+                #         self.logger.info(f"Successfully created explanations during tag update for process_id {process_id}")
 
                 self.logger.info(f"Updated tags for processed document {process_id} (document_id: {document_id})")
                 return updated_doc, None
