@@ -12,33 +12,33 @@ AC6. Filtered document count is displayed
 """
 
 import pytest
-from flask import Flask
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
 def app():
-    """Create test Flask app with mocked database service"""
+    """Create test FastAPI app with mocked database service"""
     # Import the MockDBService from conftest
     from .conftest import MockDBService
 
     # Import routes AFTER conftest has set up the mock
     import routes.documents as doc_routes
-    from routes.documents import documents_bp
 
     # Inject the mock AFTER module initialization (in case it failed to initialize)
     doc_routes.db_service = MockDBService()
 
-    # Now create the app with the blueprint
-    app = Flask(__name__)
-    app.register_blueprint(documents_bp, url_prefix='/documents')
-    app.config['TESTING'] = True
+    # Create FastAPI app and include the router
+    from fastapi import FastAPI
+    app = FastAPI()
+    app.include_router(doc_routes.documents_router, prefix='/documents', tags=['documents'])
+
     return app
 
 
 @pytest.fixture
 def client(app):
     """Create test client"""
-    return app.test_client()
+    return TestClient(app)
 
 
 class TestTagFilteringMinimal:
@@ -52,7 +52,7 @@ class TestTagFilteringMinimal:
         response = client.get('/documents?primary_tags[]=News&secondary_tags[]=Industry&tertiary_tags[]=Healthcare')
 
         assert response.status_code == 200
-        data = response.get_json()
+        data = response.json()
         assert data['status'] == 'success'
         # If endpoint accepts parameters without error, AC1 is satisfied
 
@@ -64,7 +64,7 @@ class TestTagFilteringMinimal:
         """
         response = client.get('/documents?primary_tags[]=News&primary_tags[]=Disclosure')
 
-        data = response.get_json()
+        data = response.json()
         assert data['data']['pagination']['total'] == 3  # All 3 docs have News OR Disclosure
 
     def test_ac3_and_logic_across_different_tiers(self, client):
@@ -75,7 +75,7 @@ class TestTagFilteringMinimal:
         """
         response = client.get('/documents?primary_tags[]=News&secondary_tags[]=Industry')
 
-        data = response.get_json()
+        data = response.json()
         assert data['data']['pagination']['total'] == 2  # Only docs 1 and 2
 
     def test_ac4_filter_updates_dynamically(self, client):
@@ -85,11 +85,11 @@ class TestTagFilteringMinimal:
         """
         # First query: Primary="News" → 2 results
         response1 = client.get('/documents?primary_tags[]=News')
-        count1 = response1.get_json()['data']['pagination']['total']
+        count1 = response1.json()['data']['pagination']['total']
 
         # Second query: Primary="News" AND Tertiary="Healthcare" → 1 result
         response2 = client.get('/documents?primary_tags[]=News&tertiary_tags[]=Healthcare')
-        count2 = response2.get_json()['data']['pagination']['total']
+        count2 = response2.json()['data']['pagination']['total']
 
         assert count1 == 2
         assert count2 == 1
@@ -102,11 +102,11 @@ class TestTagFilteringMinimal:
         """
         # With filters
         response_filtered = client.get('/documents?primary_tags[]=News')
-        filtered_count = response_filtered.get_json()['data']['pagination']['total']
+        filtered_count = response_filtered.json()['data']['pagination']['total']
 
         # Without filters (cleared)
         response_all = client.get('/documents')
-        all_count = response_all.get_json()['data']['pagination']['total']
+        all_count = response_all.json()['data']['pagination']['total']
 
         assert filtered_count == 2  # Filtered
         assert all_count == 3  # All documents
@@ -119,7 +119,7 @@ class TestTagFilteringMinimal:
         """
         response = client.get('/documents?primary_tags[]=News')
 
-        data = response.get_json()
+        data = response.json()
         assert 'pagination' in data['data']
         assert 'total' in data['data']['pagination']
         assert data['data']['pagination']['total'] == 2  # Correct count for "News"
