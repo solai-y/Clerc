@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
+from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
 import os
@@ -17,7 +18,11 @@ class TagCreate(BaseModel):
     parent_id: int | None = None
 
 class TagDelete(BaseModel):
-    id: int
+    tag_id: int
+
+class TagUpdate(BaseModel):
+    tag_name: str
+    parent_id: int | None = None
 
 def build_tag_hierarchy(tags):
     tags_by_id = {tag['id']: tag for tag in tags}
@@ -51,12 +56,49 @@ def build_tag_hierarchy(tags):
         hierarchy[top['tag_name']] = node
     return hierarchy
 
-@app.get("/tags")
+def build_tag_tree_with_ids(tags):
+    tags_by_id = {tag["id"]: tag for tag in tags}
+    children_map = {}
+
+    for tag in tags:
+        pid = tag["parent_id"]
+        if pid is not None:
+            children_map.setdefault(pid, []).append(tag)
+
+    def build_node(tag):
+        tid = tag["id"]
+        children = children_map.get(tid, [])
+
+        node = {
+            "id": tag["id"],
+            "tag_name": tag["tag_name"],
+            "parent_id": tag["parent_id"],
+        }
+
+        if children:
+            node["children"] = [build_node(child) for child in children]
+
+        return node
+
+    root_tags = [tag for tag in tags if tag["parent_id"] is None]
+    return [build_node(tag) for tag in root_tags]
+
+
+@app.get("/tagsHierarchy")
 async def get_tags():
     response = supabase.table('tags').select('*').execute()
     tags = response.data
     tag_structure = build_tag_hierarchy(tags)
     return tag_structure
+
+
+@app.get("/tags")
+async def get_tags_with_id():
+    response = supabase.table('tags').select('*').execute()
+    tags = response.data
+    tag_tree = build_tag_tree_with_ids(tags)
+    return tag_tree
+
 
 @app.post("/tags")
 async def create_tag(tag: TagCreate):
@@ -73,10 +115,38 @@ async def create_tag(tag: TagCreate):
 @app.delete("/tags/{tag_id}")
 async def delete_tag(tag_id: int):
     """Delete a tag and its children (if any)"""
-    response = supabase.table("tags").delete().eq("id", tag_id).execute()
+    existing = supabase.table("tags").select("tag_name").eq("id", tag_id).execute()
+    
+    if not existing.data:
+        raise HTTPException(status_code=404, detail=f"Tag with id {tag_id} not found")
+    
+    tag_name = existing.data[0]["tag_name"]
 
+    response = supabase.table("tags").delete().eq("id", tag_id).execute()
+    
     if not response.data:
+        raise HTTPException(status_code=500, detail=f"Tag deletion failed for {tag_name}")
+
+    return {"message": f"Tag '{tag_name}' deleted successfully"}
+
+
+@app.patch("/tags/{tag_id}")
+async def update_tag(tag_id: int, tag: TagUpdate = Body(...)):
+    """Update a tag's name and/or parent id"""
+    # Check if tag exists first
+    existing = supabase.table("tags").select("*").eq("id", tag_id).execute()
+    if not existing.data:
         raise HTTPException(status_code=404, detail=f"Tag with id {tag_id} not found")
 
-    return {"message": f"Tag {tag_id} deleted successfully"}
+    # Update tag
+    update_data = {"tag_name": tag.tag_name, "parent_id": tag.parent_id}
+    response = supabase.table("tags").update(update_data).eq("id", tag_id).execute()
 
+    if not response.data:
+        raise HTTPException(status_code=500, detail="Tag update failed")
+
+    return {"message": "Tag updated successfully", "updated_tag": response.data[0]}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "message": "API is reachable"}

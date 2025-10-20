@@ -10,18 +10,13 @@ const BACKEND_ORIGIN =
   process.env.BACKEND_ORIGIN ||
   (process.env.VERCEL ? "https://clercbackend.clerc.uk" : "http://localhost");
 
-// Optional: tag service can be a different origin/port
-const TAG_SERVICE_ORIGIN = process.env.TAG_SERVICE_ORIGIN || BACKEND_ORIGIN;
-
 // Debug logging
 console.log("Next.js Config Debug:");
 console.log("- VERCEL:", process.env.VERCEL);
 console.log("- VERCEL_ENV:", process.env.VERCEL_ENV);
 console.log("- EC2_DEPLOYMENT:", process.env.EC2_DEPLOYMENT);
 console.log("- BACKEND_ORIGIN env:", process.env.BACKEND_ORIGIN);
-console.log("- TAG_SERVICE_ORIGIN env:", process.env.TAG_SERVICE_ORIGIN);
-console.log("- Computed BACKEND_ORIGIN:", BACKEND_ORIGIN);
-console.log("- Computed TAG_SERVICE_ORIGIN:", TAG_SERVICE_ORIGIN);
+console.log("- TAG_SERVICE_ORIGIN env:", process.env.BACKEND_ORIGIN);
 console.log("- Environment detected:", { isVercel, isProd, isEC2 });
 
 if (!BACKEND_ORIGIN) {
@@ -42,8 +37,7 @@ const nextConfig = {
       { source: "/documents/:path*", destination: `${BACKEND_ORIGIN}/documents/:path*` },
 
       // --- Tag service (use a prefix so it doesn't collide with /tags page) ---
-      { source: "/tag-service/tags", destination: `${TAG_SERVICE_ORIGIN}/tags` },
-      { source: "/tag-service/tags/:path*", destination: `${TAG_SERVICE_ORIGIN}/tags/:path*` },
+      { source: "/tag-service/:path*", destination: `${BACKEND_ORIGIN}/tag-service/:path*` },
 
       // --- Other services ---
       { source: "/s3", destination: `${BACKEND_ORIGIN}/s3` },
