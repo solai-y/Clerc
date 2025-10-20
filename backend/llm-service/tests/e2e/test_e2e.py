@@ -77,9 +77,11 @@ class TestLLMServiceE2E:
         assert "secondary" in prediction
         assert "tertiary" in prediction
         
-        # Context should be preserved
-        assert prediction["secondary"]["primary"] == "News"
-        assert prediction["tertiary"]["primary"] == "News"
+        # Context should be preserved (accessing arrays)
+        secondary = prediction["secondary"][0]
+        tertiary = prediction["tertiary"][0]
+        assert secondary["primary"] == "News"
+        assert tertiary["primary"] == "News"
     
     
     def test_single_level_prediction(self):
@@ -105,7 +107,8 @@ class TestLLMServiceE2E:
         assert "secondary" not in prediction
         assert "tertiary" in prediction
         
-        tertiary = prediction["tertiary"]
+        # Access first element of array
+        tertiary = prediction["tertiary"][0]
         assert tertiary["primary"] == "News"
         assert tertiary["secondary"] == "Company"
     
@@ -191,9 +194,12 @@ class TestLLMServiceE2E:
         
         prediction = data["prediction"]
         
-        # Check confidence scores for all levels
+        # Check confidence scores for all levels (accessing arrays)
         for level in ["primary", "secondary", "tertiary"]:
             if level in prediction:
-                confidence = prediction[level]["confidence"]
+                level_data = prediction[level]
+                assert isinstance(level_data, list)
+                assert len(level_data) > 0
+                confidence = level_data[0]["confidence"]
                 assert isinstance(confidence, (int, float))
                 assert 0 <= confidence <= 1
