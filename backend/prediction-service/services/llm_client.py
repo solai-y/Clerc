@@ -63,7 +63,7 @@ class LLMServiceClient:
                 else:
                     result["duration"] = duration
 
-                # Transform the prediction format from arrays to single objects
+                # Keep prediction format as arrays for multi-tag support
                 if "prediction" in result and isinstance(result["prediction"], dict):
                     prediction = result["prediction"]
                     transformed_prediction = {}
@@ -72,43 +72,39 @@ class LLMServiceClient:
                         level_data = prediction.get(level, [])
 
                         if isinstance(level_data, list) and level_data:
-                            # Take the first (highest confidence) prediction from array
-                            best_pred = level_data[0]
+                            # Keep all predictions as array (multi-tag support)
+                            transformed_list = []
+                            for pred in level_data:
+                                # Ensure reasoning is a string
+                                reasoning = pred.get("reasoning", "")
+                                if isinstance(reasoning, dict):
+                                    reasoning = str(reasoning)
 
-                            # Ensure reasoning is a string
-                            reasoning = best_pred.get("reasoning", "")
-                            if isinstance(reasoning, dict):
-                                reasoning = str(reasoning)
+                                transformed_list.append({
+                                    "pred": pred.get("pred", ""),
+                                    "confidence": pred.get("confidence", 0.0),
+                                    "reasoning": reasoning,
+                                    "primary": pred.get("primary"),
+                                    "secondary": pred.get("secondary")
+                                })
 
-                            transformed_prediction[level] = {
-                                "pred": best_pred.get("pred", ""),
-                                "confidence": best_pred.get("confidence", 0.0),
-                                "reasoning": reasoning,
-                                "primary": best_pred.get("primary"),
-                                "secondary": best_pred.get("secondary")
-                            }
+                            transformed_prediction[level] = transformed_list
                         elif isinstance(level_data, dict):
-                            # Already single object format
+                            # Single object format - wrap in array for consistency
                             reasoning = level_data.get("reasoning", "")
                             if isinstance(reasoning, dict):
                                 reasoning = str(reasoning)
 
-                            transformed_prediction[level] = {
+                            transformed_prediction[level] = [{
                                 "pred": level_data.get("pred", ""),
                                 "confidence": level_data.get("confidence", 0.0),
                                 "reasoning": reasoning,
                                 "primary": level_data.get("primary"),
                                 "secondary": level_data.get("secondary")
-                            }
+                            }]
                         else:
-                            # No prediction for this level
-                            transformed_prediction[level] = {
-                                "pred": "",
-                                "confidence": 0.0,
-                                "reasoning": "",
-                                "primary": None,
-                                "secondary": None
-                            }
+                            # No prediction for this level - empty array
+                            transformed_prediction[level] = []
 
                     result["prediction"] = transformed_prediction
 

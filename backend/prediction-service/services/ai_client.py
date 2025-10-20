@@ -130,30 +130,24 @@ class AIServiceClient:
 
                     if isinstance(level_data, list):
                         # Already array format - keep it as arrays
-                        # Just ensure key_evidence is properly formatted
+                        # Keep key_evidence as dict for SHAP explainability
                         formatted_predictions = []
                         for pred in level_data:
-                            # Convert key_evidence to string if it's a dict
-                            key_evidence = pred.get("key_evidence", "")
-                            if isinstance(key_evidence, dict):
-                                key_evidence = str(key_evidence)
-
                             formatted_predictions.append({
                                 "label": pred.get("label", ""),
                                 "confidence": pred.get("confidence", 0.0),
-                                "key_evidence": key_evidence
+                                "key_evidence": pred.get("key_evidence", {})  # Keep as dict!
                             })
                         transformed_prediction[level] = formatted_predictions
                     elif isinstance(level_data, dict):
                         # Single object format - convert to array with one element
-                        reasoning = level_data.get("reasoning", "")
-                        if isinstance(reasoning, dict):
-                            reasoning = str(reasoning)
+                        # Use key_evidence field instead of reasoning for SHAP data
+                        key_evidence = level_data.get("key_evidence", {})
 
                         transformed_prediction[level] = [{
                             "label": level_data.get("pred", ""),
                             "confidence": level_data.get("confidence", 0.0),
-                            "key_evidence": reasoning
+                            "key_evidence": key_evidence  # Keep as dict!
                         }]
                     else:
                         # No prediction for this level

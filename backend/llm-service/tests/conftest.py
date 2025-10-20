@@ -25,27 +25,27 @@ def mock_prediction_service():
     """Mock prediction service for unit tests"""
     mock_service = Mock(spec=PredictionService)
     
-    # Mock successful prediction response
+    # Mock successful prediction response (multiclass format - arrays for each level)
     mock_service.predict.return_value = {
         "elapsed_seconds": 1.23,
         "processed_text": "sample processed text",
         "prediction": {
-            "primary": {
+            "primary": [{
                 "pred": "News",
                 "confidence": 0.95,
                 "key_evidence": {
                     "supporting": [{"token": "earnings", "impact": "high"}, {"token": "performance", "impact": "medium"}]
                 }
-            },
-            "secondary": {
+            }],
+            "secondary": [{
                 "pred": "Company",
                 "confidence": 0.87,
                 "primary": "News",
                 "key_evidence": {
                     "supporting": [{"token": "company", "impact": "high"}, {"token": "activities", "impact": "medium"}]
                 }
-            },
-            "tertiary": {
+            }],
+            "tertiary": [{
                 "pred": "Management_Change",
                 "confidence": 0.82,
                 "primary": "News",
@@ -53,7 +53,7 @@ def mock_prediction_service():
                 "key_evidence": {
                     "supporting": [{"token": "executive", "impact": "high"}, {"token": "leadership", "impact": "high"}]
                 }
-            }
+            }]
         }
     }
     

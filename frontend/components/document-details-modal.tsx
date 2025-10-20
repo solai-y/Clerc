@@ -105,7 +105,9 @@ export function DocumentDetailsModal({
         // Fetch complete document details (includes confirmed_tags from processed_documents)
         const documentResponse = await apiClient.getCompleteDocument(parseInt(document.id))
 
+        console.log("🗄️ Full document response:", documentResponse)
         console.log("🗄️ confirmed_tags field:", documentResponse.confirmed_tags)
+        console.log("🗄️ confirmed_tags type:", typeof documentResponse.confirmed_tags, Array.isArray(documentResponse.confirmed_tags))
 
         setDbPredictions(documentResponse.confirmed_tags)
 
@@ -136,6 +138,7 @@ export function DocumentDetailsModal({
   // Process prediction data into enhanced tags (from database OR props)
   const enhancedTags = useMemo<EnhancedTag[]>(() => {
     const tags: EnhancedTag[] = []
+    // Track by tag name + level to allow same tag name at different hierarchy levels
     const processedTags = new Set<string>()
 
     // Determine which explanations to use: database or props
@@ -160,8 +163,10 @@ export function DocumentDetailsModal({
           tagConfidence
         })
 
-        if (tagName && tagLevel && !processedTags.has(tagName)) {
-          processedTags.add(tagName)
+        // Use tag name + level as unique key to allow same tag at different levels
+        const tagKey = `${tagName}:${tagLevel}`
+        if (tagName && tagLevel && !processedTags.has(tagKey)) {
+          processedTags.add(tagKey)
 
           // Use the actual classification level
           const level = tagLevel as 'primary' | 'secondary' | 'tertiary'
@@ -186,19 +191,27 @@ export function DocumentDetailsModal({
     if (dbPredictions) {
       console.log("📊 Processing database confirmed_tags:", dbPredictions)
 
-      // Handle JSONB confirmed_tags structure: {confirmed_tags: {tags: [...]}}
+      // confirmed_tags can be an array directly, or nested in a JSONB structure
       let confirmedTagsArray = [];
 
-      if (dbPredictions?.confirmed_tags?.tags && Array.isArray(dbPredictions.confirmed_tags.tags)) {
-        confirmedTagsArray = dbPredictions.confirmed_tags.tags;
-      } else if (Array.isArray(dbPredictions)) {
-        // Legacy format - array of tags
+      if (Array.isArray(dbPredictions)) {
+        // Direct array format
         confirmedTagsArray = dbPredictions;
+      } else if (dbPredictions?.confirmed_tags?.tags && Array.isArray(dbPredictions.confirmed_tags.tags)) {
+        // JSONB structure format: {confirmed_tags: {tags: [...]}}
+        confirmedTagsArray = dbPredictions.confirmed_tags.tags;
+      } else if (dbPredictions?.tags && Array.isArray(dbPredictions.tags)) {
+        // Alternative JSONB structure format: {tags: [...]}
+        confirmedTagsArray = dbPredictions.tags;
       }
 
+      console.log("📊 Extracted confirmed tags array:", confirmedTagsArray)
+
       for (const confirmedTag of confirmedTagsArray) {
-        if (confirmedTag.tag && !processedTags.has(confirmedTag.tag)) {
-          processedTags.add(confirmedTag.tag)
+        // Use tag name + level as unique key to allow same tag at different levels
+        const tagKey = `${confirmedTag.tag}:${confirmedTag.level}`
+        if (confirmedTag.tag && !processedTags.has(tagKey)) {
+          processedTags.add(tagKey)
 
           const enhancedTag = {
             tag: confirmedTag.tag,
@@ -661,6 +674,10 @@ export function DocumentDetailsModal({
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-2 mb-3 min-h-[40px]">
+                      {(() => {
+                        console.log("🏷️ Rendering Tertiary Tags:", selectedTertiaryTags)
+                        return null
+                      })()}
                       {selectedTertiaryTags.length === 0 ? (
                         <p className="text-sm text-gray-500 italic">No tertiary tags selected. Use the dropdown below to add tags.</p>
                       ) : (

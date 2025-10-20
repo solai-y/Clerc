@@ -24,12 +24,12 @@ class PredictionLevel(BaseModel):
     secondary: Optional[str] = Field(None, description="Secondary tag context (for tertiary only)")
 
 class PredictionResponse(BaseModel):
-    """Complete prediction response"""
+    """Complete prediction response - supports multi-tag output"""
     model_config = ConfigDict(exclude_none=True)
 
-    primary: Optional[PredictionLevel] = None
-    secondary: Optional[PredictionLevel] = None
-    tertiary: Optional[PredictionLevel] = None
+    primary: Optional[List[PredictionLevel]] = None
+    secondary: Optional[List[PredictionLevel]] = None
+    tertiary: Optional[List[PredictionLevel]] = None
 
 class FullResponse(BaseModel):
     """Full response matching AI service format"""

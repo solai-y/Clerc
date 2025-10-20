@@ -83,7 +83,7 @@ class PredictionService:
         # Extract predictions from Claude result (now expects arrays)
         predictions = self._extract_predictions(claude_result, predict_levels, context)
 
-        # Process each level - return single best prediction per level (not arrays)
+        # Process each level - return all valid predictions (multi-tag support)
         # Only add levels that were actually requested and have valid predictions
         if "primary" in predict_levels and "primary" in predictions:
             primary_list = self._create_prediction_levels(
@@ -93,34 +93,39 @@ class PredictionService:
             )
             # Only add to result if we got a valid prediction
             if primary_list:
-                result["primary"] = primary_list[0]
+                result["primary"] = primary_list
 
         if "secondary" in predict_levels and "secondary" in predictions:
+            # Use first primary tag for context if available
+            primary_context = result.get("primary", [{}])[0].get("pred") if result.get("primary") else context.get("primary")
             secondary_list = self._create_prediction_levels(
                 predictions["secondary"],
                 level="secondary",
                 context={
                     **context,
-                    "primary": result.get("primary", {}).get("pred") if result.get("primary") else context.get("primary")
+                    "primary": primary_context
                 }
             )
             # Only add to result if we got a valid prediction
             if secondary_list:
-                result["secondary"] = secondary_list[0]
+                result["secondary"] = secondary_list
 
         if "tertiary" in predict_levels and "tertiary" in predictions:
+            # Use first primary and secondary tags for context if available
+            primary_context = result.get("primary", [{}])[0].get("pred") if result.get("primary") else context.get("primary")
+            secondary_context = result.get("secondary", [{}])[0].get("pred") if result.get("secondary") else context.get("secondary")
             tertiary_list = self._create_prediction_levels(
                 predictions["tertiary"],
                 level="tertiary",
                 context={
                     **context,
-                    "primary": result.get("primary", {}).get("pred") if result.get("primary") else context.get("primary"),
-                    "secondary": result.get("secondary", {}).get("pred") if result.get("secondary") else context.get("secondary")
+                    "primary": primary_context,
+                    "secondary": secondary_context
                 }
             )
             # Only add to result if we got a valid prediction
             if tertiary_list:
-                result["tertiary"] = tertiary_list[0]
+                result["tertiary"] = tertiary_list
 
         return result
     
