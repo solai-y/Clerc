@@ -45,6 +45,9 @@ class TestPredictionService:
         # Setup mock validator
         mock_val = Mock()
         mock_val.validate_and_fix_prediction.side_effect = lambda x: x
+        mock_val.is_valid_primary.return_value = True
+        mock_val.is_valid_secondary.return_value = True
+        mock_val.is_valid_tertiary.return_value = True
         mock_validator.return_value = mock_val
 
         # Mock Claude response
@@ -76,26 +79,35 @@ class TestPredictionService:
         
         prediction = result["prediction"]
         
-        # Verify primary prediction
+        # Verify primary prediction (now returns array for multiclass support)
         assert "primary" in prediction
-        primary = prediction["primary"]
+        primary_list = prediction["primary"]
+        assert isinstance(primary_list, list)
+        assert len(primary_list) > 0
+        primary = primary_list[0]  # Get first prediction
         assert primary["pred"] == "News"
         assert primary["confidence"] == 0.95
         # key_evidence might be present depending on implementation
         if "key_evidence" in primary:
             assert "supporting" in primary["key_evidence"]
             assert "opposing" in primary["key_evidence"]
-        
-        # Verify secondary prediction
+
+        # Verify secondary prediction (now returns array)
         assert "secondary" in prediction
-        secondary = prediction["secondary"]
+        secondary_list = prediction["secondary"]
+        assert isinstance(secondary_list, list)
+        assert len(secondary_list) > 0
+        secondary = secondary_list[0]  # Get first prediction
         assert secondary["pred"] == "Company"
         assert secondary["confidence"] == 0.87
         assert secondary["primary"] == "News"
-        
-        # Verify tertiary prediction
+
+        # Verify tertiary prediction (now returns array)
         assert "tertiary" in prediction
-        tertiary = prediction["tertiary"]
+        tertiary_list = prediction["tertiary"]
+        assert isinstance(tertiary_list, list)
+        assert len(tertiary_list) > 0
+        tertiary = tertiary_list[0]  # Get first prediction
         assert tertiary["pred"] == "Management_Change"
         assert tertiary["confidence"] == 0.82
         assert tertiary["primary"] == "News"
@@ -116,6 +128,9 @@ class TestPredictionService:
 
         mock_val = Mock()
         mock_val.validate_and_fix_prediction.side_effect = lambda x: x
+        mock_val.is_valid_primary.return_value = True
+        mock_val.is_valid_secondary.return_value = True
+        mock_val.is_valid_tertiary.return_value = True
         mock_validator.return_value = mock_val
 
         mock_claude_response = {
@@ -143,11 +158,13 @@ class TestPredictionService:
         assert "primary" not in prediction
         assert "secondary" in prediction
         assert "tertiary" in prediction
-        
-        # Verify context is preserved
-        assert prediction["secondary"]["primary"] == "News"
-        assert prediction["tertiary"]["primary"] == "News"
-        assert prediction["tertiary"]["secondary"] == "Company"
+
+        # Verify context is preserved (now accessing arrays)
+        secondary = prediction["secondary"][0]
+        tertiary = prediction["tertiary"][0]
+        assert secondary["primary"] == "News"
+        assert tertiary["primary"] == "News"
+        assert tertiary["secondary"] == "Company"
     
     
     @patch('prediction_service.HierarchyValidator')
@@ -164,6 +181,9 @@ class TestPredictionService:
 
         mock_val = Mock()
         mock_val.validate_and_fix_prediction.side_effect = lambda x: x
+        mock_val.is_valid_primary.return_value = True
+        mock_val.is_valid_secondary.return_value = True
+        mock_val.is_valid_tertiary.return_value = True
         mock_validator.return_value = mock_val
 
         mock_claude_response = {
@@ -188,8 +208,9 @@ class TestPredictionService:
         assert "primary" not in prediction
         assert "secondary" not in prediction
         assert "tertiary" in prediction
-        
-        tertiary = prediction["tertiary"]
+
+        # Access first element of array
+        tertiary = prediction["tertiary"][0]
         assert tertiary["pred"] == "Management_Change"
         assert tertiary["primary"] == "News"
         assert tertiary["secondary"] == "Company"
