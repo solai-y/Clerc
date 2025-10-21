@@ -29,7 +29,21 @@ class PredictRequest(BaseModel):
     text: str
 
 # ------------------- Preprocessing -------------------
-def clean_text(text: str) -> str:
+def clean_text(text: str, max_words: int = 5000) -> str:
+    """
+    Clean and preprocess text for classification.
+
+    Args:
+        text: Input text to clean
+        max_words: Maximum number of words to process (default 5000 for performance)
+                   This limits preprocessing time for very large documents
+    """
+    # Limit text length before preprocessing for performance
+    # Most important information is typically in first few thousand words
+    words = text.split()
+    if len(words) > max_words:
+        text = " ".join(words[:max_words])
+
     text = text.lower()
     text = re.sub(r"[^a-z\s]", " ", text)
     tokens = [tok for tok in text.split() if tok not in ENGLISH_STOP_WORDS]
