@@ -803,21 +803,6 @@ export function HierarchyBasedConfirmTagsModal({
                                   </div>
                                 </div>
                               )}
-
-                              {/* Opposing Evidence */}
-                              {explanation.shap_data.opposing?.length > 0 && (
-                                <div>
-                                  <div className="text-xs font-medium text-red-700">Opposing:</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {explanation.shap_data.opposing.map((item: any, idx: number) => (
-                                      <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-800 border border-red-300">
-                                        <span className="font-mono mr-1">{item.token?.trim() || item}</span>
-                                        <span className="text-red-600 font-semibold">{item.impact || ''}</span>
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
                             </div>
                           </div>
                       )}
