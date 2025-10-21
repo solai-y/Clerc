@@ -1,5 +1,4 @@
 from fastapi import FastAPI, HTTPException, Body
-from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
 import os
@@ -84,6 +83,11 @@ def build_tag_tree_with_ids(tags):
     return [build_node(tag) for tag in root_tags]
 
 
+def normalize_tag_name_for_db(name: str) -> str:
+    # Replace underscores with spaces, strip extra spaces, and title case each word
+    return " ".join(word.capitalize() for word in name.replace("_", " ").strip().split())
+
+
 @app.get("/tagsHierarchy")
 async def get_tags():
     response = supabase.table('tags').select('*').execute()
@@ -102,14 +106,24 @@ async def get_tags_with_id():
 
 @app.post("/tags")
 async def create_tag(tag: TagCreate):
-    """Add a new tag"""
-    data = {"tag_name": tag.tag_name, "parent_id": tag.parent_id}
-    response = supabase.table("tags").insert(data).execute()
+    """Add a new tag with duplication check ignoring case and space/underscore"""
 
-    if not response.data:
+    # Normalize input: lowercase, replace underscores with space, strip spaces
+    proper_tag_name = normalize_tag_name_for_db(tag.tag_name)
+
+    # Search for exact match with normalized name
+    response = supabase.table("tags").select("*").eq("tag_name", proper_tag_name).execute()
+    if response.data:
+        raise HTTPException(status_code=400, detail="Tag name already exists")
+
+    # Insert new tag if no duplicates found
+    data = {"tag_name": proper_tag_name, "parent_id": tag.parent_id}
+    insert_response = supabase.table("tags").insert(data).execute()
+
+    if not insert_response.data:
         raise HTTPException(status_code=500, detail="Tag creation failed")
 
-    return {"message": "Tag added successfully", "created_tag": response.data[0]}
+    return {"message": "Tag added successfully", "created_tag": insert_response.data[0]}
 
 
 @app.delete("/tags/{tag_id}")
@@ -137,15 +151,23 @@ async def update_tag(tag_id: int, tag: TagUpdate = Body(...)):
     existing = supabase.table("tags").select("*").eq("id", tag_id).execute()
     if not existing.data:
         raise HTTPException(status_code=404, detail=f"Tag with id {tag_id} not found")
+    
+    proper_tag_name = normalize_tag_name_for_db(tag.tag_name)
+
+    # Check for duplicate tag name ignoring the current tag
+    duplicate_check = supabase.table("tags").select("*").eq("tag_name", proper_tag_name).neq("id", tag_id).execute()
+    if duplicate_check.data:
+        raise HTTPException(status_code=400, detail="Tag name already exists")
 
     # Update tag
-    update_data = {"tag_name": tag.tag_name, "parent_id": tag.parent_id}
+    update_data = {"tag_name": proper_tag_name, "parent_id": tag.parent_id}
     response = supabase.table("tags").update(update_data).eq("id", tag_id).execute()
 
     if not response.data:
         raise HTTPException(status_code=500, detail="Tag update failed")
 
     return {"message": "Tag updated successfully", "updated_tag": response.data[0]}
+
 
 @app.get("/health")
 async def health_check():

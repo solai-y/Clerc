@@ -86,8 +86,9 @@ export default function AddTagDialog({
       });
       onOpenChange(false);
     } catch (e: any) {
-      setError(e?.message ?? "Failed to create tag.");
-    } finally {
+  setError(e?.message || "Failed to create tag.");
+}
+ finally {
       setSaving(false);
     }
   }

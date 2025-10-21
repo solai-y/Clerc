@@ -29,16 +29,17 @@ function assertJsonContent(res: Response) {
 
 // Read the body exactly once and try to extract a message
 async function throwFromResponse(res: Response, fallbackMsg: string) {
-  const text = await res.text(); // single read
-  try {
-    const j = JSON.parse(text);
-    const msg =
-      j?.message || j?.detail || j?.error || j?.errors?.[0] || JSON.stringify(j);
-    throw new Error(msg || `${fallbackMsg}: ${res.status}`);
-  } catch {
-    throw new Error(text || `${fallbackMsg}: ${res.status}`);
-  }
+const text = await res.text(); // single read
+const j = JSON.parse(text);
+const msg =
+j?.message || j?.detail || j?.error || (j?.errors && Array.isArray(j.errors) && j.errors[0]);
+if (msg) {
+  throw new Error(msg);
+} else {
+  throw new Error(fallbackMsg);
 }
+}
+
 
 /* --------------- API calls --------------- */
 
