@@ -382,7 +382,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         tags: extractedTags.map((t: any) => t.tag),
         size: formatFileSize(file.size),
         type: file.type || "application/pdf",
-        link: "",
+        link: s3Link || "",
         company: null,
         companyName: null,
         uploaded_by: null,

@@ -267,10 +267,17 @@ class HierarchicalBestModel:
                 return None
         return self._shap_cache[key]
 
-    def _shap_for_label(self, model, text: str, label: str, top_k: int = 10):
+    def _shap_for_label(self, model, text: str, label: str, top_k: int = 10, max_words: int = 500):
         """
         Compute token-level SHAP for a specific predicted label (multiclass: pick that class index).
         Returns {"supporting": [...], "opposing": [...]} lists.
+
+        Args:
+            model: The trained model to explain
+            text: Input text to analyze
+            label: The label to explain
+            top_k: Number of top tokens to return
+            max_words: Maximum number of words to analyze (default 500 for performance)
         """
         if not _HAS_SHAP:
             return {"supporting": [], "opposing": []}
@@ -278,6 +285,12 @@ class HierarchicalBestModel:
         explainer = self._get_shap_explainer(model)
         if explainer is None:
             return {"supporting": [], "opposing": []}
+
+        # Limit text length for SHAP computation to improve performance
+        # Only analyze first max_words for large documents
+        words = text.split()
+        if len(words) > max_words:
+            text = " ".join(words[:max_words])
 
         sv = explainer([text])
         try:

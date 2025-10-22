@@ -869,21 +869,6 @@ export function DocumentDetailsModal({
                                   </div>
                                 </div>
                               )}
-
-                              {/* Opposing Evidence */}
-                              {explanation.shap_data.opposing?.length > 0 && (
-                                <div>
-                                  <div className="text-xs font-medium text-red-700">Opposing:</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {explanation.shap_data.opposing.map((item: any, idx: number) => (
-                                      <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-800 border border-red-300">
-                                        <span className="font-mono mr-1">{item.token?.trim() || item}</span>
-                                        <span className="text-red-600 font-semibold">{item.impact || ''}</span>
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
                             </div>
                           </div>
                       )}
@@ -971,28 +956,6 @@ export function DocumentDetailsModal({
                     <p className="text-sm text-gray-500">No document link available</p>
                   </div>
                 )}
-
-                {/* Tags Section */}
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-green-800 mb-3 flex items-center">
-                    <Tag className="w-4 h-4 mr-2" />
-                    Document Tags ({document.tags?.length || 0})
-                  </h4>
-                  {document.tags && document.tags.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {document.tags.map((tag, index) => (
-                        <span
-                          key={index}
-                          className="inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium border border-green-300"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-500 italic">No tags assigned to this document</p>
-                  )}
-                </div>
               </div>
             </TabsContent>
           </div>
