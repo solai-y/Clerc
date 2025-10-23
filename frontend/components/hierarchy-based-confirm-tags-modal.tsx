@@ -318,7 +318,34 @@ export function HierarchyBasedConfirmTagsModal({
   }
 
   const removePrimaryTag = (tag: string) => {
+    // Remove the primary tag
     setSelectedPrimaryTags(selectedPrimaryTags.filter(t => t !== tag))
+
+    // Cascade delete: remove all child secondary and tertiary tags
+    if (hierarchy[tag]) {
+      const childSecondaries = Object.keys(hierarchy[tag])
+
+      // Remove secondary tags that belong to this primary
+      setSelectedSecondaryTags(prev =>
+        prev.filter(secondaryTag => !childSecondaries.includes(secondaryTag))
+      )
+
+      // Remove tertiary tags that belong to this primary's secondaries
+      const childTertiaries = new Set<string>()
+      childSecondaries.forEach(secondary => {
+        const tertiaries = hierarchy[tag][secondary]
+        if (tertiaries && tertiaries.length > 0) {
+          tertiaries.forEach(tertiary => childTertiaries.add(tertiary))
+        } else {
+          // If no tertiary options, the secondary itself is the tertiary
+          childTertiaries.add(secondary)
+        }
+      })
+
+      setSelectedTertiaryTags(prev =>
+        prev.filter(tertiaryTag => !childTertiaries.has(tertiaryTag))
+      )
+    }
   }
 
   const addSecondaryTag = (tag: string) => {
@@ -328,7 +355,28 @@ export function HierarchyBasedConfirmTagsModal({
   }
 
   const removeSecondaryTag = (tag: string) => {
+    // Remove the secondary tag
     setSelectedSecondaryTags(selectedSecondaryTags.filter(t => t !== tag))
+
+    // Cascade delete: remove all child tertiary tags
+    // Find which primary this secondary belongs to and get its tertiary children
+    const childTertiaries = new Set<string>()
+
+    selectedPrimaryTags.forEach(primary => {
+      if (hierarchy[primary]?.[tag]) {
+        const tertiaries = hierarchy[primary][tag]
+        if (tertiaries && tertiaries.length > 0) {
+          tertiaries.forEach(tertiary => childTertiaries.add(tertiary))
+        } else {
+          // If no tertiary options, the secondary itself is the tertiary
+          childTertiaries.add(tag)
+        }
+      }
+    })
+
+    setSelectedTertiaryTags(prev =>
+      prev.filter(tertiaryTag => !childTertiaries.has(tertiaryTag))
+    )
   }
 
   const addTertiaryTag = (tag: string) => {
