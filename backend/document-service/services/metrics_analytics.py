@@ -47,13 +47,16 @@ class MetricsAnalyticsService:
             if not response.data:
                 self.logger.warning("No documents with both suggested_tags and confirmed_tags found")
                 return {
-                    "overall_accuracy": 0.0,
-                    "by_level": {
+                    "top_tag_accuracy": 0.0,
+                    "perfect_match_rate": 0.0,
+                    "top_tag_by_level": {
                         "primary": 0.0,
                         "secondary": 0.0,
                         "tertiary": 0.0
                     },
                     "total_documents": 0,
+                    "documents_with_all_levels": 0,
+                    "perfect_matches": 0,
                     "metrics": {
                         "primary": {"accepted": 0, "total": 0},
                         "secondary": {"accepted": 0, "total": 0},
@@ -71,6 +74,10 @@ class MetricsAnalyticsService:
                 "tertiary": {"accepted": 0, "total": 0}
             }
 
+            # Initialize perfect match counters
+            perfect_match_count = 0
+            documents_with_all_levels = 0
+
             # Process each document
             for doc in documents:
                 suggested_tags = doc.get('suggested_tags')
@@ -85,6 +92,9 @@ class MetricsAnalyticsService:
                 # Extract confirmed tags for each level
                 confirmed_by_level = self._get_confirmed_tags_by_level(confirmed_tags)
 
+                # Track acceptance for each level in this document
+                level_acceptance = {}
+
                 # Compare and update metrics for each level
                 for level in ['primary', 'secondary', 'tertiary']:
                     if level in top_suggested and top_suggested[level]:
@@ -94,16 +104,27 @@ class MetricsAnalyticsService:
                         # Check if the top-confidence tag was accepted by the user
                         if level in confirmed_by_level and top_tag in confirmed_by_level[level]:
                             metrics[level]['accepted'] += 1
+                            level_acceptance[level] = True
                             self.logger.debug(
                                 f"Document {doc['document_id']}: {level} tag '{top_tag}' was accepted"
                             )
                         else:
+                            level_acceptance[level] = False
                             self.logger.debug(
                                 f"Document {doc['document_id']}: {level} tag '{top_tag}' was rejected"
                             )
 
+                # Check if this document has all 3 levels and all were accepted (Perfect Match)
+                if len(level_acceptance) == 3:  # Document has all 3 levels
+                    documents_with_all_levels += 1
+                    if all(level_acceptance.values()):  # All 3 were accepted
+                        perfect_match_count += 1
+                        self.logger.debug(
+                            f"Document {doc['document_id']}: Perfect Match - all 3 top tags accepted"
+                        )
+
             # Calculate accuracy percentages
-            accuracy_by_level = {}
+            top_tag_by_level = {}
             total_accepted = 0
             total_suggested = 0
 
@@ -114,21 +135,30 @@ class MetricsAnalyticsService:
                 total_suggested += total
 
                 if total > 0:
-                    accuracy_by_level[level] = round((accepted / total) * 100, 2)
+                    top_tag_by_level[level] = round((accepted / total) * 100, 2)
                 else:
-                    accuracy_by_level[level] = 0.0
+                    top_tag_by_level[level] = 0.0
 
-            # Calculate overall accuracy
-            overall_accuracy = round((total_accepted / total_suggested) * 100, 2) if total_suggested > 0 else 0.0
+            # Calculate top tag accuracy
+            top_tag_accuracy = round((total_accepted / total_suggested) * 100, 2) if total_suggested > 0 else 0.0
+
+            # Calculate perfect match rate
+            perfect_match_rate = round((perfect_match_count / documents_with_all_levels) * 100, 2) if documents_with_all_levels > 0 else 0.0
 
             result = {
-                "overall_accuracy": overall_accuracy,
-                "by_level": accuracy_by_level,
+                "top_tag_accuracy": top_tag_accuracy,
+                "perfect_match_rate": perfect_match_rate,
+                "top_tag_by_level": top_tag_by_level,
                 "total_documents": len(documents),
+                "documents_with_all_levels": documents_with_all_levels,
+                "perfect_matches": perfect_match_count,
                 "metrics": metrics
             }
 
-            self.logger.info(f"Top-Tag Accuracy calculated: {overall_accuracy}%")
+            self.logger.info(
+                f"Top-Tag Accuracy: {top_tag_accuracy}% | Perfect Match Rate: {perfect_match_rate}% "
+                f"({perfect_match_count}/{documents_with_all_levels})"
+            )
             return result
 
         except Exception as e:

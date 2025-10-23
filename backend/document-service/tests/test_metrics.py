@@ -5,8 +5,8 @@ Run this inside the Docker container where dependencies are installed.
 import sys
 import os
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add parent directory (app root) to path
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 try:
     from services.metrics_analytics import MetricsAnalyticsService
@@ -21,11 +21,14 @@ try:
     result = service.calculate_top_tag_accuracy()
     print("✅ Successfully calculated top-tag accuracy")
     print("\n📊 Results:")
-    print(f"   Overall Accuracy: {result['overall_accuracy']}%")
-    print(f"   Primary Accuracy: {result['by_level']['primary']}%")
-    print(f"   Secondary Accuracy: {result['by_level']['secondary']}%")
-    print(f"   Tertiary Accuracy: {result['by_level']['tertiary']}%")
+    print(f"   Top-Tag Accuracy: {result['top_tag_accuracy']}%")
+    print(f"   Perfect Match Rate: {result['perfect_match_rate']}%")
+    print(f"   Primary Accuracy: {result['top_tag_by_level']['primary']}%")
+    print(f"   Secondary Accuracy: {result['top_tag_by_level']['secondary']}%")
+    print(f"   Tertiary Accuracy: {result['top_tag_by_level']['tertiary']}%")
     print(f"   Total Documents: {result['total_documents']}")
+    print(f"   Documents with All Levels: {result['documents_with_all_levels']}")
+    print(f"   Perfect Matches: {result['perfect_matches']}")
     print("\n📈 Detailed Metrics:")
     for level, metrics in result['metrics'].items():
         print(f"   {level.capitalize()}: {metrics['accepted']}/{metrics['total']} accepted")

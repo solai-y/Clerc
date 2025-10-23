@@ -2,19 +2,24 @@
 
 ## Overview
 
-The `MetricsAnalyticsService` calculates **Top-Tag Accuracy** metrics for the Clerc document classification system. This service measures how often the AI's highest-confidence predictions match the final user-confirmed tags.
+The `MetricsAnalyticsService` calculates two key metrics for the Clerc document classification system:
 
-## What is Top-Tag Accuracy?
+1. **Top-Tag Accuracy** - Measures how often the AI's highest-confidence predictions match user-confirmed tags
+2. **Perfect Match Rate** - Measures how often ALL 3 top tags are accepted together
+
+## Metrics Explained
+
+### 1. Top-Tag Accuracy
 
 **Top-Tag Accuracy** measures the percentage of times that the highest-confidence AI prediction for each hierarchy level (Primary, Secondary, Tertiary) matches the user's final confirmed tag for that level.
 
-### Formula
+#### Formula
 
 ```
 Top-Tag Accuracy = (# of highest-confidence tags accepted / Total # of highest-confidence tags) × 100
 ```
 
-### Example
+#### Example
 
 For a document:
 - **Suggested Tags (AI predictions)**:
@@ -33,6 +38,48 @@ For a document:
 - ❌ Tertiary: "Healthcare" (highest confidence) was rejected, user chose "Energy" → 0/1
 
 **Result**: Top-Tag Accuracy = 2/3 = 66.67%
+
+### 2. Perfect Match Rate
+
+**Perfect Match Rate** measures the percentage of documents where ALL 3 highest-confidence tags (Primary, Secondary, Tertiary) were accepted by the user.
+
+#### Formula
+
+```
+Perfect Match Rate = (# of documents with all 3 top tags accepted / Total # of documents with all 3 levels) × 100
+```
+
+#### Example
+
+Analyzing 3 documents:
+
+**Document 1**:
+- Top tags: News, Industry, Healthcare
+- User accepted: News ✅, Industry ✅, Healthcare ✅
+- **Perfect Match!** ✅
+
+**Document 2**:
+- Top tags: Disclosure, SEC_Filings, 10-K
+- User accepted: Disclosure ✅, SEC_Filings ✅, 10-Q ❌
+- Not a perfect match (2/3 accepted)
+
+**Document 3**:
+- Top tags: Recommendations, Analyst_Recommendations, Buy
+- User accepted: Recommendations ✅, Analyst_Recommendations ✅, Buy ✅
+- **Perfect Match!** ✅
+
+**Result**: Perfect Match Rate = 2/3 = 66.67%
+
+### When to Use Each Metric
+
+| Metric | Best For | Interpretation |
+|--------|----------|----------------|
+| **Top-Tag Accuracy** | Overall model performance | Shows how accurate your highest-confidence predictions are across all tags |
+| **Perfect Match Rate** | User experience quality | Shows how often users can accept all predictions without any changes |
+
+A system with **high Top-Tag Accuracy but low Perfect Match Rate** means predictions are generally good, but users still need to make corrections on most documents.
+
+A system with **high Perfect Match Rate** means users can frequently accept all predictions with zero edits, providing the best user experience.
 
 ## Architecture
 
@@ -102,7 +149,7 @@ Contains user-approved tags:
 
 ### `GET /metrics/top-tag-accuracy`
 
-Calculate and return Top-Tag Accuracy metrics.
+Calculate and return Top-Tag Accuracy and Perfect Match Rate metrics.
 
 #### Request
 ```bash
@@ -113,15 +160,18 @@ curl http://localhost:5002/metrics/top-tag-accuracy
 ```json
 {
   "success": true,
-  "message": "Top-tag accuracy calculated: 85.5%",
+  "message": "Metrics calculated - Top-tag accuracy: 85.5% | Perfect match rate: 72.3%",
   "data": {
-    "overall_accuracy": 85.5,
-    "by_level": {
+    "top_tag_accuracy": 85.5,
+    "perfect_match_rate": 72.3,
+    "top_tag_by_level": {
       "primary": 92.3,
       "secondary": 85.7,
       "tertiary": 78.5
     },
     "total_documents": 150,
+    "documents_with_all_levels": 145,
+    "perfect_matches": 105,
     "metrics": {
       "primary": {
         "accepted": 138,
@@ -144,11 +194,14 @@ curl http://localhost:5002/metrics/top-tag-accuracy
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `overall_accuracy` | float | Overall accuracy percentage across all levels |
-| `by_level.primary` | float | Accuracy for primary tags |
-| `by_level.secondary` | float | Accuracy for secondary tags |
-| `by_level.tertiary` | float | Accuracy for tertiary tags |
+| `top_tag_accuracy` | float | Overall top-tag accuracy percentage across all levels |
+| `perfect_match_rate` | float | Percentage of documents with all 3 top tags accepted |
+| `top_tag_by_level.primary` | float | Top-tag accuracy for primary tags |
+| `top_tag_by_level.secondary` | float | Top-tag accuracy for secondary tags |
+| `top_tag_by_level.tertiary` | float | Top-tag accuracy for tertiary tags |
 | `total_documents` | int | Number of documents analyzed |
+| `documents_with_all_levels` | int | Number of documents with all 3 hierarchy levels |
+| `perfect_matches` | int | Number of documents with all 3 top tags accepted |
 | `metrics.*.accepted` | int | Number of top-confidence tags accepted |
 | `metrics.*.total` | int | Total number of top-confidence tags suggested |
 

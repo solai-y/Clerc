@@ -19,16 +19,22 @@ except Exception as e:
 @metrics_router.get('/top-tag-accuracy')
 async def get_top_tag_accuracy():
     """
-    Calculate and return Top-Tag Accuracy metrics.
+    Calculate and return Top-Tag Accuracy and Perfect Match Rate metrics.
 
     Top-Tag Accuracy measures how often the highest-confidence AI prediction
     for each hierarchy level (primary, secondary, tertiary) matches the final
     user-confirmed tags.
 
+    Perfect Match Rate measures the percentage of documents where ALL 3 top tags
+    (primary, secondary, tertiary) were accepted by the user.
+
     Returns:
-        - overall_accuracy: Overall accuracy percentage across all levels
-        - by_level: Accuracy breakdown by hierarchy level
+        - top_tag_accuracy: Overall accuracy percentage across all levels
+        - perfect_match_rate: Percentage of documents with all 3 top tags accepted
+        - top_tag_by_level: Accuracy breakdown by hierarchy level
         - total_documents: Number of documents analyzed
+        - documents_with_all_levels: Number of documents with all 3 levels
+        - perfect_matches: Number of perfect matches
         - metrics: Detailed acceptance counts for each level
     """
     try:
@@ -39,12 +45,13 @@ async def get_top_tag_accuracy():
                 "SERVICE_UNAVAILABLE"
             )
 
-        logger.info("Calculating top-tag accuracy metrics")
+        logger.info("Calculating top-tag accuracy and perfect match rate metrics")
         result = metrics_service.calculate_top_tag_accuracy()
 
         return APIResponse.success(
             result,
-            f"Top-tag accuracy calculated: {result['overall_accuracy']}%"
+            f"Metrics calculated - Top-tag accuracy: {result['top_tag_accuracy']}% | "
+            f"Perfect match rate: {result['perfect_match_rate']}%"
         )
 
     except Exception as e:
