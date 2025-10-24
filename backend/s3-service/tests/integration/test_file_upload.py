@@ -3,7 +3,6 @@ from pathlib import Path
 import os
 import sys
 import tempfile
-from contextlib import ExitStack
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 
@@ -32,22 +31,11 @@ sys.path.append(str(S3_SERVICE_ROOT))
 from app import app  # noqa: E402
 
 
-def _maybe_patch_s3() -> ExitStack:
-    """If boto3 is used, stub it to avoid real AWS calls."""
-    stack = ExitStack()
-    try:
-        import boto3  # noqa: F401
-
-        class _FakeS3Client:
-            def upload_file(self, *a, **k): return True
-            def upload_fileobj(self, *a, **k): return True
-            def put_object(self, *a, **k): return {"ResponseMetadata": {"HTTPStatusCode": 200}}
-
-        stack.enter_context(patch("boto3.client", return_value=_FakeS3Client()))
-        stack.enter_context(patch("boto3.resource", return_value=object()))
-    except Exception:
-        pass
-    return stack
+class _FakeS3Client:
+    """Mock S3 client to avoid real AWS calls."""
+    def upload_file(self, *a, **k): return True
+    def upload_fileobj(self, *a, **k): return True
+    def put_object(self, *a, **k): return {"ResponseMetadata": {"HTTPStatusCode": 200}}
 
 
 def test_file_upload():
@@ -60,7 +48,8 @@ def test_file_upload():
     upload_dir = tmp_root / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    with _maybe_patch_s3():
+    # Patch the s3_client that was already created in app.py
+    with patch("app.s3_client", _FakeS3Client()):
         client = TestClient(app)
         with PDF_FIXTURE.open("rb") as pdf_file:
             # FastAPI TestClient multipart file upload
