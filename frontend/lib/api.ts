@@ -61,6 +61,29 @@ export interface GetDocumentsOptions {
   companyId?: number;
 }
 
+/* -------------------- TAG HIERARCHY TYPES (ADDED) -------------------- */
+export type TagHierarchy = {
+  [primary: string]: {
+    [secondary: string]: string[];
+  };
+};
+
+export type AddTagInput = {
+  layer: "primary" | "secondary" | "tertiary";
+  name: string;
+  parentPrimary?: string;
+  parentSecondary?: string;
+};
+
+export type EditTagInput = {
+  layer: "primary" | "secondary" | "tertiary";
+  oldName: string;
+  newName: string;
+  parentPrimary?: string;
+  parentSecondary?: string;
+};
+/* --------------------------------------------------------------------- */
+
 class APIClient {
   private async fetchWithErrorHandling<T>(
     url: string,
@@ -310,6 +333,77 @@ class APIClient {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       throw new Error(`Failed to extract text from PDF: ${errorMessage}.`);
+    }
+  }
+
+  /* ===================== TAG HIERARCHY METHODS (ADDED) ===================== */
+
+  /**
+   * Fetches the full hierarchy.
+   * Tries /api/tags, and on any error (e.g., HTTP 500) falls back to /hierarchy.json on the client.
+   */
+  async getTagHierarchy(): Promise<TagHierarchy> {
+    const url = apiUrl("/tags");
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`Failed to fetch tags (HTTP ${res.status}) ${body.slice(0, 120)}`);
+      }
+      // Accept raw JSON or wrapped {status,data}
+      const json = await res.json();
+      if (json && typeof json === "object" && "status" in json && "data" in json) {
+        if (json.status !== "success") throw new Error(json.message || "Failed to load tag hierarchy");
+        return json.data as TagHierarchy;
+      }
+      return json as TagHierarchy;
+    } catch (err) {
+      // Fallback to static file on the client
+      if (!isServer) {
+        try {
+          const res2 = await fetch("/hierarchy.json", { cache: "no-store" });
+          if (!res2.ok) throw new Error(`fallback /hierarchy.json HTTP ${res2.status}`);
+          console.warn("[api] /api/tags failed; using fallback /hierarchy.json");
+          return (await res2.json()) as TagHierarchy;
+        } catch (fallbackErr) {
+          throw new Error(`${(err as Error)?.message || err} | Fallback failed: ${(fallbackErr as Error)?.message || fallbackErr}`);
+        }
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Creates a new tag at the specified layer.
+   */
+  async addTag(input: AddTagInput): Promise<void> {
+    const url = apiUrl("/tags");
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "");
+      throw new Error(`Failed to add tag. HTTP ${res.status} ${msg.slice(0, 200)}`);
+    }
+  }
+
+  /**
+   * Renames an existing tag within its scope.
+   */
+  async editTag(input: EditTagInput): Promise<void> {
+    const url = apiUrl("/tags");
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "");
+      throw new Error(`Failed to edit tag. HTTP ${res.status} ${msg.slice(0, 200)}`);
     }
   }
 }
