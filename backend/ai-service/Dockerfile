@@ -30,9 +30,8 @@ EXPOSE 5004
 ENV GUNICORN_BIND=0.0.0.0:5004
 ENV PORT=5004
 
-# Use Gunicorn instead of Flask dev server
-# -w 2: 2 worker processes (scale based on CPU cores)
-# -k gthread: threaded worker class (good for I/O heavy inference)
-# -t 300: 5 min timeout (to allow rebuilds)
-# -b 0.0.0.0:5004: bind to container port 5004
-CMD ["gunicorn", "-w", "2", "-k", "gthread", "-t", "300", "-b", "0.0.0.0:5004", "app:app"]
+# Use Uvicorn with multiple workers
+# --workers 2: 2 worker processes (scale based on CPU cores)
+# --timeout-keep-alive 300: 5 min timeout (to allow rebuilds)
+# --host 0.0.0.0 --port 5004: bind to container port 5004
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5004", "--workers", "2", "--timeout-keep-alive", "300"]

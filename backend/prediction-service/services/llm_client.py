@@ -56,10 +56,58 @@ class LLMServiceClient:
                 
                 duration = time.time() - start_time
                 logger.info(f"LLM service call completed in {duration:.2f}s")
-                
+
                 # Add duration to result
-                result["duration"] = duration
-                
+                if "elapsed_seconds" in result:
+                    result["duration"] = result.pop("elapsed_seconds")
+                else:
+                    result["duration"] = duration
+
+                # Keep prediction format as arrays for multi-tag support
+                if "prediction" in result and isinstance(result["prediction"], dict):
+                    prediction = result["prediction"]
+                    transformed_prediction = {}
+
+                    for level in ["primary", "secondary", "tertiary"]:
+                        level_data = prediction.get(level, [])
+
+                        if isinstance(level_data, list) and level_data:
+                            # Keep all predictions as array (multi-tag support)
+                            transformed_list = []
+                            for pred in level_data:
+                                # Ensure reasoning is a string
+                                reasoning = pred.get("reasoning", "")
+                                if isinstance(reasoning, dict):
+                                    reasoning = str(reasoning)
+
+                                transformed_list.append({
+                                    "pred": pred.get("pred", ""),
+                                    "confidence": pred.get("confidence", 0.0),
+                                    "reasoning": reasoning,
+                                    "primary": pred.get("primary"),
+                                    "secondary": pred.get("secondary")
+                                })
+
+                            transformed_prediction[level] = transformed_list
+                        elif isinstance(level_data, dict):
+                            # Single object format - wrap in array for consistency
+                            reasoning = level_data.get("reasoning", "")
+                            if isinstance(reasoning, dict):
+                                reasoning = str(reasoning)
+
+                            transformed_prediction[level] = [{
+                                "pred": level_data.get("pred", ""),
+                                "confidence": level_data.get("confidence", 0.0),
+                                "reasoning": reasoning,
+                                "primary": level_data.get("primary"),
+                                "secondary": level_data.get("secondary")
+                            }]
+                        else:
+                            # No prediction for this level - empty array
+                            transformed_prediction[level] = []
+
+                    result["prediction"] = transformed_prediction
+
                 return result
                 
         except httpx.TimeoutException:

@@ -2,7 +2,7 @@
 Pydantic models for request/response validation
 """
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class PredictionRequest(BaseModel):
     """Request model for prediction endpoint"""
@@ -24,10 +24,12 @@ class PredictionLevel(BaseModel):
     secondary: Optional[str] = Field(None, description="Secondary tag context (for tertiary only)")
 
 class PredictionResponse(BaseModel):
-    """Complete prediction response"""
-    primary: Optional[PredictionLevel] = None
-    secondary: Optional[PredictionLevel] = None
-    tertiary: Optional[PredictionLevel] = None
+    """Complete prediction response - supports multi-tag output"""
+    model_config = ConfigDict(exclude_none=True)
+
+    primary: Optional[List[PredictionLevel]] = None
+    secondary: Optional[List[PredictionLevel]] = None
+    tertiary: Optional[List[PredictionLevel]] = None
 
 class FullResponse(BaseModel):
     """Full response matching AI service format"""

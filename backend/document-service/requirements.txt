@@ -1,7 +1,9 @@
-flask==3.0.0
-flask-cors==4.0.0
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart
 requests==2.31.0
 supabase>=2.0.0
 python-dotenv==1.0.0
-pytest==7.4.3
+pytest>=8.2.0
+httpx
 urllib3>=2.0.0

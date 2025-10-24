@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Upload, Search, Filter, AlertCircle, RefreshCw } from "lucide-react"
+import { Upload, Search, Filter, AlertCircle, RefreshCw, Settings, BookOpen } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
 import { DocumentDetailsModal } from "@/components/document-details-modal"
 import { DocumentTable } from "@/components/document-table"
@@ -17,8 +18,27 @@ import { Document, apiClient } from "@/lib/api"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function HomePage() {
+  // Router
+  const router = useRouter()
+
   // Auth state
   const { user, loading: authLoading } = useAuth()
+
+  // Get API docs URL - dynamically resolves to the correct backend
+  const getApiDocsUrl = () => {
+    // In development or when using custom backend, construct URL from window.location
+    if (typeof window !== 'undefined') {
+      // Check if we're using a custom backend origin
+      const currentOrigin = window.location.origin
+      // For localhost development, default to port 8000
+      if (currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1')) {
+        return 'http://localhost:8000/docs'
+      }
+      // For production, use the production backend
+      return 'https://clercbackend.clerc.uk/docs'
+    }
+    return 'http://localhost:8000/docs'
+  }
 
   // UI state
   const [searchTerm, setSearchTerm] = useState("")
@@ -36,7 +56,7 @@ export default function HomePage() {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   useEffect(() => {
     const t = setTimeout(() => {
-      console.log("[page] 🔎 debounced search ->", searchTerm)
+      // console.log("[page] 🔎 debounced search ->", searchTerm)
       setDebouncedSearchTerm(searchTerm)
     }, 500)
     return () => clearTimeout(t)
@@ -44,7 +64,7 @@ export default function HomePage() {
 
   // Reset to page 1 when search or sort changes
   useEffect(() => {
-    console.log("[page] 📄 reset page due to search/sort change")
+    // console.log("[page] 📄 reset page due to search/sort change")
     setCurrentPage(1)
   }, [debouncedSearchTerm, sortBy, sortOrder])
 
@@ -69,7 +89,7 @@ export default function HomePage() {
   // Client-side TAG filter only (sorting handled server-side)
   const filteredDocuments = useMemo(() => {
     const filtered = !filterTag ? documents : documents.filter(d => d.tags.includes(filterTag))
-    console.log("[page] 🏷️ tag filter ->", { filterTag, before: documents.length, after: filtered.length })
+    // console.log("[page] 🏷️ tag filter ->", { filterTag, before: documents.length, after: filtered.length })
     return filtered
   }, [documents, filterTag])
 
@@ -82,10 +102,10 @@ export default function HomePage() {
   const handleSort = (column: "name" | "date" | "size") => {
     if (sortBy === column) {
       const next = sortOrder === "asc" ? "desc" : "asc"
-      console.log("[page] ↕️ toggle sort order", { column, from: sortOrder, to: next })
+      // console.log("[page] ↕️ toggle sort order", { column, from: sortOrder, to: next })
       setSortOrder(next)
     } else {
-      console.log("[page] 🔃 change sort column", { from: sortBy, to: column })
+      // console.log("[page] 🔃 change sort column", { from: sortBy, to: column })
       setSortBy(column)
       setSortOrder("asc")
     }
@@ -115,6 +135,24 @@ export default function HomePage() {
             </div>
 
             <div className="flex items-center gap-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(getApiDocsUrl(), '_blank')}
+                className="flex items-center gap-2"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>API Docs</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/admin/confidence-config')}
+                className="flex items-center gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                <span>Confidence Config</span>
+              </Button>
               {authLoading ? (
                 <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full" />
               ) : user ? (
@@ -170,7 +208,7 @@ export default function HomePage() {
                   value={filterTag || "all-tags"}
                   onValueChange={(value: string) => {
                     const val = value === "all-tags" ? "" : value
-                    console.log("[page] 🏷️ tag select", { value, normalized: val })
+                    // console.log("[page] 🏷️ tag select", { value, normalized: val })
                     setFilterTag(val)
                   }}
                 >
@@ -213,7 +251,7 @@ export default function HomePage() {
                 <Select
                   value={sortBy}
                   onValueChange={(value: "name" | "date" | "size") => {
-                    console.log("[page] 🔃 sort select", { value })
+                    // console.log("[page] 🔃 sort select", { value })
                     setSortBy(value)
                   }}
                   disabled={loading}
@@ -233,7 +271,7 @@ export default function HomePage() {
                   size="sm"
                   onClick={() => {
                     const next = sortOrder === "asc" ? "desc" : "asc"
-                    console.log("[page] ↕️ sort order button", { from: sortOrder, to: next })
+                    // console.log("[page] ↕️ sort order button", { from: sortOrder, to: next })
                     setSortOrder(next)
                   }}
                   disabled={loading}
@@ -268,7 +306,7 @@ export default function HomePage() {
                       totalItems={pagination.totalItems}
                       itemsPerPage={pagination.itemsPerPage}
                       onPageChange={(p) => {
-                        console.log("[page] 📄 page change", { from: currentPage, to: p })
+                        // console.log("[page] 📄 page change", { from: currentPage, to: p })
                         setCurrentPage(p)
                       }}
                       loading={loading}
@@ -309,6 +347,14 @@ export default function HomePage() {
             try {
               const documentIdNum = parseInt(documentId)
               await apiClient.updateDocumentTags(documentIdNum, { confirmed_tags: confirmedTagsData })
+
+              // Reset to page 1 and clear filters to show the updated document at the top
+              setCurrentPage(1)
+              setSearchTerm("")
+              setFilterTag("")
+
+              // Close modal and refetch
+              setDetailsDocument(null)
               await refetch()
             } catch (err) {
               console.error("❌ [page] error updating document tags:", err)

@@ -61,9 +61,9 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
   const fetchDocuments = useCallback(async () => {
     setLoading(true)
     setError(null)
-    console.log('[useDocuments] fetchDocuments -> params', {
-      limit, offset, search, sortBy, sortOrder, status, companyId
-    })
+    // console.log('[useDocuments] fetchDocuments -> params', {
+    //   limit, offset, search, sortBy, sortOrder, status, companyId
+    // })
 
     try {
       // NOTE: apiClient.getDocuments returns { documents, pagination }
@@ -103,10 +103,10 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
         })
       }
 
-      console.log('[useDocuments] fetchDocuments -> success', {
-        returned: transformed.length,
-        pagination: apiPagination
-      })
+      // console.log('[useDocuments] fetchDocuments -> success', {
+      //   returned: transformed.length,
+      //   pagination: apiPagination
+      // })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch documents'
       setError(message)

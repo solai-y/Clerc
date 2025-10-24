@@ -65,18 +65,18 @@ export function DocumentPagination({
   }, [safeCurrent, totalPages])
 
   useEffect(() => {
-    console.log("[Pagination] props changed", {
-      currentPage,
-      totalPages,
-      totalItems,
-      itemsPerPage,
-      loading,
-      computed: { safeCurrent, startItem, endItem, pageNumbers }
-    })
+    // console.log("[Pagination] props changed", {
+    //   currentPage,
+    //   totalPages,
+    //   totalItems,
+    //   itemsPerPage,
+    //   loading,
+    //   computed: { safeCurrent, startItem, endItem, pageNumbers }
+    // })
   }, [currentPage, totalPages, totalItems, itemsPerPage, loading, pageNumbers, safeCurrent, startItem, endItem])
 
   const handlePageClick = (page: number) => {
-    console.log("[Pagination] click", { page, safeCurrent, totalPages, loading })
+    // console.log("[Pagination] click", { page, safeCurrent, totalPages, loading })
     if (!loading && page >= 1 && page <= totalPages && page !== safeCurrent) {
       onPageChange(page)
     }

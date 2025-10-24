@@ -28,21 +28,21 @@ export function DocumentTable({
 }: DocumentTableProps) {
   // Debug whenever inputs change
   useEffect(() => {
-    console.log("[DocumentTable] render", {
-      rows: documents.length,
-      sortBy,
-      sortOrder,
-      sample: documents.slice(0, 3).map(d => ({
-        id: d.id,
-        name: d.name,
-        uploadDate: d.uploadDate,
-        size: d.size
-      }))
-    })
+    // console.log("[DocumentTable] render", {
+    //   rows: documents.length,
+    //   sortBy,
+    //   sortOrder,
+    //   sample: documents.slice(0, 3).map(d => ({
+    //     id: d.id,
+    //     name: d.name,
+    //     uploadDate: d.uploadDate,
+    //     size: d.size
+    //   }))
+    // })
   }, [documents, sortBy, sortOrder])
 
   if (documents.length === 0) {
-    console.log("[DocumentTable] empty state (no rows to render)")
+    // console.log("[DocumentTable] empty state (no rows to render)")
     return (
       <div className="text-center py-8 text-gray-500">
         <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />

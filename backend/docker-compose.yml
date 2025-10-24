@@ -49,6 +49,9 @@ services:
       - text-extraction-service
     env_file:
       - .env
+    environment:
+      - AI_SERVICE_TIMEONE=120
+      - LLM_SERVICE_TIMEOUT=120
 
   text-extraction-service:
     build: ./text-extraction-service
@@ -58,6 +61,21 @@ services:
       - .env
     environment:
       - PORT=5008
+
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - company-service
+      - document-service
+      - s3-service
+      - ai-service
+      - llm-service
+      - prediction-service
+      - text-extraction-service
+    env_file:
+      - .env
 
   nginx:
     image: nginx:latest

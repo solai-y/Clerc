@@ -1,5 +1,5 @@
 import pytest
-from flask.testing import FlaskClient
+from fastapi.testclient import TestClient
 import sys
 import os
 from pathlib import Path
@@ -13,20 +13,17 @@ from app import app
 
 @pytest.fixture
 def client():
-    print("\n[INFO] Setting up Flask test client...")
-    with app.test_client() as client:
-        yield client
-    print("[INFO] Flask test client teardown complete.")
+    print("\n[INFO] Setting up FastAPI test client...")
+    return TestClient(app)
 
-def test_non_pdf_upload(client: FlaskClient):
+def test_non_pdf_upload(client: TestClient):
     print("\n[TEST] Running POST /upload endpoint test whilst passing an image...")
 
     img_path = MOCK_DIR / "SMU_Logo.png"
     with open(img_path, "rb") as image_file:
         response = client.post(
             '/upload',
-            data={'file': (image_file, 'SMU_Logo.png')},
-            content_type='multipart/form-data'
+            files={'file': ('SMU_Logo.png', image_file, 'image/png')}
         )
     print(f"[DEBUG] Received response with status code: {response.status_code}")
 
@@ -37,14 +34,14 @@ def test_non_pdf_upload(client: FlaskClient):
         print(f"[FAIL] Expected status code 400, got {response.status_code}")
         raise
 
-    data = response.get_json()
+    data = response.json()
     print(f"[DEBUG] Response JSON data: {data}")
 
     try:
-        assert data['error'] == "File is not a PDF"
+        assert data['detail'] == "File is not a PDF"
         print("[PASS] Error message is 'File is not a PDF'.")
     except AssertionError:
-        print(f"[FAIL] Response error message is not as expected, got {data['error']}")
+        print(f"[FAIL] Response error message is not as expected, got {data.get('detail')}")
         raise
 
     print("[SUCCESS] POST /upload endpoint test of non image upload completed successfully.")
