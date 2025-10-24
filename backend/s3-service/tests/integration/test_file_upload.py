@@ -12,11 +12,6 @@ HERE = Path(__file__).resolve().parent
 MOCK_DIR = HERE / "mock"
 PDF_FIXTURE = MOCK_DIR / "TESTING_success.pdf"
 
-# --- Import the FastAPI app (app.py lives two levels up from tests/integration) ---
-S3_SERVICE_ROOT = HERE.parent.parent  # .../s3-service
-sys.path.append(str(S3_SERVICE_ROOT))
-from app import app  # noqa: E402
-
 
 def _prime_env():
     """Provide safe defaults so no None hits regex/string checks anywhere."""
@@ -26,6 +21,15 @@ def _prime_env():
     os.environ.setdefault("S3_BUCKET_NAME", "test-bucket")
     os.environ.setdefault("AWS_ACCESS_KEY_ID", "test")
     os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test")
+
+
+# Prime environment variables before importing app (app reads them at module load)
+_prime_env()
+
+# --- Import the FastAPI app (app.py lives two levels up from tests/integration) ---
+S3_SERVICE_ROOT = HERE.parent.parent  # .../s3-service
+sys.path.append(str(S3_SERVICE_ROOT))
+from app import app  # noqa: E402
 
 
 def _maybe_patch_s3() -> ExitStack:
@@ -55,8 +59,6 @@ def test_file_upload():
     tmp_root = Path(tempfile.mkdtemp())
     upload_dir = tmp_root / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
-
-    _prime_env()
 
     with _maybe_patch_s3():
         client = TestClient(app)
