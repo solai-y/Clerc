@@ -1,6 +1,7 @@
 import os
 import logging
 from typing import Dict, Any, List, Optional
+from datetime import datetime, timedelta
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -25,28 +26,69 @@ class MetricsAnalyticsService:
             self.logger.error(f"Failed to initialize metrics analytics service: {str(e)}")
             raise
 
-    def calculate_top_tag_accuracy(self) -> Dict[str, Any]:
+    def calculate_top_tag_accuracy(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Calculate Top-Tag Accuracy by comparing highest-confidence AI predictions
         against final user-confirmed tags.
 
+        Args:
+            start_date: Start date in YYYY-MM-DD format (Singapore timezone, inclusive)
+            end_date: End date in YYYY-MM-DD format (Singapore timezone, inclusive)
+
         Returns:
             Dict containing:
-                - overall_accuracy: Overall top-tag accuracy percentage
-                - by_level: Accuracy broken down by hierarchy level (primary, secondary, tertiary)
+                - top_tag_accuracy: Overall top-tag accuracy percentage
+                - perfect_match_rate: Percentage of documents with all 3 top tags accepted
+                - top_tag_by_level: Accuracy broken down by hierarchy level
                 - total_documents: Number of documents analyzed
+                - date_range: Applied date range filter (if any)
                 - metrics: Detailed metrics for each level
         """
         try:
+            # Convert Singapore dates to UTC if provided
+            date_filter_applied = False
+            start_datetime_utc = None
+            end_datetime_utc = None
+
+            if start_date or end_date:
+                date_filter_applied = True
+                # Singapore is UTC+8
+                sg_offset = timedelta(hours=8)
+
+                if start_date:
+                    # Start of day in Singapore (00:00:00 SGT)
+                    start_sg = datetime.strptime(start_date, '%Y-%m-%d')
+                    start_datetime_utc = start_sg - sg_offset
+                    self.logger.info(f"Start date: {start_date} SGT → {start_datetime_utc.isoformat()}Z UTC")
+
+                if end_date:
+                    # End of day in Singapore (23:59:59 SGT)
+                    end_sg = datetime.strptime(end_date, '%Y-%m-%d')
+                    end_sg = end_sg.replace(hour=23, minute=59, second=59)
+                    end_datetime_utc = end_sg - sg_offset
+                    self.logger.info(f"End date: {end_date} SGT → {end_datetime_utc.isoformat()}Z UTC")
+
             # Query processed_documents for suggested_tags and confirmed_tags
             self.logger.info("Fetching processed documents with suggested_tags and confirmed_tags")
-            response = self.supabase.table('processed_documents').select(
-                'process_id, document_id, suggested_tags, confirmed_tags'
-            ).not_.is_('confirmed_tags', 'null').not_.is_('suggested_tags', 'null').execute()
+            query = self.supabase.table('processed_documents').select(
+                'process_id, document_id, suggested_tags, confirmed_tags, reviewed_at'
+            ).not_.is_('confirmed_tags', 'null').not_.is_('suggested_tags', 'null')
+
+            # Apply date filters if provided
+            if start_datetime_utc:
+                query = query.gte('reviewed_at', start_datetime_utc.isoformat() + 'Z')
+            if end_datetime_utc:
+                query = query.lte('reviewed_at', end_datetime_utc.isoformat() + 'Z')
+
+            response = query.execute()
 
             if not response.data:
                 self.logger.warning("No documents with both suggested_tags and confirmed_tags found")
-                return {
+                result = {
                     "top_tag_accuracy": 0.0,
                     "perfect_match_rate": 0.0,
                     "top_tag_by_level": {
@@ -63,6 +105,14 @@ class MetricsAnalyticsService:
                         "tertiary": {"accepted": 0, "total": 0}
                     }
                 }
+                # Add date range info if filter was applied
+                if start_date or end_date:
+                    result["date_range"] = {
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "timezone": "Asia/Singapore"
+                    }
+                return result
 
             documents = response.data
             self.logger.info(f"Analyzing {len(documents)} documents")
@@ -155,9 +205,21 @@ class MetricsAnalyticsService:
                 "metrics": metrics
             }
 
+            # Add date range info if filter was applied
+            if start_date or end_date:
+                result["date_range"] = {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "timezone": "Asia/Singapore"
+                }
+
+            date_info = ""
+            if start_date or end_date:
+                date_info = f" | Date range: {start_date or 'start'} to {end_date or 'end'}"
+
             self.logger.info(
                 f"Top-Tag Accuracy: {top_tag_accuracy}% | Perfect Match Rate: {perfect_match_rate}% "
-                f"({perfect_match_count}/{documents_with_all_levels})"
+                f"({perfect_match_count}/{documents_with_all_levels}){date_info}"
             )
             return result
 
