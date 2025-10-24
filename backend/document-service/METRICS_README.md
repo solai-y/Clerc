@@ -151,9 +151,41 @@ Contains user-approved tags:
 
 Calculate and return Top-Tag Accuracy and Perfect Match Rate metrics.
 
-#### Request
+#### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `start_date` | string | No | Start date in `YYYY-MM-DD` format (Singapore timezone, inclusive) |
+| `end_date` | string | No | End date in `YYYY-MM-DD` format (Singapore timezone, inclusive) |
+
+**Date Range Filtering:**
+- If both dates provided: Analyzes documents within the date range
+- If only `start_date`: Analyzes documents from that date onwards
+- If only `end_date`: Analyzes documents up to that date
+- If no dates: Analyzes all documents
+
+**Timezone:** All dates are interpreted as Singapore time (UTC+8)
+
+#### Request Examples
+
+**All documents:**
 ```bash
 curl http://localhost:5002/metrics/top-tag-accuracy
+```
+
+**Date range:**
+```bash
+curl "http://localhost:5002/metrics/top-tag-accuracy?start_date=2025-10-20&end_date=2025-10-24"
+```
+
+**From date onwards:**
+```bash
+curl "http://localhost:5002/metrics/top-tag-accuracy?start_date=2025-10-23"
+```
+
+**Up to date:**
+```bash
+curl "http://localhost:5002/metrics/top-tag-accuracy?end_date=2025-10-20"
 ```
 
 #### Response
@@ -172,6 +204,11 @@ curl http://localhost:5002/metrics/top-tag-accuracy
     "total_documents": 150,
     "documents_with_all_levels": 145,
     "perfect_matches": 105,
+    "date_range": {
+      "start_date": "2025-10-20",
+      "end_date": "2025-10-24",
+      "timezone": "Asia/Singapore"
+    },
     "metrics": {
       "primary": {
         "accepted": 138,
@@ -202,6 +239,10 @@ curl http://localhost:5002/metrics/top-tag-accuracy
 | `total_documents` | int | Number of documents analyzed |
 | `documents_with_all_levels` | int | Number of documents with all 3 hierarchy levels |
 | `perfect_matches` | int | Number of documents with all 3 top tags accepted |
+| `date_range` | object | Applied date filter (only present if dates provided) |
+| `date_range.start_date` | string | Start date filter (YYYY-MM-DD, Singapore timezone) |
+| `date_range.end_date` | string | End date filter (YYYY-MM-DD, Singapore timezone) |
+| `date_range.timezone` | string | Timezone used for date filtering |
 | `metrics.*.accepted` | int | Number of top-confidence tags accepted |
 | `metrics.*.total` | int | Total number of top-confidence tags suggested |
 
