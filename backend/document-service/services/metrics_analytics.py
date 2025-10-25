@@ -133,7 +133,16 @@ class MetricsAnalyticsService:
                 suggested_tags = doc.get('suggested_tags')
                 confirmed_tags = doc.get('confirmed_tags')
 
+                # Skip if tags are missing, None, or empty arrays
                 if not suggested_tags or not confirmed_tags:
+                    continue
+                if isinstance(suggested_tags, list) and len(suggested_tags) == 0:
+                    continue
+                if isinstance(confirmed_tags, list) and len(confirmed_tags) == 0:
+                    continue
+                if isinstance(suggested_tags, dict) and suggested_tags.get('tags') == []:
+                    continue
+                if isinstance(confirmed_tags, dict) and confirmed_tags.get('tags') == []:
                     continue
 
                 # Extract highest confidence tags from suggested_tags for each level
