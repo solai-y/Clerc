@@ -1,13 +1,9 @@
-fastapi>=0.111.0
-uvicorn[standard]>=0.29.0
+fastapi==0.110.0
+uvicorn==0.27.1
+pydantic==2.6.3
+python-dotenv==1.0.1
+supabase==2.4.5
 
-# Supabase Python client (v2)
-supabase>=2.4.0
-httpx>=0.24.0
-postgrest>=0.11.6
-gotrue>=2.4.2
-realtime>=2.0.2
-storage3>=0.7.4
-
-python-dotenv==1.0.0
-pydantic>=2.5.0
+# --- test/runtime tooling (safe to include in image) ---
+pytest==7.4.4
+requests==2.32.3
