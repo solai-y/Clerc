@@ -237,14 +237,40 @@ async def update_tags(request: UpdateTagsRequest):
 
         logger.info(f"Processing {len(primary_tags)} primary, {len(secondary_tags)} secondary, {len(tertiary_tags)} tertiary tags")
 
-        # Look up all tag IDs at once
+        # Look up all tag IDs with fuzzy matching (handle spaces, underscores, case differences)
         all_tag_names = [t.tag for t in tags_list]
         tag_lookup = {}
 
         if all_tag_names:
+            # First try exact match
             tags_response = supabase.table('tags').select('id, tag_name').in_('tag_name', all_tag_names).execute()
             if tags_response.data:
                 tag_lookup = {tag['tag_name']: tag['id'] for tag in tags_response.data}
+
+            # For any tags that didn't match, try fuzzy matching
+            unmatched_tags = [name for name in all_tag_names if name not in tag_lookup]
+            if unmatched_tags:
+                # Fetch all tags and do case-insensitive matching with normalization
+                all_tags_response = supabase.table('tags').select('id, tag_name').execute()
+                if all_tags_response.data:
+                    # Create normalized lookup
+                    def normalize(s):
+                        return s.lower().replace('_', ' ').replace('-', ' ').strip()
+
+                    db_tags_normalized = {
+                        normalize(tag['tag_name']): tag
+                        for tag in all_tags_response.data
+                    }
+
+                    # Try to match unmatched tags
+                    for unmatched in unmatched_tags:
+                        normalized_unmatched = normalize(unmatched)
+                        if normalized_unmatched in db_tags_normalized:
+                            matched_tag = db_tags_normalized[normalized_unmatched]
+                            tag_lookup[unmatched] = matched_tag['id']
+                            logger.info(f"Fuzzy matched '{unmatched}' to '{matched_tag['tag_name']}' (id={matched_tag['id']})")
+                        else:
+                            logger.warning(f"Could not find tag '{unmatched}' even with fuzzy matching")
 
         # Build hierarchies from confirmed tags
         # Simply use the tags as they are confirmed by the user
@@ -276,29 +302,69 @@ async def update_tags(request: UpdateTagsRequest):
             else:
                 logger.warning(f"Tertiary tag '{tag.tag}' not found in tags table")
 
-        # Create hierarchy entries for each combination
-        # If user confirmed these tags together, we store them together
-        if primary_tag_ids or secondary_tag_ids or tertiary_tag_ids:
-            # Get the first (or only) tag from each level
-            primary_name = list(primary_tag_ids.keys())[0] if primary_tag_ids else None
-            secondary_name = list(secondary_tag_ids.keys())[0] if secondary_tag_ids else None
-            tertiary_name = list(tertiary_tag_ids.keys())[0] if tertiary_tag_ids else None
+        # Build valid hierarchies by tracing parent relationships from tertiary tags
+        # Each tertiary tag traces up to its secondary parent, then to primary parent
+        # This ensures we only store hierarchies that match the database structure
 
-            primary_id = primary_tag_ids.get(primary_name) if primary_name else None
-            secondary_id = secondary_tag_ids.get(secondary_name) if secondary_name else None
-            tertiary_id = tertiary_tag_ids.get(tertiary_name) if tertiary_name else None
+        valid_hierarchies = []
 
-            if primary_id or secondary_id or tertiary_id:
-                hierarchy_display = " → ".join(filter(None, [primary_name, secondary_name, tertiary_name]))
-                valid_hierarchies.append({
-                    'primary_id': primary_id,
-                    'secondary_id': secondary_id,
-                    'tertiary_id': tertiary_id,
-                    'primary_name': primary_name,
-                    'secondary_name': secondary_name,
-                    'tertiary_name': tertiary_name
-                })
-                logger.info(f"Valid hierarchy: {hierarchy_display}")
+        # Start from tertiary tags and trace upward
+        for tertiary_name, tertiary_id in tertiary_tag_ids.items():
+            # Get the tertiary tag's parent (secondary)
+            tertiary_response = supabase.table('tags').select('parent_id').eq('id', tertiary_id).execute()
+
+            if not tertiary_response.data or not tertiary_response.data[0].get('parent_id'):
+                logger.warning(f"Tertiary tag '{tertiary_name}' (id={tertiary_id}) has no parent, skipping")
+                continue
+
+            secondary_id = tertiary_response.data[0]['parent_id']
+
+            # Get the secondary tag's name and parent (primary)
+            secondary_response = supabase.table('tags').select('id, tag_name, parent_id').eq('id', secondary_id).execute()
+
+            if not secondary_response.data:
+                logger.warning(f"Secondary tag id={secondary_id} not found, skipping")
+                continue
+
+            secondary_row = secondary_response.data[0]
+            secondary_name = secondary_row['tag_name']
+
+            # Check if this secondary was in the confirmed tags
+            if secondary_name not in secondary_tag_ids:
+                logger.warning(f"Secondary tag '{secondary_name}' traced from '{tertiary_name}' was not in confirmed tags, skipping")
+                continue
+
+            primary_id = secondary_row.get('parent_id')
+
+            if not primary_id:
+                logger.warning(f"Secondary tag '{secondary_name}' (id={secondary_id}) has no parent, skipping")
+                continue
+
+            # Get the primary tag's name
+            primary_response = supabase.table('tags').select('tag_name').eq('id', primary_id).execute()
+
+            if not primary_response.data:
+                logger.warning(f"Primary tag id={primary_id} not found, skipping")
+                continue
+
+            primary_name = primary_response.data[0]['tag_name']
+
+            # Check if this primary was in the confirmed tags
+            if primary_name not in primary_tag_ids:
+                logger.warning(f"Primary tag '{primary_name}' traced from '{secondary_name}' → '{tertiary_name}' was not in confirmed tags, skipping")
+                continue
+
+            # Valid hierarchy found!
+            hierarchy_display = f"{primary_name} → {secondary_name} → {tertiary_name}"
+            valid_hierarchies.append({
+                'primary_id': primary_id,
+                'secondary_id': secondary_id,
+                'tertiary_id': tertiary_id,
+                'primary_name': primary_name,
+                'secondary_name': secondary_name,
+                'tertiary_name': tertiary_name
+            })
+            logger.info(f"Valid hierarchy: {hierarchy_display}")
 
         if not valid_hierarchies:
             logger.warning(f"No tags found in database for document {request.document_id}")
