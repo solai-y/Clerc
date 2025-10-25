@@ -61,28 +61,23 @@ export interface GetDocumentsOptions {
   companyId?: number;
 }
 
-/* -------------------- TAG HIERARCHY TYPES (ADDED) -------------------- */
-export type TagHierarchy = {
-  [primary: string]: {
-    [secondary: string]: string[];
-  };
-};
+// ---------- Tag service types ----------
+export type TagHierarchy = Record<string, Record<string, string[]>>;
 
-export type AddTagInput = {
+export interface AddTagInput {
   layer: "primary" | "secondary" | "tertiary";
   name: string;
   parentPrimary?: string;
   parentSecondary?: string;
-};
+}
 
-export type EditTagInput = {
+export interface EditTagInput {
   layer: "primary" | "secondary" | "tertiary";
   oldName: string;
   newName: string;
   parentPrimary?: string;
   parentSecondary?: string;
-};
-/* --------------------------------------------------------------------- */
+}
 
 class APIClient {
   private async fetchWithErrorHandling<T>(
@@ -336,47 +331,23 @@ class APIClient {
     }
   }
 
-  /* ===================== TAG HIERARCHY METHODS (ADDED) ===================== */
-
-  /**
-   * Fetches the full hierarchy.
-   * Tries /api/tags, and on any error (e.g., HTTP 500) falls back to /hierarchy.json on the client.
-   */
+  // ======================= TAG SERVICE (NEW) =======================
+  // Always fetch from backend tag-service via Next.js rewrite; no JSON fallback.
   async getTagHierarchy(): Promise<TagHierarchy> {
     const url = apiUrl("/tags");
-    try {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(`Failed to fetch tags (HTTP ${res.status}) ${body.slice(0, 120)}`);
-      }
-      // Accept raw JSON or wrapped {status,data}
-      const json = await res.json();
-      if (json && typeof json === "object" && "status" in json && "data" in json) {
-        if (json.status !== "success") throw new Error(json.message || "Failed to load tag hierarchy");
-        return json.data as TagHierarchy;
-      }
-      return json as TagHierarchy;
-    } catch (err) {
-      // Fallback to static file on the client
-      if (!isServer) {
-        try {
-          const res2 = await fetch("/hierarchy.json", { cache: "no-store" });
-          if (!res2.ok) throw new Error(`fallback /hierarchy.json HTTP ${res2.status}`);
-          console.warn("[api] /api/tags failed; using fallback /hierarchy.json");
-          return (await res2.json()) as TagHierarchy;
-        } catch (fallbackErr) {
-          throw new Error(`${(err as Error)?.message || err} | Fallback failed: ${(fallbackErr as Error)?.message || fallbackErr}`);
-        }
-      }
-      throw err;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}: Failed to fetch tags ${msg.slice(0, 200)}`);
     }
+    const data = await res.json();
+    if (!data || typeof data !== "object") {
+      throw new Error("Unexpected tags response shape.");
+    }
+    return data as TagHierarchy;
   }
 
-  /**
-   * Creates a new tag at the specified layer.
-   */
-  async addTag(input: AddTagInput): Promise<void> {
+  async addTag(input: AddTagInput): Promise<{ message: string; id: number }> {
     const url = apiUrl("/tags");
     const res = await fetch(url, {
       method: "POST",
@@ -384,28 +355,30 @@ class APIClient {
       cache: "no-store",
       body: JSON.stringify(input),
     });
+    const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg = await res.text().catch(() => "");
-      throw new Error(`Failed to add tag. HTTP ${res.status} ${msg.slice(0, 200)}`);
+      const detail = json?.detail ? `: ${json.detail}` : "";
+      throw new Error(`Failed to add tag (HTTP ${res.status})${detail}`);
     }
+    return json;
   }
 
-  /**
-   * Renames an existing tag within its scope.
-   */
-  async editTag(input: EditTagInput): Promise<void> {
-    const url = apiUrl("/tags");
+  async editTag(input: EditTagInput): Promise<{ message: string }> {
+    const url = apiUrl("/tags/rename");
     const res = await fetch(url, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
       body: JSON.stringify(input),
     });
+    const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg = await res.text().catch(() => "");
-      throw new Error(`Failed to edit tag. HTTP ${res.status} ${msg.slice(0, 200)}`);
+      const detail = json?.detail ? `: ${json.detail}` : "";
+      throw new Error(`Failed to rename tag (HTTP ${res.status})${detail}`);
     }
+    return json;
   }
+  // ===================== END TAG SERVICE (NEW) =====================
 }
 
 // ---------- Frontend types & helpers ----------
