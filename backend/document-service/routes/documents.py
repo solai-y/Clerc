@@ -1,4 +1,6 @@
 import logging
+import os
+import httpx
 from fastapi import APIRouter, HTTPException, Request, Query, Body
 from fastapi.responses import JSONResponse
 from typing import Optional, Dict, Any
@@ -367,6 +369,28 @@ async def update_document_tags(document_id: int, request: Request, body: Documen
             else:
                 logger.error(f"Database error: {error}")
                 return APIResponse.internal_error("Failed to update document tags")
+
+        # Call retraining service to update tags (async, non-blocking)
+        if 'confirmed_tags' in data:
+            try:
+                retraining_url = os.getenv('RETRAINING_SERVICE_URL', 'http://retraining-service:5009')
+                logger.info(f"Updating retraining service with confirmed tags for document {document_id}")
+
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    retraining_response = await client.post(
+                        f"{retraining_url}/retraining/update-tags",
+                        json={
+                            "document_id": document_id,
+                            "confirmed_tags": data['confirmed_tags']
+                        }
+                    )
+
+                    if retraining_response.status_code == 200:
+                        logger.info(f"✅ Retraining tags updated for document {document_id}")
+                    else:
+                        logger.warning(f"⚠️ Retraining tag update failed (non-critical): {retraining_response.text}")
+            except Exception as retraining_error:
+                logger.warning(f"⚠️ Retraining tag update error (non-critical): {str(retraining_error)}")
 
         logger.info(f"Successfully updated tags for document {document_id}")
         return APIResponse.success(updated_document, "Document tags updated successfully")

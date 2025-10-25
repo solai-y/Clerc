@@ -45,6 +45,10 @@ const nextConfig = {
       // Text Extraction Service
       { source: "/api/text-extract", destination: `${BACKEND_ORIGIN}/text-extract` },
       { source: "/api/text-extract/:path*", destination: `${BACKEND_ORIGIN}/text-extract/:path*` },
+
+      // Retraining Service
+      { source: "/api/retraining", destination: `${BACKEND_ORIGIN}/retraining` },
+      { source: "/api/retraining/:path*", destination: `${BACKEND_ORIGIN}/retraining/:path*` },
     ];
     
     console.log("[Next.js Config] API rewrite rules configured.");

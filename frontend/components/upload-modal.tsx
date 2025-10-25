@@ -236,9 +236,31 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       // Step 3: Extract text and run prediction service processing (50-80% progress)
       setUploadProgress(60)
       console.log("🤖 Processing with Prediction Service...")
-      
+
       // Extract text from file using S3 URL
       const documentText = await extractTextFromFile(file, s3Link || "")
+
+      // Step 3.5: Store text in retraining service (async, non-blocking)
+      try {
+        console.log("💾 Storing text in retraining service...")
+        const retrainingResponse = await fetch('/api/retraining/store-text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            document_id: documentId,
+            text: documentText
+          })
+        })
+
+        if (retrainingResponse.ok) {
+          const retrainingResult = await retrainingResponse.json()
+          console.log("✅ Retraining text stored:", retrainingResult)
+        } else {
+          console.warn("⚠️ Retraining text storage failed (non-critical):", await retrainingResponse.text())
+        }
+      } catch (retrainingError) {
+        console.warn("⚠️ Retraining text storage error (non-critical):", retrainingError)
+      }
 
       // Call prediction service (will use database thresholds)
       // No need to pass thresholds from frontend - backend manages this
@@ -443,17 +465,39 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         })),
         userAddedTags: [] // Not using user added tags in hierarchy-based system
       }
-      
+
       // Update the backend with confirmed tags
       try {
         await apiClient.updateDocumentTags(parseInt(documentId), {
           confirmed_tags: confirmedTagsData
         })
+
+        // Update retraining service with confirmed tags (async, non-blocking)
+        try {
+          console.log("💾 Updating retraining service with confirmed tags...")
+          const retrainingResponse = await fetch('/api/retraining/update-tags', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              document_id: parseInt(documentId),
+              confirmed_tags: confirmedTagsData.confirmed_tags || confirmedTagsData
+            })
+          })
+
+          if (retrainingResponse.ok) {
+            const retrainingResult = await retrainingResponse.json()
+            console.log("✅ Retraining tags updated:", retrainingResult)
+          } else {
+            console.warn("⚠️ Retraining tag update failed (non-critical):", await retrainingResponse.text())
+          }
+        } catch (retrainingError) {
+          console.warn("⚠️ Retraining tag update error (non-critical):", retrainingError)
+        }
       } catch (error) {
         console.error('Failed to update tags in backend:', error)
         // Still proceed with frontend update
       }
-      
+
       onUploadComplete(finalDocument)
       setShowConfirmModal(false)
       setPendingDocument(null)

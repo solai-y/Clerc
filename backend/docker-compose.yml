@@ -62,6 +62,16 @@ services:
     environment:
       - PORT=5008
 
+  retraining-service:
+    build: ./retraining-service
+    ports:
+      - "5009:5009"
+    env_file:
+      - .env
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+
   api-gateway:
     build: ./api-gateway
     ports:
@@ -74,6 +84,7 @@ services:
       - llm-service
       - prediction-service
       - text-extraction-service
+      - retraining-service
     env_file:
       - .env
 
@@ -91,3 +102,4 @@ services:
       - llm-service
       - prediction-service
       - text-extraction-service
+      - retraining-service
