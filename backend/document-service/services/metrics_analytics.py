@@ -73,10 +73,11 @@ class MetricsAnalyticsService:
                     self.logger.info(f"End date: {end_date} SGT → {end_datetime_utc.isoformat()}Z UTC")
 
             # Query processed_documents for suggested_tags and confirmed_tags
+            # Filter out null and empty arrays at database level
             self.logger.info("Fetching processed documents with suggested_tags and confirmed_tags")
             query = self.supabase.table('processed_documents').select(
                 'process_id, document_id, suggested_tags, confirmed_tags, reviewed_at'
-            ).not_.is_('confirmed_tags', 'null').not_.is_('suggested_tags', 'null')
+            ).not_.is_('confirmed_tags', 'null').not_.is_('suggested_tags', 'null').neq('confirmed_tags', '[]').neq('suggested_tags', '[]')
 
             # Apply date filters if provided
             if start_datetime_utc:
@@ -133,13 +134,10 @@ class MetricsAnalyticsService:
                 suggested_tags = doc.get('suggested_tags')
                 confirmed_tags = doc.get('confirmed_tags')
 
-                # Skip if tags are missing, None, or empty arrays
+                # Skip if tags are missing or have empty nested arrays
                 if not suggested_tags or not confirmed_tags:
                     continue
-                if isinstance(suggested_tags, list) and len(suggested_tags) == 0:
-                    continue
-                if isinstance(confirmed_tags, list) and len(confirmed_tags) == 0:
-                    continue
+                # Check for nested empty arrays like {tags: []}
                 if isinstance(suggested_tags, dict) and suggested_tags.get('tags') == []:
                     continue
                 if isinstance(confirmed_tags, dict) and confirmed_tags.get('tags') == []:
