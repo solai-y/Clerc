@@ -1,0 +1,13 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+
+# Supabase Python client (v2)
+supabase>=2.4.0
+httpx>=0.24.0
+postgrest>=0.11.6
+gotrue>=2.4.2
+realtime>=2.0.2
+storage3>=0.7.4
+
+python-dotenv==1.0.0
+pydantic>=2.5.0
