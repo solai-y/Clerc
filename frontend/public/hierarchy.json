@@ -45,10 +45,10 @@
     ]
   },
   "(TEST): Events": {
-    "CCAs": [
+    "Academic": [],
+    "CCA": [
       "Tennis",
-      "GOLF"
-    ],
-    "Academic": []
+      "Golf"
+    ]
   }
 }

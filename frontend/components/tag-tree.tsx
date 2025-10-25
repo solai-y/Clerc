@@ -214,7 +214,7 @@ export const TagTree: React.FC = () => {
                                     Tertiary
                                   </Badge>
                                   <Button
-                                    size="xs"
+                                    size="sm"
                                     variant="ghost"
                                     className="h-7 px-2 gap-1 text-gray-600 hover:bg-amber-50"
                                     onClick={() =>
