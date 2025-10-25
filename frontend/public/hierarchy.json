@@ -44,10 +44,11 @@
       "Product Strategy"
     ]
   },
-  "cyrus test primss": {
-    "cyrus test Secondary": [
-      "Cyrus test tertiary",
-      "cyrus another tert"
-    ]
+  "(TEST): Events": {
+    "CCAs": [
+      "Tennis",
+      "GOLF"
+    ],
+    "Academic": []
   }
 }

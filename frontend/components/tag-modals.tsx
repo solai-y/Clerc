@@ -1,98 +1,127 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 import { useTags } from "@/contexts/tag-context";
+import { useToast } from "@/hooks/use-toast";
 
-type AddInit = {
+/* -------------------- Types used by both modals -------------------- */
+export type AddInit = {
   level: "primary" | "secondary" | "tertiary";
   parent?: { primary?: string; secondary?: string };
 };
-type EditInit = {
+
+export type EditInit = {
   level: "primary" | "secondary" | "tertiary";
   currentName: string;
   parent?: { primary?: string; secondary?: string };
 };
 
-export const AddTagModal: React.FC<{
+type Status = { kind: "idle" } | { kind: "error"; message: string };
+
+/* =======================================================================
+   AddTagModal
+   ======================================================================= */
+interface AddTagModalProps {
   open: boolean;
   initial: AddInit;
-  onOpenChange: (v: null) => void;
-}> = ({ open, onOpenChange, initial }) => {
-  const { tree, addTag, isUnique } = useTags();
+  onOpenChange: (next: null | AddInit) => void;
+}
 
-  // Keep local state in sync with props EACH TIME the modal opens
+export const AddTagModal: React.FC<AddTagModalProps> = ({ open, initial, onOpenChange }) => {
+  const { tree, addTag } = useTags();
+  const { toast } = useToast();
+
   const [level, setLevel] = useState<"primary" | "secondary" | "tertiary">(initial.level);
-  const [primary, setPrimary] = useState<string>(initial.parent?.primary ?? "");
-  const [secondary, setSecondary] = useState<string>(initial.parent?.secondary ?? "");
-  const [name, setName] = useState("");
+  const [name, setName] = useState<string>("");
+
+  const [parentPrimary, setParentPrimary] = useState<string | undefined>(initial.parent?.primary);
+  const [parentSecondary, setParentSecondary] = useState<string | undefined>(initial.parent?.secondary);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState<Status>({ kind: "idle" });
 
   useEffect(() => {
-    if (open) {
-      setLevel(initial.level);
-      setPrimary(initial.parent?.primary ?? "");
-      setSecondary(initial.parent?.secondary ?? "");
-      setName("");
-    }
-  }, [open, initial.level, initial.parent?.primary, initial.parent?.secondary]);
+    if (!open) return;
+    setLevel(initial.level);
+    setName("");
+    setParentPrimary(initial.parent?.primary);
+    setParentSecondary(initial.parent?.secondary);
+    setSubmitting(false);
+    setStatus({ kind: "idle" });
+  }, [open, initial]);
 
   const primaryOptions = useMemo(() => Object.keys(tree).sort(), [tree]);
-  const secondaryOptions = useMemo(
-    () => (primary ? Object.keys(tree[primary] ?? {}).sort() : []),
-    [primary, tree]
-  );
+  const secondaryOptions = useMemo(() => {
+    if (!parentPrimary) return [];
+    return Object.keys(tree[parentPrimary] || {}).sort();
+  }, [tree, parentPrimary]);
 
-  const valid =
-    level === "primary"
-      ? !!name.trim()
-      : level === "secondary"
-      ? !!name.trim() && !!primary
-      : !!name.trim() && !!primary && !!secondary;
+  useEffect(() => {
+    if (level === "primary") {
+      setParentPrimary(undefined);
+      setParentSecondary(undefined);
+    } else if (level === "secondary") {
+      if (!parentPrimary && primaryOptions.length > 0) setParentPrimary(primaryOptions[0]);
+      setParentSecondary(undefined);
+    } else if (level === "tertiary") {
+      const p = parentPrimary || primaryOptions[0];
+      setParentPrimary(p);
+      const secs = Object.keys(tree[p] || {});
+      setParentSecondary(parentSecondary && (tree[p] || {})[parentSecondary] ? parentSecondary : secs[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [level]);
 
-  const uniqueOk =
-    !valid
-      ? false
-      : isUnique(
-          level,
-          name,
-          level === "primary"
-            ? undefined
-            : level === "secondary"
-            ? { primary }
-            : { primary, secondary }
-        );
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatus({ kind: "idle" });
 
-  const [err, setErr] = useState<string | null>(null);
+    if (!name.trim()) {
+      setStatus({ kind: "error", message: "Please enter a tag name." });
+      return;
+    }
+    if (level === "secondary" && !parentPrimary) {
+      setStatus({ kind: "error", message: "Please select a Primary parent for this Secondary tag." });
+      return;
+    }
+    if (level === "tertiary" && (!parentPrimary || !parentSecondary)) {
+      setStatus({ kind: "error", message: "Please select both Primary and Secondary parents." });
+      return;
+    }
 
-  const onSubmit = async () => {
-    setErr(null);
     try {
+      setSubmitting(true);
       await addTag({
         layer: level,
         name: name.trim(),
-        parentPrimary: level === "primary" ? undefined : primary,
-        parentSecondary: level === "tertiary" ? secondary : undefined,
+        parentPrimary,
+        parentSecondary,
       });
+
       onOpenChange(null);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to add tag.");
+      toast({
+        title: "Tag added",
+        description:
+          level === "primary"
+            ? `Primary "${name.trim()}" created successfully.`
+            : level === "secondary"
+            ? `Secondary "${name.trim()}" added under "${parentPrimary}".`
+            : `Tertiary "${name.trim()}" added under "${parentPrimary} → ${parentSecondary}".`,
+        duration: 5000,
+      });
+    } catch (err) {
+      setStatus({
+        kind: "error",
+        message: err instanceof Error ? err.message : "Failed to add tag. Please try again.",
+      });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -101,17 +130,15 @@ export const AddTagModal: React.FC<{
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add Tag</DialogTitle>
-          <DialogDescription>
-            Create a new tag at the chosen hierarchy level.
-          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="grid gap-2">
-            <Label>Level</Label>
-            <Select value={level} onValueChange={(v: any) => setLevel(v)}>
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          {/* Level */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Level</label>
+            <Select value={level} onValueChange={(v: "primary" | "secondary" | "tertiary") => setLevel(v)}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Select level" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="primary">Primary</SelectItem>
@@ -121,12 +148,19 @@ export const AddTagModal: React.FC<{
             </Select>
           </div>
 
+          {/* Parents */}
           {level !== "primary" && (
-            <div className="grid gap-2">
-              <Label>Parent Primary</Label>
-              <Select value={primary} onValueChange={setPrimary}>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Parent Primary</label>
+              <Select
+                value={parentPrimary ?? ""}
+                onValueChange={(v) => {
+                  setParentPrimary(v);
+                  setParentSecondary(undefined);
+                }}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Choose primary…" />
+                  <SelectValue placeholder="Select primary" />
                 </SelectTrigger>
                 <SelectContent>
                   {primaryOptions.map((p) => (
@@ -140,11 +174,15 @@ export const AddTagModal: React.FC<{
           )}
 
           {level === "tertiary" && (
-            <div className="grid gap-2">
-              <Label>Parent Secondary</Label>
-              <Select value={secondary} onValueChange={setSecondary} disabled={!primary}>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Parent Secondary</label>
+              <Select
+                value={parentSecondary ?? ""}
+                onValueChange={(v) => setParentSecondary(v)}
+                disabled={!parentPrimary}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Choose secondary…" />
+                  <SelectValue placeholder="Select secondary" />
                 </SelectTrigger>
                 <SelectContent>
                   {secondaryOptions.map((s) => (
@@ -157,73 +195,111 @@ export const AddTagModal: React.FC<{
             </div>
           )}
 
-          <div className="grid gap-2">
-            <Label>Tag Name</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Product_Launch"
-            />
+          {/* Name */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Tag Name</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter tag name" />
           </div>
 
-          {valid && !uniqueOk && (
-            <p className="text-xs text-red-600">Tag name already exists in this scope.</p>
+          {/* Inline error */}
+          {status.kind === "error" && (
+            <Alert className="border-red-200 bg-red-50 text-red-800">
+              <AlertCircle className="h-4 w-4 text-red-600" />
+              <AlertDescription>{status.message}</AlertDescription>
+            </Alert>
           )}
-          {err && <p className="text-xs text-red-600">{err}</p>}
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(null)}>
-            Cancel
-          </Button>
-          <Button onClick={onSubmit} disabled={!valid || !uniqueOk}>
-            Add
-          </Button>
-        </DialogFooter>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(null)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Adding..." : "Add"}
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   );
 };
 
-export const EditTagModal: React.FC<{
+/* =======================================================================
+   EditTagModal (Rename)
+   ======================================================================= */
+interface EditTagModalProps {
   open: boolean;
   initial: EditInit;
-  onOpenChange: (v: null) => void;
-}> = ({ open, onOpenChange, initial }) => {
-  const { updateTag, isUnique } = useTags();
-  const [newName, setNewName] = useState(initial.currentName);
-  const [err, setErr] = useState<string | null>(null);
+  onOpenChange: (next: null | EditInit) => void;
+}
+
+export const EditTagModal: React.FC<EditTagModalProps> = ({ open, initial, onOpenChange }) => {
+  const { tree, updateTag } = useTags();
+  const { toast } = useToast();
+
+  const [level, setLevel] = useState<"primary" | "secondary" | "tertiary">(initial.level);
+  const [oldName, setOldName] = useState<string>(initial.currentName);
+  const [newName, setNewName] = useState<string>(initial.currentName);
+
+  const [parentPrimary, setParentPrimary] = useState<string | undefined>(initial.parent?.primary);
+  const [parentSecondary, setParentSecondary] = useState<string | undefined>(initial.parent?.secondary);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState<Status>({ kind: "idle" });
 
   useEffect(() => {
-    if (open) {
-      setNewName(initial.currentName);
-      setErr(null);
+    if (!open) return;
+    setLevel(initial.level);
+    setOldName(initial.currentName);
+    setNewName(initial.currentName);
+    setParentPrimary(initial.parent?.primary);
+    setParentSecondary(initial.parent?.secondary);
+    setSubmitting(false);
+    setStatus({ kind: "idle" });
+  }, [open, initial]);
+
+  const primaryOptions = useMemo(() => Object.keys(tree).sort(), [tree]);
+  const secondaryOptions = useMemo(() => {
+    if (!parentPrimary) return [];
+    return Object.keys(tree[parentPrimary] || {}).sort();
+  }, [tree, parentPrimary]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatus({ kind: "idle" });
+
+    if (!newName.trim()) {
+      setStatus({ kind: "error", message: "Please enter a tag name." });
+      return;
     }
-  }, [open, initial.currentName]);
 
-  const sameName =
-    newName.trim().toLowerCase() === initial.currentName.trim().toLowerCase();
-
-  const uniqueOk =
-    sameName ||
-    isUnique(initial.level, newName, {
-      primary: initial.parent?.primary,
-      secondary: initial.parent?.secondary,
-    });
-
-  const save = async () => {
-    setErr(null);
     try {
+      setSubmitting(true);
       await updateTag({
-        layer: initial.level,
-        oldName: initial.currentName,
+        layer: level,
+        oldName,
         newName: newName.trim(),
-        parentPrimary: initial.parent?.primary,
-        parentSecondary: initial.parent?.secondary,
+        parentPrimary,
+        parentSecondary,
       });
+
       onOpenChange(null);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to update tag.");
+      toast({
+        title: "Tag updated",
+        description:
+          level === "primary"
+            ? `Primary renamed to "${newName.trim()}".`
+            : level === "secondary"
+            ? `Secondary in "${parentPrimary}" renamed to "${newName.trim()}".`
+            : `Tertiary in "${parentPrimary} → ${parentSecondary}" renamed to "${newName.trim()}".`,
+        duration: 5000,
+      });
+    } catch (err) {
+      setStatus({
+        kind: "error",
+        message: err instanceof Error ? err.message : "Failed to update tag. Please try again.",
+      });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -232,40 +308,102 @@ export const EditTagModal: React.FC<{
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Edit Tag</DialogTitle>
-          <DialogDescription>
-            Rename the selected tag. Uniqueness is validated within its scope.
-          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="grid gap-2">
-            <Label>Current Name</Label>
-            <Input value={initial.currentName} readOnly />
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          {/* Level (read-only) */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Level</label>
+            <Select value={level} onValueChange={() => {}} disabled>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="primary">Primary</SelectItem>
+                <SelectItem value="secondary">Secondary</SelectItem>
+                <SelectItem value="tertiary">Tertiary</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <div className="grid gap-2">
-            <Label>New Name</Label>
+
+          {/* Parents (read-only) */}
+          {level !== "primary" && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Parent Primary</label>
+              <Select value={parentPrimary ?? ""} onValueChange={() => {}} disabled>
+                <SelectTrigger>
+                  <SelectValue placeholder="Primary" />
+                </SelectTrigger>
+                <SelectContent>
+                  {primaryOptions.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {level === "tertiary" && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Parent Secondary</label>
+              <Select value={parentSecondary ?? ""} onValueChange={() => {}} disabled>
+                <SelectTrigger>
+                  <SelectValue placeholder="Secondary" />
+                </SelectTrigger>
+                <SelectContent>
+                  {secondaryOptions.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Current name (view-only) */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Current Name</label>
+            <div
+              className="
+                rounded-md border bg-gray-50 text-gray-700
+                px-3 py-2 select-none
+                cursor-default
+              "
+              aria-readonly="true"
+            >
+              {oldName}
+            </div>
+          </div>
+
+          {/* New name (editable) */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">New Name</label>
             <Input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              autoFocus
+              placeholder="Enter new tag name"
             />
           </div>
-          {!sameName && !uniqueOk && (
-            <p className="text-xs text-red-600">
-              New name would duplicate an existing tag in this scope.
-            </p>
-          )}
-          {err && <p className="text-xs text-red-600">{err}</p>}
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(null)}>
-            Cancel
-          </Button>
-          <Button onClick={save} disabled={!newName.trim() || !uniqueOk}>
-            Save
-          </Button>
-        </DialogFooter>
+          {/* Inline error */}
+          {status.kind === "error" && (
+            <Alert className="border-red-200 bg-red-50 text-red-800">
+              <AlertCircle className="h-4 w-4 text-red-600" />
+              <AlertDescription>{status.message}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(null)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   );
