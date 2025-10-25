@@ -88,11 +88,21 @@ A system with **high Perfect Match Rate** means users can frequently accept all 
 The service queries the `processed_documents` table:
 
 ```sql
-SELECT process_id, document_id, suggested_tags, confirmed_tags
+SELECT process_id, document_id, suggested_tags, confirmed_tags, reviewed_at
 FROM processed_documents
 WHERE confirmed_tags IS NOT NULL
   AND suggested_tags IS NOT NULL
+  AND confirmed_tags != '[]'
+  AND suggested_tags != '[]'
+  AND reviewed_at >= start_date_utc (if provided)
+  AND reviewed_at <= end_date_utc (if provided)
 ```
+
+**Filtering Logic:**
+- Only includes documents with **non-null** tags
+- Excludes documents with **empty arrays** (`[]`) for tags
+- Optionally filters by **date range** (using `reviewed_at` column)
+- Additional Python-level filtering for nested empty structures like `{tags: []}`
 
 ### Data Structures
 
