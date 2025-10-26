@@ -89,7 +89,7 @@ def test_ac2_validation_before_rebuild(client):
 # ============================================================================
 # AC3: Users receive real-time status updates on the retraining progress
 # ============================================================================
-def test_ac3_realtime_status_updates(client, app_module, monkeypatch):
+def test_ac3_realtime_status_updates(client, app_module, monkeypatch, wait_for_rebuild_completion):
     """
     AC3: Users receive real-time status updates on the retraining progress
 
@@ -140,7 +140,7 @@ def test_ac3_realtime_status_updates(client, app_module, monkeypatch):
 # ============================================================================
 # AC4: Upon completion, users are notified of the retraining results
 # ============================================================================
-def test_ac4_completion_notification_mechanism(client, app_module, monkeypatch):
+def test_ac4_completion_notification_mechanism(client, app_module, monkeypatch, wait_for_rebuild_completion):
     """
     AC4: Upon completion, users are notified of the retraining results
 
@@ -266,7 +266,7 @@ def test_validation_endpoint_error_handling(client, monkeypatch):
 # ============================================================================
 # Additional Test: Concurrent Rebuild Prevention
 # ============================================================================
-def test_concurrent_rebuild_prevention(client, app_module, monkeypatch):
+def test_concurrent_rebuild_prevention(client, app_module, monkeypatch, wait_for_rebuild_completion):
     """
     Test that system prevents concurrent rebuilds.
     """
