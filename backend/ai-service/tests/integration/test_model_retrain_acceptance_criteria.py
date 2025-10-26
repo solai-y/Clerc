@@ -3,6 +3,7 @@ Integration tests for Model Retraining Feature - Acceptance Criteria
 Tests all 5 acceptance criteria for the model retraining functionality.
 """
 import time
+import sys
 import pytest
 import conftest
 
@@ -100,11 +101,11 @@ def test_ac3_realtime_status_updates(client, app_module, monkeypatch):
 
     monkeypatch.setattr(app_module.subprocess, "run", fake_run, raising=True)
 
-    # Mock the build function
+    # Mock the build function - patch train module since app.py uses "import train"
     def fake_build_best_model(_models_dir):
         return conftest.DummyHierModel(version="v2")
 
-    monkeypatch.setattr(app_module, "build_best_model", fake_build_best_model, raising=True)
+    monkeypatch.setattr(sys.modules["train"], "build_best_model", fake_build_best_model, raising=True)
 
     # Check initial status - should not be rebuilding
     status1 = client.get("/e2e")
@@ -152,11 +153,11 @@ def test_ac4_completion_notification_mechanism(client, app_module, monkeypatch):
 
     monkeypatch.setattr(app_module.subprocess, "run", fake_run, raising=True)
 
-    # Mock the build function
+    # Mock the build function - patch train module since app.py uses "import train"
     def fake_build_best_model(_models_dir):
         return conftest.DummyHierModel(version="v_completed")
 
-    monkeypatch.setattr(app_module, "build_best_model", fake_build_best_model, raising=True)
+    monkeypatch.setattr(sys.modules["train"], "build_best_model", fake_build_best_model, raising=True)
 
     # Start rebuild
     client.post("/rebuild")
@@ -275,10 +276,11 @@ def test_concurrent_rebuild_prevention(client, app_module, monkeypatch):
 
     monkeypatch.setattr(app_module.subprocess, "run", fake_run, raising=True)
 
+    # Mock the build function - patch train module since app.py uses "import train"
     def fake_build_best_model(_models_dir):
         return conftest.DummyHierModel(version="v3")
 
-    monkeypatch.setattr(app_module, "build_best_model", fake_build_best_model, raising=True)
+    monkeypatch.setattr(sys.modules["train"], "build_best_model", fake_build_best_model, raising=True)
 
     # Start first rebuild
     response1 = client.post("/rebuild")
