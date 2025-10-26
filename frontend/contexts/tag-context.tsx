@@ -42,28 +42,30 @@ export const TagProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     void refresh();
   }, [refresh]);
 
-  const isUnique: Ctx["isUnique"] = (layer, name, parents) => {
-    const n = name?.trim();
+  const normalize = (s: string) => (s ?? "").trim().toLowerCase();
+
+    const isUnique: Ctx["isUnique"] = (_layer, name, _parents) => {
+
+    const n = normalize(name);
     if (!n) return false;
 
-    if (layer === "primary") {
-      return !Object.keys(tree).some((p) => p.toLowerCase() === n.toLowerCase());
-    }
+    const seen = new Set<string>();
 
-    if (layer === "secondary") {
-      const p = parents?.primary;
-      if (!p) return true; // parent will be validated elsewhere
-      if (!tree[p]) return true;
-      return !Object.keys(tree[p]).some((s) => s.toLowerCase() === n.toLowerCase());
-    }
+    // Primary names
+    Object.keys(tree ?? {}).forEach((p) => seen.add(normalize(p)));
 
-    // tertiary
-    const p = parents?.primary;
-    const s = parents?.secondary;
-    if (!p || !s) return true; // parents validated elsewhere
-    const arr = tree[p]?.[s] ?? [];
-    return !arr.some((t) => t.toLowerCase() === n.toLowerCase());
-  };
+    // Secondary + Tertiary names under all primaries
+    Object.values(tree ?? {}).forEach((secMap: Record<string, string[]>) => {
+        if (!secMap) return;
+        Object.keys(secMap).forEach((s) => seen.add(normalize(s)));
+        Object.values(secMap).forEach((terList) => {
+        (terList ?? []).forEach((t) => seen.add(normalize(t)));
+        });
+    });
+
+    return !seen.has(n);
+};
+
 
   const addTag: Ctx["addTag"] = async (input) => {
     // Required parent checks (clear message)

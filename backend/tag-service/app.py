@@ -77,6 +77,18 @@ def ensure_unique_in_scope(name: str, parent_id: Optional[int]) -> None:
     if existing:
         raise HTTPException(status_code=409, detail="Tag name already exists in this scope.")
 
+def ensure_global_unique(name: str, exclude_id: Optional[int] = None) -> None:
+    """
+    Enforce global (all layers) case-insensitive uniqueness of tag_name.
+    exclude_id: when renaming, ignore the row itself.
+    """
+    q = sb.table("tags").select("id").ilike("tag_name", name.strip())
+    if exclude_id is not None:
+        q = q.neq("id", exclude_id)
+    res = q.execute()
+    if res.data and len(res.data) > 0:
+        raise HTTPException(status_code=409, detail="Tag name already exists globally.")
+
 def resolve_scope_ids(
     parent_primary_name: Optional[str],
     parent_secondary_name: Optional[str],
@@ -163,7 +175,9 @@ def add_tag(body: AddTagIn) -> dict:
         if parent_id is None:
             raise HTTPException(status_code=400, detail="Tertiary requires parentPrimary and parentSecondary")
 
-    ensure_unique_in_scope(body.name, parent_id)
+    # ensure_unique_in_scope(body.name, parent_id)
+    ensure_global_unique(body.name)
+
 
     res = sb.table("tags").insert({"tag_name": body.name, "parent_id": parent_id}).execute()
     if not res.data:
@@ -193,8 +207,12 @@ def rename_tag(body: RenameTagIn) -> dict:
     if not target:
         raise HTTPException(status_code=404, detail="Tag to rename not found in this scope")
 
-    if body.oldName.lower() != body.newName.lower():
-        ensure_unique_in_scope(body.newName, parent_id)
+    # if body.oldName.lower() != body.newName.lower():
+    #     ensure_unique_in_scope(body.newName, parent_id)
+
+    if body.oldName.strip().lower() != body.newName.strip().lower():
+        ensure_global_unique(body.newName, exclude_id=target["id"])
+
 
     res = sb.table("tags").update({"tag_name": body.newName}).eq("id", target["id"]).execute()
     if not res.data:
