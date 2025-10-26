@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
-import { Toaster } from '@/components/ui/toaster'
+import Toaster from '@/components/ui/toaster'   // ✅ default import now always works
 import { AuthProvider } from '@/contexts/auth-context'
 import './globals.css'
 
@@ -21,6 +21,7 @@ export default function RootLayout({
       <body className={GeistSans.className}>
         <AuthProvider>
           {children}
+          {/* mount toaster last so it overlays everything */}
           <Toaster />
         </AuthProvider>
       </body>

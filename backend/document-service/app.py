@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 # Import custom modules
 from models.response import APIResponse
 from routes.documents import documents_router
+from routes.metrics import metrics_router
 from services.database import DatabaseService
 
 # Load environment variables
@@ -41,6 +42,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(documents_router, prefix='/documents')
+app.include_router(metrics_router, prefix='/metrics')
 
 # Initialize database service for health checks
 try:
@@ -166,7 +168,8 @@ async def root():
             "PATCH /documents/<id>/status - Update document status",
             "POST /documents/processed - Create processed document entry",
             "PATCH /documents/<id>/tags - Update document tags",
-            "GET /documents/unprocessed - Get unprocessed documents"
+            "GET /documents/unprocessed - Get unprocessed documents",
+            "GET /metrics/top-tag-accuracy - Get top-tag accuracy metrics"
         ]
     }, "Document service API")
 
