@@ -14,8 +14,8 @@ from pydantic import BaseModel
 import joblib
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
-# Import your wrapper class + loader
-from train import build_best_model
+# Import train module (not specific function) so monkeypatching works in tests
+import train
 
 MODELS_DIR = Path("models_hier")
 PRIMARY_MODEL_PATH = MODELS_DIR / "primary.joblib"
@@ -206,7 +206,7 @@ except Exception as e:
 # Load models after ensuring they exist
 if BEST_MODEL_PATH.exists() or PRIMARY_MODEL_PATH.exists():
     try:
-        best_model = build_best_model(MODELS_DIR)
+        best_model = train.build_best_model(MODELS_DIR)
     except Exception as e:
         print(f"Failed to load models: {e}")
 else:
@@ -346,13 +346,14 @@ def rebuild() -> Any:
             t0 = time.time()
             # retrain (this runs train.py and saves to models_hier/)
             subprocess.run(["python", "train.py"], check=True)
-            # load new model
-            new_model = build_best_model(MODELS_DIR)
+            # load new model - use train.build_best_model so test monkeypatching works
+            new_model = train.build_best_model(MODELS_DIR)
             # atomic swap
             with _model_swap_lock:
                 best_model = new_model
             elapsed = time.time() - t0
-            print(f"Rebuild complete in {elapsed:.2f}s")
+            model_version = getattr(new_model, "version", "unknown")
+            print(f"Rebuild complete in {elapsed:.2f}s - swapped to model version: {model_version}")
         except Exception as e:
             print(f"Rebuild failed: {e}")
         finally:
