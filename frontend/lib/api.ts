@@ -331,6 +331,85 @@ class APIClient {
     }
   }
 
+  // -------- Model Retraining Methods --------
+  async validateTrainingData(): Promise<{
+    valid: boolean;
+    total_documents: number;
+    primary_tags: Record<string, number>;
+    secondary_tags: Record<string, number>;
+    tertiary_tags: Record<string, number>;
+    invalid_tags: Array<{ level: string; tag: string; count: number; required: number }>;
+    message: string;
+  }> {
+    const url = apiUrl("/ai/training/validate");
+    try {
+      // This endpoint returns raw data, not wrapped in APIResponse
+      const response = await fetch(url, {
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        const msg = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status}: ${response.statusText} ${msg.slice(0, 200)}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to validate training data: ${errorMessage}.`);
+    }
+  }
+
+  async triggerModelRetrain(): Promise<{ status: string }> {
+    const url = apiUrl("/ai/rebuild");
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        const msg = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status}: ${response.statusText} ${msg.slice(0, 200)}`);
+      }
+
+      // This endpoint returns raw data, not wrapped in APIResponse
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to trigger model retrain: ${errorMessage}.`);
+    }
+  }
+
+  async getModelStatus(): Promise<{
+    status: string;
+    model_status: string;
+    rebuilding: boolean;
+  }> {
+    const url = apiUrl("/ai/e2e");
+    try {
+      const response = await fetch(url, {
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      // Note: This endpoint returns raw data, not wrapped in APIResponse
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to get model status: ${errorMessage}.`);
+    }
+  }
+
   // ======================= TAG SERVICE (NEW) =======================
   // Always fetch from backend tag-service via Next.js rewrite; no JSON fallback.
   async getTagHierarchy(): Promise<TagHierarchy> {

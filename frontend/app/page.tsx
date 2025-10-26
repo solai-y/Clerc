@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Upload, Search, Filter, AlertCircle, RefreshCw, Settings, BookOpen, Tags } from "lucide-react"
+import { Upload, Search, Filter, AlertCircle, RefreshCw, Settings, BookOpen, Brain, Tags } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
 import { DocumentDetailsModal } from "@/components/document-details-modal"
 import { DocumentTable } from "@/components/document-table"
@@ -127,7 +127,15 @@ export default function HomePage() {
                 <Settings className="w-4 h-4" />
                 <span>Confidence Config</span>
               </Button>
-              {/* Entry to Tag Manager */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/admin/model-retrain')}
+                className="flex items-center gap-2"
+              >
+                <Brain className="w-4 h-4" />
+                <span>Model Retrain</span>
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
