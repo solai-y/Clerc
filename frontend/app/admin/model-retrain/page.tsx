@@ -179,10 +179,10 @@ export default function ModelRetrainPage() {
 
   // Handle retrain button click
   const handleRetrainClick = () => {
-    if (!validation?.valid) {
+    if (!validation) {
       toast({
         title: "Cannot Retrain",
-        description: "Training data validation failed. Please ensure all tags have at least 10 documents.",
+        description: "Training data has not been validated yet.",
         variant: "destructive",
       });
       return;
@@ -362,39 +362,46 @@ export default function ModelRetrainPage() {
           <CardContent className="space-y-6">
           {/* Validation Status */}
           {validation && (
-            <Alert variant={validation.valid ? "default" : "destructive"}>
+            <Alert variant={validation.valid ? "default" : "default"}>
               <AlertTitle>
-                {validation.valid ? "✓ Training Data Valid" : "✗ Validation Failed"}
+                {validation.valid
+                  ? "✓ Training Data Valid - Ready to Retrain"
+                  : `⚠ ${validation.invalid_tags.length} Tag${validation.invalid_tags.length > 1 ? 's' : ''} Will Be Excluded`}
               </AlertTitle>
               <AlertDescription>
-                {validation.message}
+                {validation.valid
+                  ? `All ${Object.keys(validation.primary_tags).length + Object.keys(validation.secondary_tags).length + Object.keys(validation.tertiary_tags).length} tags have sufficient training data (≥10 documents).`
+                  : `Tags with fewer than 10 documents will be excluded from retraining. The model will be trained with the remaining valid tags.`}
               </AlertDescription>
             </Alert>
           )}
 
-          {/* Invalid Tags Warning (AC5) */}
+          {/* Excluded Tags Warning */}
           {validation && !validation.valid && validation.invalid_tags.length > 0 && (
-            <Card className="border-red-200 bg-red-50">
+            <Card className="border-orange-200 bg-orange-50">
               <CardHeader>
-                <CardTitle className="text-red-800">Invalid Tags</CardTitle>
-                <CardDescription className="text-red-700">
-                  The following tags have fewer than 10 training documents and cannot be used for retraining:
+                <CardTitle className="text-orange-800">Tags Excluded from Retraining</CardTitle>
+                <CardDescription className="text-orange-700">
+                  The following tags have fewer than 10 training documents and will be excluded from the retrained model:
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
                   {validation.invalid_tags.map((tag, index) => (
-                    <div key={index} className="flex justify-between items-center p-2 bg-white rounded border border-red-200">
+                    <div key={index} className="flex justify-between items-center p-2 bg-white rounded border border-orange-200">
                       <div>
                         <span className="font-semibold">{tag.tag}</span>
                         <span className="text-sm text-gray-600 ml-2">({tag.level})</span>
                       </div>
-                      <div className="text-sm text-red-700">
+                      <div className="text-sm text-orange-700">
                         {tag.count} / {tag.required} documents
                       </div>
                     </div>
                   ))}
                 </div>
+                <p className="text-sm text-orange-700 mt-4">
+                  <strong>Note:</strong> These tags will not be available in the retrained model. Add more training documents for these tags to include them in future retraining.
+                </p>
               </CardContent>
             </Card>
           )}
@@ -477,7 +484,7 @@ export default function ModelRetrainPage() {
             <div className="flex gap-3">
               <Button
                 onClick={handleRetrainClick}
-                disabled={!validation?.valid || loading || retraining}
+                disabled={!validation || loading || retraining}
                 size="lg"
               >
                 {retraining ? 'Retraining...' : 'Retrain Model'}
@@ -512,6 +519,11 @@ export default function ModelRetrainPage() {
                   <p className="mb-2">Are you sure you want to retrain the AI classification model? This process will:</p>
                   <ul className="list-disc ml-6 mt-2 space-y-1">
                     <li>Train a new model using {validation?.total_documents} documents</li>
+                    {validation && !validation.valid && validation.invalid_tags.length > 0 && (
+                      <li className="text-orange-700 font-semibold">
+                        Exclude {validation.invalid_tags.length} tag{validation.invalid_tags.length > 1 ? 's' : ''} with insufficient training data ({"<"}10 documents)
+                      </li>
+                    )}
                     <li>Take approximately 5-15 minutes to complete</li>
                     <li>Keep the current model active during retraining</li>
                     <li>Automatically activate the new model when ready</li>
