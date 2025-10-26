@@ -8,11 +8,12 @@ import pytest
 import conftest
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def wait_for_rebuild_completion(client):
     """
-    Auto-fixture that waits for any ongoing rebuild to complete before each test.
-    This ensures test isolation.
+    Fixture that waits for any ongoing rebuild to complete before the test.
+    This ensures test isolation for tests that need it.
+    NOTE: Not autouse to avoid interfering with hot-swap tests that mock rebuilds.
     """
     max_wait = 60  # Wait up to 60 seconds
     for _ in range(max_wait):

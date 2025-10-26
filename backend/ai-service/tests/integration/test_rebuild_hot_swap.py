@@ -31,8 +31,18 @@ def test_rebuild_hot_swap(client, app_module, monkeypatch):
     assert r2.status_code == 200
     assert r2.json()["prediction"]["model_version"] == "v1"
 
+    # Wait for rebuild to complete and model to swap to v2
+    # Poll /e2e to wait for rebuilding flag to become False
+    max_wait = 10  # 10 seconds max
+    for _ in range(max_wait * 10):  # Poll every 0.1s
+        time.sleep(0.1)
+        status = client.get("/e2e").json()
+        if not status.get("rebuilding", False):
+            # Rebuild finished, give a tiny bit more time for final swap
+            time.sleep(0.05)
+            break
+
     # After rebuild -> v2
-    time.sleep(0.35)
     r3 = client.post("/predict", json={"text": "final check"})
     assert r3.status_code == 200
     assert r3.json()["prediction"]["model_version"] == "v2"
