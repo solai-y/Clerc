@@ -1,12 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/lib/api';
+import { ArrowLeft, Settings, BookOpen, Brain } from 'lucide-react';
+import { UserMenu } from '@/components/auth/user-menu';
+import { useAuth } from '@/contexts/auth-context';
 
 interface ThresholdConfig {
   primary: number;
@@ -15,10 +19,23 @@ interface ThresholdConfig {
 }
 
 export default function ConfidenceConfigPage() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [thresholds, setThresholds] = useState<ThresholdConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const { toast } = useToast();
+
+  const getApiDocsUrl = () => {
+    if (typeof window !== 'undefined') {
+      const currentOrigin = window.location.origin;
+      if (currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1')) {
+        return 'http://localhost:8000/docs';
+      }
+      return 'https://clercbackend.clerc.uk/docs';
+    }
+    return 'http://localhost:8000/docs';
+  };
 
   const handleThresholdChange = (level: keyof ThresholdConfig, value: string) => {
     const numValue = parseFloat(value);
@@ -95,25 +112,81 @@ export default function ConfidenceConfigPage() {
     loadConfig();
   }, [toast]);
 
+  const renderHeader = () => (
+    <header className="border-b border-gray-200 bg-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-16">
+          <div className="flex items-center">
+            <h1 className="text-5xl font-bold text-red-600" style={{ marginLeft: "1rem" }}>
+              Clerc.
+            </h1>
+            <div className="h-6 w-px bg-gray-300 mx-4" />
+            <h1 className="text-xl font-bold text-gray-900">Confidence Configuration</h1>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/')}
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to Documents</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(getApiDocsUrl(), '_blank')}
+              className="flex items-center gap-2"
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>API Docs</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/admin/model-retrain')}
+              className="flex items-center gap-2"
+            >
+              <Brain className="w-4 h-4" />
+              <span>Model Retrain</span>
+            </Button>
+            {authLoading ? (
+              <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full" />
+            ) : user ? (
+              <UserMenu />
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+
   if (loadingInitial) {
     return (
-      <div className="container mx-auto p-6 max-w-2xl">
-        <Card>
-          <CardContent className="p-8 text-center">
-            <div className="animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto mb-4"></div>
-              <div className="h-4 bg-gray-200 rounded w-1/2 mx-auto"></div>
-            </div>
-            <p className="mt-4 text-gray-600">Loading configuration from database...</p>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-white">
+        {renderHeader()}
+        <main className="container mx-auto p-6 max-w-2xl">
+          <Card>
+            <CardContent className="p-8 text-center">
+              <div className="animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto mb-4"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/2 mx-auto"></div>
+              </div>
+              <p className="mt-4 text-gray-600">Loading configuration from database...</p>
+            </CardContent>
+          </Card>
+        </main>
       </div>
     );
   }
 
   if (thresholds === null) {
     return (
-      <div className="container mx-auto p-6 max-w-2xl">
+      <div className="min-h-screen bg-white">
+        {renderHeader()}
+        <main className="container mx-auto p-6 max-w-2xl">
         <Card>
           <CardHeader>
             <CardTitle>Confidence Threshold Configuration</CardTitle>
@@ -143,12 +216,15 @@ export default function ConfidenceConfigPage() {
             </div>
           </CardContent>
         </Card>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-2xl">
+    <div className="min-h-screen bg-white">
+      {renderHeader()}
+      <main className="container mx-auto p-6 max-w-2xl">
       <Card>
         <CardHeader>
           <CardTitle>Confidence Threshold Configuration</CardTitle>
@@ -249,6 +325,7 @@ export default function ConfidenceConfigPage() {
           </div>
         </CardContent>
       </Card>
+      </main>
     </div>
   );
 }
