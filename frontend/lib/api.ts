@@ -61,6 +61,24 @@ export interface GetDocumentsOptions {
   companyId?: number;
 }
 
+// ---------- Tag service types ----------
+export type TagHierarchy = Record<string, Record<string, string[]>>;
+
+export interface AddTagInput {
+  layer: "primary" | "secondary" | "tertiary";
+  name: string;
+  parentPrimary?: string;
+  parentSecondary?: string;
+}
+
+export interface EditTagInput {
+  layer: "primary" | "secondary" | "tertiary";
+  oldName: string;
+  newName: string;
+  parentPrimary?: string;
+  parentSecondary?: string;
+}
+
 class APIClient {
   private async fetchWithErrorHandling<T>(
     url: string,
@@ -391,6 +409,55 @@ class APIClient {
       throw new Error(`Failed to get model status: ${errorMessage}.`);
     }
   }
+
+  // ======================= TAG SERVICE (NEW) =======================
+  // Always fetch from backend tag-service via Next.js rewrite; no JSON fallback.
+  async getTagHierarchy(): Promise<TagHierarchy> {
+    const url = apiUrl("/tags");
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}: Failed to fetch tags ${msg.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    if (!data || typeof data !== "object") {
+      throw new Error("Unexpected tags response shape.");
+    }
+    return data as TagHierarchy;
+  }
+
+  async addTag(input: AddTagInput): Promise<{ message: string; id: number }> {
+    const url = apiUrl("/tags");
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(input),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = json?.detail ? `: ${json.detail}` : "";
+      throw new Error(`Failed to add tag (HTTP ${res.status})${detail}`);
+    }
+    return json;
+  }
+
+  async editTag(input: EditTagInput): Promise<{ message: string }> {
+    const url = apiUrl("/tags/rename");
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(input),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = json?.detail ? `: ${json.detail}` : "";
+      throw new Error(`Failed to rename tag (HTTP ${res.status})${detail}`);
+    }
+    return json;
+  }
+  // ===================== END TAG SERVICE (NEW) =====================
 }
 
 // ---------- Frontend types & helpers ----------
