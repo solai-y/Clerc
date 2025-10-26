@@ -7,6 +7,27 @@ import pytest
 import conftest
 
 
+@pytest.fixture(autouse=True)
+def wait_for_rebuild_completion(client):
+    """
+    Auto-fixture that waits for any ongoing rebuild to complete before each test.
+    This ensures test isolation.
+    """
+    max_wait = 60  # Wait up to 60 seconds
+    for _ in range(max_wait):
+        try:
+            status = client.get("/e2e")
+            if status.status_code == 200:
+                data = status.json()
+                if not data.get("rebuilding", False):
+                    break
+        except:
+            pass
+        time.sleep(1)
+    yield  # Run the test
+    # No cleanup needed
+
+
 # ============================================================================
 # AC1: Users can access a "Retrain Model" function from the application interface
 # ============================================================================
@@ -72,14 +93,6 @@ def test_ac3_realtime_status_updates(client, app_module, monkeypatch):
 
     Test that the /e2e endpoint provides rebuilding status that frontend can poll.
     """
-    # Wait for any existing rebuild to complete first
-    max_wait = 30
-    for i in range(max_wait):
-        status = client.get("/e2e")
-        if status.status_code == 200 and not status.json().get("rebuilding", False):
-            break
-        time.sleep(1)
-
     # Simulate slow training
     def fake_run(cmd, check):
         time.sleep(0.3)  # Simulate training time
