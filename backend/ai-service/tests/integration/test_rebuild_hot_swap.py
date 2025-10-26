@@ -1,5 +1,6 @@
 # tests/integration/test_rebuild_hot_swap.py
 import time
+import sys
 import conftest  # <- gives access to DummyHierModel defined in conftest
 
 def test_rebuild_hot_swap(client, app_module, monkeypatch):
@@ -16,9 +17,10 @@ def test_rebuild_hot_swap(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module.subprocess, "run", fake_run, raising=True)
 
     # After rebuild, loader returns v2
+    # Patch the train module's build_best_model, which is what app.py imports
     def fake_build_best_model(_models_dir):
         return conftest.DummyHierModel(version="v2")
-    monkeypatch.setattr(app_module, "build_best_model", fake_build_best_model, raising=True)
+    monkeypatch.setattr(sys.modules["train"], "build_best_model", fake_build_best_model, raising=True)
 
     # Kick off rebuild
     r1 = client.post("/rebuild")
