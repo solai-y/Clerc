@@ -456,7 +456,6 @@ export function HierarchyBasedConfirmTagsModal({
 
       // Update retraining service with confirmed tags (async, non-blocking)
       try {
-        console.log("💾 Updating retraining service with confirmed tags...")
         const retrainingResponse = await fetch('/api/retraining/update-tags', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -466,10 +465,7 @@ export function HierarchyBasedConfirmTagsModal({
           })
         })
 
-        if (retrainingResponse.ok) {
-          const retrainingResult = await retrainingResponse.json()
-          console.log("✅ Retraining tags updated:", retrainingResult)
-        } else {
+        if (!retrainingResponse.ok) {
           console.warn("⚠️ Retraining tag update failed (non-critical):", await retrainingResponse.text())
         }
       } catch (retrainingError) {

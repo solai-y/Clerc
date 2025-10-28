@@ -320,6 +320,25 @@ export default function HomePage() {
           onConfirm={async (documentId: string, confirmedTagsData: any) => {
             const documentIdNum = parseInt(documentId)
             await apiClient.updateDocumentTags(documentIdNum, { confirmed_tags: confirmedTagsData })
+
+            // Update retraining service with confirmed tags (async, non-blocking)
+            try {
+              const retrainingResponse = await fetch('/api/retraining/update-tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  document_id: documentIdNum,
+                  confirmed_tags: confirmedTagsData.confirmed_tags
+                })
+              })
+
+              if (!retrainingResponse.ok) {
+                console.warn("⚠️ Retraining tag update failed (non-critical):", await retrainingResponse.text())
+              }
+            } catch (retrainingError) {
+              console.warn("⚠️ Retraining tag update error (non-critical):", retrainingError)
+            }
+
             setCurrentPage(1)
             setSearchTerm("")
             setFilterTag("")
