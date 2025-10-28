@@ -44,7 +44,7 @@ const nextConfig = {
       { source: "/api/text-extract/:path*", destination: `${BACKEND_ORIGIN}/text-extract/:path*` },
 
       // NEW: Tag Taxonomy service (local default :5007)
-      { source: "/api/tags", destination: `${TAGS_ORIGIN}/tags` },
+      // { source: "/api/tags", destination: `${TAGS_ORIGIN}/tags` },
       { source: "/api/tags/:path*", destination: `${TAGS_ORIGIN}/tags/:path*` },
     ];
 
