@@ -414,6 +414,7 @@ class APIClient {
   // Always fetch from backend tag-service via Next.js rewrite; no JSON fallback.
   async getTagHierarchy(): Promise<TagHierarchy> {
     const url = apiUrl("/tags");
+    console.log(url);
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
       const msg = await res.text().catch(() => "");

@@ -72,11 +72,6 @@ def fetch_tag_by_name(name: str, parent_id: Optional[int]) -> Optional[dict]:
     items = res.data or []
     return items[0] if items else None
 
-def ensure_unique_in_scope(name: str, parent_id: Optional[int]) -> None:
-    existing = fetch_tag_by_name(name, parent_id)
-    if existing:
-        raise HTTPException(status_code=409, detail="Tag name already exists in this scope.")
-
 def ensure_global_unique(name: str, exclude_id: Optional[int] = None) -> None:
     """
     Enforce global (all layers) case-insensitive uniqueness of tag_name.
@@ -175,7 +170,6 @@ def add_tag(body: AddTagIn) -> dict:
         if parent_id is None:
             raise HTTPException(status_code=400, detail="Tertiary requires parentPrimary and parentSecondary")
 
-    # ensure_unique_in_scope(body.name, parent_id)
     ensure_global_unique(body.name)
 
 
@@ -206,9 +200,6 @@ def rename_tag(body: RenameTagIn) -> dict:
     target = fetch_tag_by_name(body.oldName, parent_id)
     if not target:
         raise HTTPException(status_code=404, detail="Tag to rename not found in this scope")
-
-    # if body.oldName.lower() != body.newName.lower():
-    #     ensure_unique_in_scope(body.newName, parent_id)
 
     if body.oldName.strip().lower() != body.newName.strip().lower():
         ensure_global_unique(body.newName, exclude_id=target["id"])
