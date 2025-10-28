@@ -417,7 +417,7 @@ class APIClient {
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
       const msg = await res.text().catch(() => "");
-      throw new Error(`HTTP ${res.status}: Failed to fetch all tags ${msg.slice(0, 200)}`);
+      throw new Error(`HTTP ${res.status}: Failed to fetch tags ${msg.slice(0, 200)}`);
     }
     const data = await res.json();
     if (!data || typeof data !== "object") {
