@@ -7,7 +7,7 @@ export async function GET() {
     const data = await apiClient.getTagHierarchy();
     return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json({ error: "Failed to load tag hierarchy" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load tag hierarchyhello" }, { status: 500 });
   }
 }
 
