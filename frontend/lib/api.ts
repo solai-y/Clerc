@@ -413,7 +413,7 @@ class APIClient {
   // ======================= TAG SERVICE (NEW) =======================
   // Always fetch from backend tag-service via Next.js rewrite; no JSON fallback.
   async getTagHierarchy(): Promise<TagHierarchy> {
-    const url = apiUrl("/tags");
+    const url = apiUrl("/tags/all");
     console.log(url);
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
@@ -428,7 +428,7 @@ class APIClient {
   }
 
   async addTag(input: AddTagInput): Promise<{ message: string; id: number }> {
-    const url = apiUrl("/tags");
+    const url = apiUrl("/tags/add");
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

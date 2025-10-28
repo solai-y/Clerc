@@ -140,7 +140,7 @@ def build_hierarchy(rows: List[dict]) -> Dict[str, Dict[str, List[str]]]:
 
 # ----------------------------- Routes -----------------------------
 
-@app.get("/tags")
+@app.get("/all")
 def get_tags() -> Dict[str, Dict[str, List[str]]]:
     """
     Returns the full 3-level hierarchy:
@@ -149,7 +149,7 @@ def get_tags() -> Dict[str, Dict[str, List[str]]]:
     tags = fetch_all_tags()
     return build_hierarchy(tags)
 
-@app.post("/tags", status_code=201)
+@app.post("/add", status_code=201)
 def add_tag(body: AddTagIn) -> dict:
     """
     Add a new tag.
@@ -179,7 +179,7 @@ def add_tag(body: AddTagIn) -> dict:
 
     return {"message": "Tag created", "id": res.data[0]["id"]}
 
-@app.patch("/tags/rename")
+@app.patch("/rename")
 def rename_tag(body: RenameTagIn) -> dict:
     """
     Rename a tag within its scope.
