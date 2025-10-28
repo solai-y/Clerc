@@ -3,12 +3,12 @@
 // ---------- Build URLs correctly ----------
 const isServer = typeof window === "undefined";
 // On the server (SSR), talk to the real backend origin.
-// On the client (browser), ALWAYS use relative paths so Next.js rewrites proxy it.
+// On the client (browser), ALWAYS prepend /api so Next.js rewrites proxy it.
 const SERVER_BACKEND_ORIGIN =
   process.env.BACKEND_ORIGIN || "http://localhost";
 
 function apiUrl(path: string) {
-  return isServer ? `${SERVER_BACKEND_ORIGIN}${path}` : path;
+  return isServer ? `${SERVER_BACKEND_ORIGIN}${path}` : `/api${path}`;
 }
 
 // ---------- Types from backend ----------
@@ -17,7 +17,7 @@ export interface BackendProcessedDocument {
   document_id: number;
   model_id: number | null;
   threshold_pct: number;
-  confirmed_tags: string[] | null;
+  confirmed_tags: string[] | any | null; // Support both legacy array and new JSONB format
   suggested_tags: Array<{ tag: string; score: number }> | null;
   user_added_labels: string[] | null;
   ocr_used: boolean;
@@ -55,6 +55,28 @@ export interface GetDocumentsOptions {
   limit?: number;
   offset?: number;
   search?: string;
+  sortBy?: "name" | "date" | "size";
+  sortOrder?: "asc" | "desc";
+  status?: string;
+  companyId?: number;
+}
+
+// ---------- Tag service types ----------
+export type TagHierarchy = Record<string, Record<string, string[]>>;
+
+export interface AddTagInput {
+  layer: "primary" | "secondary" | "tertiary";
+  name: string;
+  parentPrimary?: string;
+  parentSecondary?: string;
+}
+
+export interface EditTagInput {
+  layer: "primary" | "secondary" | "tertiary";
+  oldName: string;
+  newName: string;
+  parentPrimary?: string;
+  parentSecondary?: string;
 }
 
 class APIClient {
@@ -86,40 +108,60 @@ class APIClient {
     } catch (error) {
       // Avoid leaking server origin in client logs
       const displayUrl = isServer ? url : new URL(url, location.origin).pathname;
-      console.error(`API Error for ${displayUrl}:`, error);
+      console.error(`❌ [api] Error for ${displayUrl}:`, error);
       throw error;
     }
   }
 
   // -------- Document Service Methods (all use relative paths on client) --------
   async getDocuments(options: GetDocumentsOptions = {}): Promise<{
-    data: BackendProcessedDocument[];
-    pagination: { total: number; page: number; totalPages: number };
+    documents: BackendProcessedDocument[];
+    pagination: { total: number; page: number; totalPages: number; limit: number; offset: number };
   }> {
     const params = new URLSearchParams();
-    if (options.limit) params.append("limit", String(options.limit));
-    if (options.offset) params.append("offset", String(options.offset));
+    if (options.limit != null) params.append("limit", String(options.limit));
+    if (options.offset != null) params.append("offset", String(options.offset));
     if (options.search) params.append("search", options.search);
+    if (options.status) params.append("status", options.status);
+    if (options.companyId != null) params.append("company_id", String(options.companyId));
+    if (options.sortBy) params.append("sort_by", options.sortBy);
+    if (options.sortOrder) params.append("sort_order", options.sortOrder);
 
     const url = apiUrl(`/documents${params.toString() ? `?${params}` : ""}`);
-    if (isServer) console.log("[api] GET", url);
+
+    console.log("[api] GET /documents with params:", {
+      ...options,
+      finalUrl: url
+    });
 
     const responseData = await this.fetchWithErrorHandling<{
       documents: BackendProcessedDocument[];
       pagination: { total: number; page: number; totalPages: number; limit: number; offset: number };
     }>(url);
 
-    return { data: responseData.documents, pagination: responseData.pagination };
-    }
+    console.log("[api] GET /documents response:", {
+      returned: responseData.documents?.length ?? 0,
+      pagination: responseData.pagination
+    });
+
+    return responseData;
+  }
 
   async getDocument(id: number): Promise<BackendProcessedDocument> {
-    return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl(`/documents/${id}`));
+    const url = apiUrl(`/documents/${id}`);
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(url);
+  }
+
+  async getCompleteDocument(id: number): Promise<BackendProcessedDocument> {
+    const url = apiUrl(`/documents/${id}/complete`);
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(url);
   }
 
   async createDocument(
     document: Omit<BackendProcessedDocument, "process_id" | "processing_date">
   ): Promise<BackendProcessedDocument> {
-    return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl("/documents"), {
+    const url = apiUrl("/documents");
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(url, {
       method: "POST",
       body: JSON.stringify(document),
     });
@@ -129,37 +171,39 @@ class APIClient {
     id: number,
     document: Partial<Omit<BackendProcessedDocument, "process_id">>
   ): Promise<BackendProcessedDocument> {
-    return this.fetchWithErrorHandling<BackendProcessedDocument>(apiUrl(`/documents/${id}`), {
+    const url = apiUrl(`/documents/${id}`);
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(url, {
       method: "PUT",
       body: JSON.stringify(document),
     });
   }
 
   async deleteDocument(id: number): Promise<void> {
-    await this.fetchWithErrorHandling<null>(apiUrl(`/documents/${id}`), { method: "DELETE" });
+    const url = apiUrl(`/documents/${id}`);
+    await this.fetchWithErrorHandling<null>(url, { method: "DELETE" });
   }
 
   async updateDocumentTags(
     documentId: number,
     tagData: {
-      confirmed_tags?: string[];
+      confirmed_tags?: string[] | any;
       user_added_labels?: string[];
       user_removed_tags?: string[];
     }
   ): Promise<BackendProcessedDocument> {
-    return this.fetchWithErrorHandling<BackendProcessedDocument>(
-      apiUrl(`/documents/${documentId}/tags`),
-      { method: "PATCH", body: JSON.stringify(tagData) }
-    );
+    const url = apiUrl(`/documents/${documentId}/tags`);
+    return this.fetchWithErrorHandling<BackendProcessedDocument>(url, {
+      method: "PATCH",
+      body: JSON.stringify(tagData),
+    });
   }
 
   async getUnprocessedDocuments(limit: number = 1): Promise<{
     unprocessed_documents: any[];
     count: number;
   }> {
-    return this.fetchWithErrorHandling<{ unprocessed_documents: any[]; count: number }>(
-      apiUrl(`/documents/unprocessed?limit=${limit}`)
-    );
+    const url = apiUrl(`/documents/unprocessed?limit=${limit}`);
+    return this.fetchWithErrorHandling<{ unprocessed_documents: any[]; count: number }>(url);
   }
 
   async createRawDocument(data: {
@@ -171,8 +215,9 @@ class APIClient {
     file_hash?: string;
     status?: string;
   }): Promise<any> {
-    return this.fetchWithErrorHandling<any>(apiUrl("/documents"), {
-      method: "POST", 
+    const url = apiUrl("/documents");
+    return this.fetchWithErrorHandling<any>(url, {
+      method: "POST",
       body: JSON.stringify(data),
     });
   }
@@ -194,24 +239,28 @@ class APIClient {
     }>;
     prediction_response?: any;
   }): Promise<any> {
-    return this.fetchWithErrorHandling<any>(apiUrl("/documents/processed"), {
+    const url = apiUrl("/documents/processed");
+    return this.fetchWithErrorHandling<any>(url, {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
-  async getDocumentExplanations(documentId: number): Promise<Array<{
-    explanation_id: number;
-    document_id: number;
-    classification_level: string;
-    predicted_tag: string;
-    confidence: number;
-    reasoning: string;
-    source_service: string;
-    service_response: any;
-    created_at: string;
-  }>> {
-    return this.fetchWithErrorHandling<Array<any>>(apiUrl(`/documents/${documentId}/explanations`));
+  async getDocumentExplanations(documentId: number): Promise<
+    Array<{
+      explanation_id: number;
+      document_id: number;
+      classification_level: string;
+      predicted_tag: string;
+      confidence: number;
+      reasoning: string;
+      source_service: string;
+      service_response: any;
+      created_at: string;
+    }>
+  > {
+    const url = apiUrl(`/documents/${documentId}/explanations`);
+    return this.fetchWithErrorHandling<Array<any>>(url);
   }
 
   // -------- Prediction Service Configuration Methods --------
@@ -221,33 +270,27 @@ class APIClient {
     tertiary?: number;
   }): Promise<{ success: boolean; message: string }> {
     const updateData: any = { updated_by: "frontend_user" };
-    
     if (thresholds.primary !== undefined) updateData.primary = thresholds.primary;
     if (thresholds.secondary !== undefined) updateData.secondary = thresholds.secondary;
     if (thresholds.tertiary !== undefined) updateData.tertiary = thresholds.tertiary;
-    
+
+    const url = apiUrl("/predict/config/thresholds");
+
     try {
       const response = await this.fetchWithErrorHandling<{
         primary: number;
         secondary: number;
         tertiary: number;
         updated_by: string;
-      }>(apiUrl("/predict/config/thresholds"), {
-        method: "PUT",
-        body: JSON.stringify(updateData),
-      });
-      
+      }>(url, { method: "PUT", body: JSON.stringify(updateData) });
+
       return {
         success: true,
-        message: `Confidence thresholds updated successfully. Primary: ${response.primary}, Secondary: ${response.secondary}, Tertiary: ${response.tertiary}`
+        message: `Confidence thresholds updated successfully.`,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      throw new Error(
-        `Failed to update confidence thresholds: ${errorMessage}. ` +
-        `Please check that the prediction service is running and the database is accessible. ` +
-        `If the issue persists, verify the /predict/config/thresholds endpoint is properly configured.`
-      );
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to update confidence thresholds: ${errorMessage}.`);
     }
   }
 
@@ -256,27 +299,16 @@ class APIClient {
     secondary: number;
     tertiary: number;
   }> {
+    const url = apiUrl("/predict/config/thresholds");
     try {
-      const response = await this.fetchWithErrorHandling<{
+      return await this.fetchWithErrorHandling<{
         primary: number;
         secondary: number;
         tertiary: number;
-        updated_at?: string;
-        updated_by?: string;
-      }>(apiUrl("/predict/config/thresholds"));
-      
-      return {
-        primary: response.primary,
-        secondary: response.secondary,
-        tertiary: response.tertiary
-      };
+      }>(url);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      throw new Error(
-        `Failed to retrieve confidence thresholds: ${errorMessage}. ` +
-        `Please check that the prediction service is running and the database is accessible. ` +
-        `If the issue persists, verify the /predict/config/thresholds endpoint is properly configured.`
-      );
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to retrieve confidence thresholds: ${errorMessage}.`);
     }
   }
 
@@ -286,26 +318,146 @@ class APIClient {
     page_count: number;
     character_count: number;
   }> {
+    const url = apiUrl("/predict/extract/pdf");
     try {
-      const response = await this.fetchWithErrorHandling<{
+      return await this.fetchWithErrorHandling<{
         text: string;
         page_count: number;
         character_count: number;
-      }>(apiUrl("/predict/extract/pdf"), {
-        method: "POST",
-        body: JSON.stringify({ pdf_url: pdfUrl }),
-      });
-      
-      return response;
+      }>(url, { method: "POST", body: JSON.stringify({ pdf_url: pdfUrl }) });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      throw new Error(
-        `Failed to extract text from PDF: ${errorMessage}. ` +
-        `Please check that the prediction service is running and the PDF is accessible. ` +
-        `If the issue persists, verify the PDF is not encrypted or image-based.`
-      );
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to extract text from PDF: ${errorMessage}.`);
     }
   }
+
+  // -------- Model Retraining Methods --------
+  async validateTrainingData(): Promise<{
+    valid: boolean;
+    total_documents: number;
+    primary_tags: Record<string, number>;
+    secondary_tags: Record<string, number>;
+    tertiary_tags: Record<string, number>;
+    invalid_tags: Array<{ level: string; tag: string; count: number; required: number }>;
+    message: string;
+  }> {
+    const url = apiUrl("/ai/training/validate");
+    try {
+      // This endpoint returns raw data, not wrapped in APIResponse
+      const response = await fetch(url, {
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        const msg = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status}: ${response.statusText} ${msg.slice(0, 200)}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to validate training data: ${errorMessage}.`);
+    }
+  }
+
+  async triggerModelRetrain(): Promise<{ status: string }> {
+    const url = apiUrl("/ai/rebuild");
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        const msg = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status}: ${response.statusText} ${msg.slice(0, 200)}`);
+      }
+
+      // This endpoint returns raw data, not wrapped in APIResponse
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to trigger model retrain: ${errorMessage}.`);
+    }
+  }
+
+  async getModelStatus(): Promise<{
+    status: string;
+    model_status: string;
+    rebuilding: boolean;
+  }> {
+    const url = apiUrl("/ai/e2e");
+    try {
+      const response = await fetch(url, {
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      // Note: This endpoint returns raw data, not wrapped in APIResponse
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to get model status: ${errorMessage}.`);
+    }
+  }
+
+  // ======================= TAG SERVICE (NEW) =======================
+  // Always fetch from backend tag-service via Next.js rewrite; no JSON fallback.
+  async getTagHierarchy(): Promise<TagHierarchy> {
+    const url = apiUrl("/tags");
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}: Failed to fetch tags ${msg.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    if (!data || typeof data !== "object") {
+      throw new Error("Unexpected tags response shape.");
+    }
+    return data as TagHierarchy;
+  }
+
+  async addTag(input: AddTagInput): Promise<{ message: string; id: number }> {
+    const url = apiUrl("/tags");
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(input),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = json?.detail ? `: ${json.detail}` : "";
+      throw new Error(`Failed to add tag (HTTP ${res.status})${detail}`);
+    }
+    return json;
+  }
+
+  async editTag(input: EditTagInput): Promise<{ message: string }> {
+    const url = apiUrl("/tags/rename");
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(input),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = json?.detail ? `: ${json.detail}` : "";
+      throw new Error(`Failed to rename tag (HTTP ${res.status})${detail}`);
+    }
+    return json;
+  }
+  // ===================== END TAG SERVICE (NEW) =====================
 }
 
 // ---------- Frontend types & helpers ----------
@@ -323,6 +475,10 @@ export interface Document {
   status: string;
   modelGeneratedTags: Array<{ tag: string; score: number; isConfirmed: boolean }>;
   userAddedTags: string[];
+  // Hierarchical tags - now supporting multiclass (arrays)
+  primaryTags: Array<{ tag: string; source: string; confidence: number }>;
+  secondaryTags: Array<{ tag: string; source: string; confidence: number }>;
+  tertiaryTags: Array<{ tag: string; source: string; confidence: number }>;
 }
 
 export function transformBackendDocument(processedDoc: BackendProcessedDocument): Document {
@@ -330,9 +486,48 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
   const modelGeneratedTags: Array<{ tag: string; score: number; isConfirmed: boolean }> = [];
   const userAddedTags: string[] = [];
 
+  // Extract hierarchical tags from new JSONB format - supporting multiclass (arrays)
+  const primaryTags: Array<{ tag: string; source: string; confidence: number }> = [];
+  const secondaryTags: Array<{ tag: string; source: string; confidence: number }> = [];
+  const tertiaryTags: Array<{ tag: string; source: string; confidence: number }> = [];
+
+  const processConfirmedTags = (confirmedTagsObj: any): string[] => {
+    if (!confirmedTagsObj) return [];
+    const tagsArray = confirmedTagsObj.confirmed_tags?.tags;
+    if (!Array.isArray(tagsArray)) return [];
+
+    console.log('🆕 [API Transform] Found tags array:', tagsArray);
+
+    // Process hierarchical tags from JSONB format - now supporting multiple tags per level
+    tagsArray.forEach((tagObj: any) => {
+      console.log('🔍 [API Transform] Processing tag object:', tagObj);
+
+      const tagData = {
+        tag: tagObj.tag,
+        source: tagObj.source || 'unknown',
+        confidence: tagObj.confidence || 0
+      };
+
+      if (tagObj.level === 'primary') {
+        primaryTags.push(tagData);
+        console.log('🔵 [API Transform] Added primary tag:', tagData);
+      } else if (tagObj.level === 'secondary') {
+        secondaryTags.push(tagData);
+        console.log('🟢 [API Transform] Added secondary tag:', tagData);
+      } else if (tagObj.level === 'tertiary') {
+        tertiaryTags.push(tagData);
+        console.log('🟠 [API Transform] Added tertiary tag:', tagData);
+      }
+    });
+
+    return tagsArray.map((t: any) => t.tag);
+  };
+
+  const confirmedTagNames = processConfirmedTags(processedDoc.confirmed_tags);
+
   if (processedDoc.suggested_tags) {
     processedDoc.suggested_tags.forEach((t) => {
-      const isConfirmed = processedDoc.confirmed_tags?.includes(t.tag) || false;
+      const isConfirmed = confirmedTagNames.includes(t.tag);
       modelGeneratedTags.push({ tag: t.tag, score: t.score, isConfirmed });
       if (isConfirmed && !tags.includes(t.tag)) tags.push(t.tag);
     });
@@ -345,31 +540,55 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     });
   }
 
-  if (processedDoc.confirmed_tags) {
-    processedDoc.confirmed_tags.forEach((ct) => {
-      if (!tags.includes(ct)) tags.push(ct);
-    });
-  }
+  confirmedTagNames.forEach((ct) => {
+    if (!tags.includes(ct)) tags.push(ct);
+  });
+
+  console.log('📊 [API Transform] Final tag processing results:', {
+    document_id: processedDoc.document_id,
+    legacy_tags: tags,
+    primaryTags,
+    secondaryTags,
+    tertiaryTags,
+    userAddedTags,
+    modelGeneratedTags: modelGeneratedTags.length
+  });
 
   const sizeEstimate = processedDoc.raw_documents?.file_size
     ? formatFileSize(processedDoc.raw_documents.file_size)
     : "Size unavailable";
 
-  return {
+  const transformedDocument = {
     id: processedDoc.document_id.toString(),
     name: processedDoc.raw_documents?.document_name || "[Document name unavailable]",
-    uploadDate: processedDoc.raw_documents?.upload_date.split("T")[0] || "[Date unavailable]",
+    uploadDate: processedDoc.processing_date?.split("T")[0] || processedDoc.raw_documents?.upload_date?.split("T")[0] || "[Date unavailable]",
     tags,
     size: sizeEstimate,
     type: processedDoc.raw_documents?.document_type || "[Type unavailable]",
     link: processedDoc.raw_documents?.link || "",
-    company: processedDoc.company, // Company is now in processed_documents
+    company: processedDoc.company,
     companyName: processedDoc.raw_documents?.companies?.company_name || null,
     uploaded_by: processedDoc.raw_documents?.uploaded_by,
     status: processedDoc.status || "processed",
     modelGeneratedTags,
     userAddedTags,
+    // Hierarchical tags - now arrays supporting multiclass
+    primaryTags,
+    secondaryTags,
+    tertiaryTags,
   };
+
+  console.log('✅ [API Transform] Transformed document:', {
+    id: transformedDocument.id,
+    name: transformedDocument.name,
+    tags: transformedDocument.tags,
+    primaryTags: transformedDocument.primaryTags,
+    secondaryTags: transformedDocument.secondaryTags,
+    tertiaryTags: transformedDocument.tertiaryTags,
+    userAddedTags: transformedDocument.userAddedTags
+  });
+
+  return transformedDocument;
 }
 
 function formatFileSize(bytes: number): string {
@@ -379,7 +598,6 @@ function formatFileSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
-
 
 // Export singleton
 export const apiClient = new APIClient();

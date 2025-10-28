@@ -1,0 +1,49 @@
+Testing AI Service Response Times
+================================================================================
+
+Short text: 63 chars, 12 words
+--------------------------------------------------------------------------------
+✓ Success
+  - Total request time: 6.424s
+  - AI model time (from service): 6.418s
+  - Network/overhead: 0.006s
+  - Predictions:
+    primary: News (58.46%)
+    secondary: Company (93.26%)
+    tertiary: Management_Change (72.19%)
+
+Medium text: 1099 chars, 180 words
+--------------------------------------------------------------------------------
+✓ Success
+  - Total request time: 2.348s
+  - AI model time (from service): 2.344s
+  - Network/overhead: 0.003s
+  - Predictions:
+    primary: News (47.94%)
+    secondary: Strategic_Recommendations (79.71%)
+    tertiary: Management_Change (79.58%)
+
+Long text: 12199 chars, 1500 words
+--------------------------------------------------------------------------------
+✓ Success
+  - Total request time: 4.715s
+  - AI model time (from service): 4.711s
+  - Network/overhead: 0.004s
+  - Predictions:
+    primary: News (50.23%)
+    secondary: Strategic_Recommendations (81.09%)
+    tertiary: Management_Change (82.33%)
+
+Very long text: 33799 chars, 4200 words
+--------------------------------------------------------------------------------
+✓ Success
+  - Total request time: 4.423s
+  - AI model time (from service): 4.420s
+  - Network/overhead: 0.004s
+  - Predictions:
+    primary: Recommendations (61.61%)
+    secondary: Strategic_Recommendations (72.84%)
+    tertiary: 10-K (66.25%)
+
+================================================================================
+Test Complete

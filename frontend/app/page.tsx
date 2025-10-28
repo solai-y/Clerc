@@ -1,105 +1,83 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Upload, Search, Filter, AlertCircle, RefreshCw, LogIn } from "lucide-react"
+import { Upload, Search, Filter, AlertCircle, RefreshCw, Settings, BookOpen, Brain, Tags } from "lucide-react"
 import { UploadModal } from "@/components/upload-modal"
-import { ConfirmTagsModal } from "@/components/confirm-tags-modal"
 import { DocumentDetailsModal } from "@/components/document-details-modal"
 import { DocumentTable } from "@/components/document-table"
 import { DocumentPagination } from "@/components/document-pagination"
 import { UserMenu } from "@/components/auth/user-menu"
 import { useDocuments } from "@/hooks/use-documents"
 import { useAuth } from "@/contexts/auth-context"
-import { Document, apiClient } from "@/lib/api"
+import { apiClient } from "@/lib/api"
+import type { Document as AppDocument } from "@/lib/api" // used for details modal state
+import type { Document as UploadModalDocument } from "@/components/upload-modal" // matches UploadModal prop type
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function HomePage() {
-  // Auth state
+  const router = useRouter()
   const { user, loading: authLoading } = useAuth()
 
-  // Local state for UI
+  const getApiDocsUrl = () => {
+    if (typeof window !== "undefined") {
+      const currentOrigin = window.location.origin
+      if (currentOrigin.includes("localhost") || currentOrigin.includes("127.0.0.1")) {
+        return "http://localhost:8000/docs"
+      }
+      return "https://clercbackend.clerc.uk/docs"
+    }
+    return "http://localhost:8000/docs"
+  }
+
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState<"name" | "date" | "size">("date")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
-  const [confirmTagsDocument, setConfirmTagsDocument] = useState<Document | null>(null)
-  const [detailsDocument, setDetailsDocument] = useState<Document | null>(null)
+  const [detailsDocument, setDetailsDocument] = useState<AppDocument | null>(null)
   const [filterTag, setFilterTag] = useState<string>("")
-  
-  // Pagination state
+
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 15
 
-  // Debounced search to avoid too many API calls
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
-  
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm)
-    }, 500) // 500ms debounce
-
-    return () => clearTimeout(timer)
+    const t = setTimeout(() => setDebouncedSearchTerm(searchTerm), 500)
+    return () => clearTimeout(t)
   }, [searchTerm])
 
-  // Reset to first page when search changes
   useEffect(() => {
     setCurrentPage(1)
-  }, [debouncedSearchTerm])
+  }, [debouncedSearchTerm, sortBy, sortOrder])
 
-  // Fetch documents from API
   const {
     documents,
     pagination,
     loading,
     error,
     refetch,
-    createDocument,
-    updateDocument,
-    deleteDocument,
   } = useDocuments({
-    search: debouncedSearchTerm || undefined, // Use debounced search term
-    limit: itemsPerPage, // 15 documents per page
-    offset: (currentPage - 1) * itemsPerPage, // Calculate offset based on current page
+    search: debouncedSearchTerm || undefined,
+    limit: itemsPerPage,
+    offset: (currentPage - 1) * itemsPerPage,
+    sortBy,
+    sortOrder,
   })
 
-  // Apply client-side filtering for tags and sorting (search is handled server-side)
-  const filteredAndSortedDocuments = useMemo(() => {
-    const filtered = documents.filter((doc) => {
-      const matchesTag = !filterTag || doc.tags.includes(filterTag)
-      // Only tag filtering is applied
-      return matchesTag
-    })
-
-    return filtered.sort((a, b) => {
-      let comparison = 0
-      switch (sortBy) {
-        case "name":
-          comparison = a.name.localeCompare(b.name)
-          break
-        case "date":
-          comparison = new Date(a.uploadDate).getTime() - new Date(b.uploadDate).getTime()
-          break
-        case "size":
-          const aSize = Number.parseFloat(a.size)
-          const bSize = Number.parseFloat(b.size)
-          comparison = aSize - bSize
-          break
-      }
-      return sortOrder === "asc" ? comparison : -comparison
-    })
-  }, [documents, sortBy, sortOrder, filterTag])
+  const filteredDocuments = useMemo(() => {
+    const filtered = !filterTag ? documents : documents.filter((d) => d.tags.includes(filterTag))
+    return filtered
+  }, [documents, filterTag])
 
   const availableTags = useMemo(() => {
     const tags = new Set<string>()
     documents.forEach((doc) => doc.tags.forEach((tag) => tags.add(tag)))
     return Array.from(tags).sort()
   }, [documents])
-
 
   const handleSort = (column: "name" | "date" | "size") => {
     if (sortBy === column) {
@@ -110,75 +88,11 @@ export default function HomePage() {
     }
   }
 
-  const handleUploadComplete = async (newDocument: Document) => {
-    try {
-      // In a real implementation, this would create the document via API
-      // For now, we'll just refetch to get the latest data
-      await refetch()
-      // No longer need to show confirm tags modal since it's handled in the enhanced upload flow
-      setIsUploadModalOpen(false)
-    } catch (err) {
-      console.error('Error after upload:', err)
-    }
+  // Match UploadModal prop exactly: (document: UploadModalDocument) => void
+  // Keep it sync to satisfy the prop type; we still trigger an async refetch.
+  const handleUploadComplete = (_newDocument: UploadModalDocument): void => {
+    refetch().finally(() => setIsUploadModalOpen(false))
   }
-
-  const handleConfirmTags = async (
-    documentId: string,
-    confirmedTags: string[],
-    userAddedTags: string[]
-  ) => {
-    try {
-      console.log('✅ Confirming document tags:', {
-        documentId,
-        confirmedTags,
-        userAddedTags,
-        totalTags: confirmedTags.length + userAddedTags.length
-      })
-
-      const documentIdNum = parseInt(documentId)
-      
-      // Update the processed document with confirmed tags
-      // (processed_documents entry should already exist from upload flow)
-      await apiClient.updateDocumentTags(documentIdNum, {
-        confirmed_tags: confirmedTags,
-        user_added_labels: userAddedTags
-      })
-      
-      console.log('✅ Successfully updated document tags')
-      
-      // Refresh the document list to show updated tags
-      await refetch()
-      setConfirmTagsDocument(null)
-      
-    } catch (err) {
-      console.error('❌ Error updating document tags:', err)
-      
-      // Provide detailed error information instead of attempting fallback
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
-      const detailedError = new Error(
-        `Failed to update document tags: ${errorMessage}. ` +
-        `Document ID: ${documentId}. ` +
-        `Attempted to update with ${confirmedTags.length} confirmed tags and ${userAddedTags.length} user-added tags. ` +
-        `This error typically indicates that the processed document record does not exist in the database, ` +
-        `which suggests the document upload/processing workflow is incomplete. ` +
-        `Please verify that documents are properly processed before attempting tag confirmation, ` +
-        `or check the document service and database connectivity.`
-      )
-      
-      throw detailedError
-    }
-  }
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return "0 B"
-    const k = 1024
-    const sizes = ["B", "KB", "MB", "GB"]
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i]
-  }
-
-
-
 
   return (
     <div className="min-h-screen bg-white">
@@ -187,15 +101,52 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <h1 className="text-5xl font-bold text-red-600" style={{ marginLeft: '1rem' }}>Clerc.</h1>
-                <div className="h-6 w-px bg-gray-300 mx-4"></div>
-                <h1 className="text-xl font-bold text-gray-900">Document AI</h1>
+              <h1 className="text-5xl font-bold text-red-600" style={{ marginLeft: "1rem" }}>
+                Clerc.
+              </h1>
+              <div className="h-6 w-px bg-gray-300 mx-4" />
+              <h1 className="text-xl font-bold text-gray-900">Document AI</h1>
             </div>
 
-            {/* Authentication Section */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(getApiDocsUrl(), "_blank")}
+                className="flex items-center gap-2"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>API Docs</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/admin/confidence-config")}
+                className="flex items-center gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                <span>Confidence Config</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/admin/model-retrain')}
+                className="flex items-center gap-2"
+              >
+                <Brain className="w-4 h-4" />
+                <span>Model Retrain</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/tags")}
+                className="flex items-center gap-2"
+              >
+                <Tags className="w-4 h-4" />
+                <span>Tag Manager</span>
+              </Button>
               {authLoading ? (
-                <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full"></div>
+                <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full" />
               ) : user ? (
                 <UserMenu />
               ) : null}
@@ -205,16 +156,15 @@ export default function HomePage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Error Alert */}
         {error && (
           <Alert className="mb-6 border-red-200 bg-red-50">
             <AlertCircle className="h-4 w-4 text-red-600" />
             <AlertDescription className="text-red-800">
               <div className="flex items-center justify-between">
                 <span>Error loading documents: {error}</span>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={refetch}
                   className="ml-4 border-red-300 text-red-700 hover:bg-red-100"
                 >
@@ -226,8 +176,7 @@ export default function HomePage() {
           </Alert>
         )}
 
-
-        {/* Search and Filters */}
+        {/* Search & Filters */}
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
@@ -239,7 +188,7 @@ export default function HomePage() {
             <div className="flex flex-col gap-4">
               <div className="flex-1">
                 <Input
-                  placeholder="Search by document name or tags..."
+                  placeholder="Search by document name..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full"
@@ -248,10 +197,7 @@ export default function HomePage() {
               <div className="flex flex-col sm:flex-row gap-4">
                 <Select
                   value={filterTag || "all-tags"}
-                  onValueChange={(value: string) => {
-                    const newValue = value === "all-tags" ? "" : value
-                    setFilterTag(newValue)
-                  }}
+                  onValueChange={(value: string) => setFilterTag(value === "all-tags" ? "" : value)}
                 >
                   <SelectTrigger className="w-full sm:w-48">
                     <SelectValue placeholder="Filter by tag" />
@@ -265,7 +211,6 @@ export default function HomePage() {
                     ))}
                   </SelectContent>
                 </Select>
-
               </div>
             </div>
           </CardContent>
@@ -279,19 +224,22 @@ export default function HomePage() {
                 <span>Document Library</span>
                 {loading && <RefreshCw className="w-4 h-4 animate-spin text-gray-500" />}
                 <span className="text-sm text-gray-500">
-                  {loading ? (
-                    "Loading..."
-                  ) : pagination ? (
-                    `Page ${pagination.currentPage} of ${pagination.totalPages} (${pagination.totalItems} total)`
-                  ) : (
-                    `${filteredAndSortedDocuments.length} documents`
-                  )}
+                  {loading
+                    ? "Loading..."
+                    : pagination
+                    ? `Page ${pagination.currentPage} of ${pagination.totalPages} (${pagination.totalItems} total)`
+                    : `${filteredDocuments.length} documents`}
                 </span>
               </div>
+
               <div className="flex items-center space-x-2 text-sm text-gray-500">
                 <Filter className="w-4 h-4" />
                 <span>Sort by:</span>
-                <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)} disabled={loading}>
+                <Select
+                  value={sortBy}
+                  onValueChange={(value: "name" | "date" | "size") => setSortBy(value)}
+                  disabled={loading}
+                >
                   <SelectTrigger className="w-32">
                     <SelectValue />
                   </SelectTrigger>
@@ -301,6 +249,14 @@ export default function HomePage() {
                     <SelectItem value="size">Size</SelectItem>
                   </SelectContent>
                 </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                  disabled={loading}
+                >
+                  {sortOrder === "asc" ? "Asc" : "Desc"}
+                </Button>
               </div>
             </CardTitle>
           </CardHeader>
@@ -313,15 +269,12 @@ export default function HomePage() {
             ) : (
               <>
                 <DocumentTable
-                  documents={filteredAndSortedDocuments}
+                  documents={filteredDocuments}
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={handleSort}
-                  onEditTags={setConfirmTagsDocument}
                   onViewDetails={setDetailsDocument}
                 />
-                
-                {/* Pagination */}
                 {pagination && (
                   <div className="mt-6 border-t pt-4">
                     <DocumentPagination
@@ -329,7 +282,7 @@ export default function HomePage() {
                       totalPages={pagination.totalPages}
                       totalItems={pagination.totalItems}
                       itemsPerPage={pagination.itemsPerPage}
-                      onPageChange={setCurrentPage}
+                      onPageChange={(p) => setCurrentPage(p)}
                       loading={loading}
                     />
                   </div>
@@ -340,9 +293,8 @@ export default function HomePage() {
         </Card>
       </main>
 
-      {/* Floating Action Buttons */}
+      {/* FABs */}
       <div className="fixed bottom-6 right-6 flex flex-col gap-3">
-        {/* Upload Button */}
         <Button
           onClick={() => setIsUploadModalOpen(true)}
           className="h-14 w-14 rounded-full bg-red-600 hover:bg-red-700 shadow-lg"
@@ -360,23 +312,22 @@ export default function HomePage() {
         onUploadComplete={handleUploadComplete}
       />
 
-      {/* Confirm Tags Modal */}
-      {confirmTagsDocument && (
-        <ConfirmTagsModal
-          document={confirmTagsDocument}
-          onConfirm={handleConfirmTags}
-          onClose={() => setConfirmTagsDocument(null)}
-        />
-      )}
-
-      {/* Document Details Modal */}
+      {/* Details Modal */}
       {detailsDocument && (
         <DocumentDetailsModal
           document={detailsDocument}
           onClose={() => setDetailsDocument(null)}
+          onConfirm={async (documentId: string, confirmedTagsData: any) => {
+            const documentIdNum = parseInt(documentId)
+            await apiClient.updateDocumentTags(documentIdNum, { confirmed_tags: confirmedTagsData })
+            setCurrentPage(1)
+            setSearchTerm("")
+            setFilterTag("")
+            setDetailsDocument(null)
+            await refetch()
+          }}
         />
       )}
-
     </div>
   )
 }

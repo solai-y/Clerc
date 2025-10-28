@@ -1,6 +1,6 @@
 import pytest
 import json
-from flask.testing import FlaskClient
+from fastapi.testclient import TestClient
 import sys
 import os
 
@@ -10,15 +10,13 @@ from app import app
 
 @pytest.fixture
 def client():
-    print("\n[INFO] Setting up Flask test client...")
-    with app.test_client() as client:
-        yield client
-    print("[INFO] Flask test client teardown complete.")
+    print("\n[INFO] Setting up FastAPI test client...")
+    return TestClient(app)
 
 class TestDocumentCRUD:
     """Test suite for Document CRUD operations"""
     
-    def test_create_document_valid(self, client: FlaskClient):
+    def test_create_document_valid(self, client: TestClient):
         """Test creating a document with valid data"""
         print("\n[TEST] Running POST /documents with valid data...")
         
@@ -29,14 +27,10 @@ class TestDocumentCRUD:
             "uploaded_by": None  # Make it nullable to avoid foreign key constraint
         }
         
-        response = client.post(
-            '/documents',
-            data=json.dumps(document_data),
-            content_type='application/json'
-        )
+        response = client.post('/documents', json=document_data)
         
         print(f"[DEBUG] Response status: {response.status_code}")
-        data = response.get_json()
+        data = response.json()
         print(f"[DEBUG] Response data: {data}")
         
         assert response.status_code == 201
@@ -50,7 +44,7 @@ class TestDocumentCRUD:
         print("[PASS] Document created successfully")
         return data["data"]["document_id"]  # Return ID for other tests
     
-    def test_create_document_invalid_missing_fields(self, client: FlaskClient):
+    def test_create_document_invalid_missing_fields(self, client: TestClient):
         """Test creating a document with missing required fields"""
         print("\n[TEST] Running POST /documents with missing fields...")
         
@@ -59,33 +53,25 @@ class TestDocumentCRUD:
             # Missing required fields
         }
         
-        response = client.post(
-            '/documents',
-            data=json.dumps(document_data),
-            content_type='application/json'
-        )
+        response = client.post('/documents', json=document_data)
         
-        data = response.get_json()
+        data = response.json()
         print(f"[DEBUG] Response status: {response.status_code}")
         print(f"[DEBUG] Response data: {data}")
         
         assert response.status_code == 400
         assert data["status"] == "error"
-        assert "validation" in data["message"].lower()
+        assert "field is required" in data["message"].lower()
         
         print("[PASS] Validation error returned for missing fields")
     
-    def test_create_document_invalid_json(self, client: FlaskClient):
+    def test_create_document_invalid_json(self, client: TestClient):
         """Test creating a document with invalid JSON"""
         print("\n[TEST] Running POST /documents with invalid JSON...")
         
-        response = client.post(
-            '/documents',
-            data="invalid json",
-            content_type='application/json'
-        )
+        response = client.post('/documents', content="invalid json", headers={"Content-Type": "application/json"})
         
-        data = response.get_json()
+        data = response.json()
         print(f"[DEBUG] Response status: {response.status_code}")
         
         assert response.status_code == 400
@@ -93,7 +79,7 @@ class TestDocumentCRUD:
         
         print("[PASS] Error returned for invalid JSON")
     
-    def test_get_document_by_id_valid(self, client: FlaskClient):
+    def test_get_document_by_id_valid(self, client: TestClient):
         """Test getting a document by valid ID"""
         print("\n[TEST] Running GET /documents/{id} with valid ID...")
         
@@ -109,14 +95,14 @@ class TestDocumentCRUD:
         if create_response.status_code != 201:
             pytest.skip("Cannot test GET without successful document creation")
             
-        created_doc = create_response.get_json()
+        created_doc = create_response.json()
         document_id = created_doc["data"]["document_id"]
         
         # Now test getting the document by ID
         response = client.get(f'/documents/{document_id}')
         
         print(f"[DEBUG] Response status: {response.status_code}")
-        data = response.get_json()
+        data = response.json()
         
         assert response.status_code == 200
         assert data["status"] == "success"
@@ -125,7 +111,7 @@ class TestDocumentCRUD:
         
         print("[PASS] Document retrieved successfully by ID")
     
-    def test_get_document_by_id_not_found(self, client: FlaskClient):
+    def test_get_document_by_id_not_found(self, client: TestClient):
         """Test getting a document by non-existent ID"""
         print("\n[TEST] Running GET /documents/{id} with non-existent ID...")
         
@@ -133,7 +119,7 @@ class TestDocumentCRUD:
         response = client.get('/documents/99999')
         
         print(f"[DEBUG] Response status: {response.status_code}")
-        data = response.get_json()
+        data = response.json()
         
         assert response.status_code == 404
         assert data["status"] == "error"
@@ -141,7 +127,7 @@ class TestDocumentCRUD:
         
         print("[PASS] 404 error returned for non-existent document")
     
-    def test_update_document_valid(self, client: FlaskClient):
+    def test_update_document_valid(self, client: TestClient):
         """Test updating a document with valid data"""
         print("\n[TEST] Running PUT /documents/{id} with valid data...")
         
@@ -153,14 +139,10 @@ class TestDocumentCRUD:
             "uploaded_by": None
         }
         
-        create_response = client.post(
-            '/documents',
-            data=json.dumps(create_data),
-            content_type='application/json'
-        )
+        create_response = client.post('/documents', json=create_data)
         
         # Handle creation failure gracefully
-        create_json = create_response.get_json()
+        create_json = create_response.json()
         if create_response.status_code != 201 or "data" not in create_json:
             print(f"[ERROR] Failed to create document for update test: {create_json}")
             pytest.skip("Cannot test update without successful document creation")
@@ -176,14 +158,10 @@ class TestDocumentCRUD:
             "uploaded_by": None
         }
         
-        response = client.put(
-            f'/documents/{doc_id}',
-            data=json.dumps(update_data),
-            content_type='application/json'
-        )
+        response = client.put(f'/documents/{doc_id}', json=update_data)
         
         print(f"[DEBUG] Response status: {response.status_code}")
-        data = response.get_json()
+        data = response.json()
         
         assert response.status_code == 200
         assert data["status"] == "success"
@@ -191,7 +169,7 @@ class TestDocumentCRUD:
         
         print("[PASS] Document updated successfully")
     
-    def test_update_document_not_found(self, client: FlaskClient):
+    def test_update_document_not_found(self, client: TestClient):
         """Test updating a non-existent document"""
         print("\n[TEST] Running PUT /documents/{id} with non-existent ID...")
         
@@ -202,14 +180,10 @@ class TestDocumentCRUD:
             "uploaded_by": 1
         }
         
-        response = client.put(
-            '/documents/99999',
-            data=json.dumps(update_data),
-            content_type='application/json'
-        )
+        response = client.put('/documents/99999', json=update_data)
         
         print(f"[DEBUG] Response status: {response.status_code}")
-        data = response.get_json()
+        data = response.json()
         
         assert response.status_code == 404
         assert data["status"] == "error"
@@ -217,7 +191,7 @@ class TestDocumentCRUD:
         
         print("[PASS] 404 error returned for updating non-existent document")
     
-    def test_delete_document_valid(self, client: FlaskClient):
+    def test_delete_document_valid(self, client: TestClient):
         """Test deleting a document with valid ID"""
         print("\n[TEST] Running DELETE /documents/{id} with valid ID...")
         
@@ -229,14 +203,10 @@ class TestDocumentCRUD:
             "uploaded_by": None
         }
         
-        create_response = client.post(
-            '/documents',
-            data=json.dumps(create_data),
-            content_type='application/json'
-        )
+        create_response = client.post('/documents', json=create_data)
         
         # Handle creation failure gracefully
-        create_json = create_response.get_json()
+        create_json = create_response.json()
         if create_response.status_code != 201 or "data" not in create_json:
             print(f"[ERROR] Failed to create document for delete test: {create_json}")
             pytest.skip("Cannot test delete without successful document creation")
@@ -248,7 +218,7 @@ class TestDocumentCRUD:
         response = client.delete(f'/documents/{doc_id}')
         
         print(f"[DEBUG] Response status: {response.status_code}")
-        data = response.get_json()
+        data = response.json()
         
         assert response.status_code == 200
         assert data["status"] == "success"
@@ -261,14 +231,14 @@ class TestDocumentCRUD:
         
         print("[PASS] Document deleted successfully")
     
-    def test_delete_document_not_found(self, client: FlaskClient):
+    def test_delete_document_not_found(self, client: TestClient):
         """Test deleting a non-existent document"""
         print("\n[TEST] Running DELETE /documents/{id} with non-existent ID...")
         
         response = client.delete('/documents/99999')
         
         print(f"[DEBUG] Response status: {response.status_code}")
-        data = response.get_json()
+        data = response.json()
         
         assert response.status_code == 404
         assert data["status"] == "error"
@@ -276,20 +246,20 @@ class TestDocumentCRUD:
         
         print("[PASS] 404 error returned for deleting non-existent document")
 
-    def test_pagination_functionality(self, client: FlaskClient):
+    def test_pagination_functionality(self, client: TestClient):
         """Test pagination parameters"""
         print("\n[TEST] Testing pagination functionality...")
         
         # Test with limit
         response = client.get('/documents?limit=5')
-        data = response.get_json()
+        data = response.json()
         
         assert response.status_code == 200
         assert len(data["data"]) <= 5
         
         # Test with invalid limit
         response = client.get('/documents?limit=-1')
-        data = response.get_json()
+        data = response.json()
         
         assert response.status_code == 400
         assert data["status"] == "error"

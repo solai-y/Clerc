@@ -1,11 +1,60 @@
 import logging
-from flask import Blueprint, request, jsonify
+from fastapi import APIRouter, HTTPException, Request, Query, Body
+from fastapi.responses import JSONResponse
+from typing import Optional, Dict, Any
+from pydantic import BaseModel
 from models.document import DocumentModel
 from models.response import APIResponse
 from services.database import DatabaseService
 
-# Initialize blueprint and logger
-documents_bp = Blueprint('documents', __name__)
+# Pydantic models for request validation
+class DocumentCreateRequest(BaseModel):
+    document_name: str
+    document_type: str
+    link: str
+    uploaded_by: Optional[int] = None
+    file_size: Optional[int] = None
+    file_hash: Optional[str] = None
+    upload_date: Optional[str] = None
+    status: Optional[str] = 'uploaded'
+
+class DocumentUpdateRequest(BaseModel):
+    document_name: Optional[str] = None
+    document_type: Optional[str] = None
+    link: Optional[str] = None
+    uploaded_by: Optional[int] = None
+    file_size: Optional[int] = None
+    file_hash: Optional[str] = None
+    upload_date: Optional[str] = None
+    status: Optional[str] = None
+
+class DocumentStatusRequest(BaseModel):
+    status: str
+
+class ProcessedDocumentRequest(BaseModel):
+    document_id: int
+    suggested_tags: Optional[list] = None
+    threshold_pct: Optional[int] = None
+    ocr_used: Optional[bool] = None
+    processing_ms: Optional[int] = None
+    explanations: Optional[list] = None
+    prediction_response: Optional[dict] = None
+    model_id: Optional[int] = None
+    user_id: Optional[int] = None
+    company: Optional[int] = None
+    errors: Optional[list] = None
+    request_id: Optional[str] = None
+    status: Optional[str] = None
+
+class DocumentTagsRequest(BaseModel):
+    confirmed_tags: Optional[Any] = None
+    user_added_labels: Optional[list] = None
+    user_removed_tags: Optional[list] = None
+    user_id: Optional[int] = None
+    explanations: Optional[Any] = None
+
+# Initialize router and logger
+documents_router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Initialize database service
@@ -15,55 +64,68 @@ except Exception as e:
     logger.error(f"Failed to initialize database service: {str(e)}")
     db_service = None
 
-@documents_bp.route('', methods=['GET'])
-def get_documents():
-    """Get all documents with optional pagination and search"""
-    logger.info(f"GET /documents - Request from {request.remote_addr}")
-    
+@documents_router.get('')
+async def get_documents(
+    request: Request,
+    limit: Optional[int] = Query(None),
+    offset: Optional[int] = Query(None),
+    search: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    company_id: Optional[int] = Query(None),
+    sort_by: str = Query('date'),
+    sort_order: str = Query('desc')
+):
+    """List documents with server-side search, sort, filter, and pagination (with robust fallbacks)."""
+    logger.info(f"GET /documents - Request from {request.client.host}")
+
     if not db_service:
         return APIResponse.internal_error("Database service not available")
-    
+
     try:
-        # Get query parameters
-        limit = request.args.get('limit', type=int)
-        offset = request.args.get('offset', type=int)
-        search = request.args.get('search', type=str)
-        status = request.args.get('status', type=str)
-        company_id = request.args.get('company_id', type=int)
-        
-        # Validate parameters
+        logger.debug(
+            "[ROUTE] /documents params: "
+            f"limit={limit}, offset={offset}, search={search!r}, status={status!r}, "
+            f"company_id={company_id}, sort_by={sort_by!r}, sort_order={sort_order!r}"
+        )
+
+        # Basic validation
         if limit is not None and limit <= 0:
             return APIResponse.validation_error("Limit must be greater than 0")
-        
         if offset is not None and offset < 0:
             return APIResponse.validation_error("Offset must be non-negative")
-        
-        # Get total count for pagination
-        total_count, count_error = db_service.get_total_documents_count(search, status, company_id)
+        if sort_by not in (None, 'name', 'date', 'size'):
+            return APIResponse.validation_error("sort_by must be one of: name, date, size")
+        if sort_order not in (None, 'asc', 'desc'):
+            return APIResponse.validation_error("sort_order must be 'asc' or 'desc'")
+
+        # Count with the SAME filters (incl. search)
+        total_count, count_error = db_service.get_total_documents_count(
+            search=search, status=status, company_id=company_id
+        )
         if count_error:
-            logger.error(f"Database error getting count: {count_error}")
+            logger.error(f"[ROUTE] Count error: {count_error}")
             return APIResponse.internal_error("Failed to retrieve documents count")
-        
-        # Search, filter, or get all documents
-        if search:
-            documents, error = db_service.search_documents(search, limit, offset)
-        elif status:
-            documents, error = db_service.get_documents_by_status(status, limit)
-        elif company_id:
-            documents, error = db_service.get_documents_by_company(company_id, limit)
-        else:
-            documents, error = db_service.get_all_documents(limit, offset)
-        
+
+        # Query documents (unified: search + filter + sort + pagination)
+        documents, error = db_service.query_documents(
+            search=search,
+            status=status,
+            company_id=company_id,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=limit,
+            offset=offset
+        )
         if error:
-            logger.error(f"Database error: {error}")
+            logger.error(f"[ROUTE] Query error: {error}")
             return APIResponse.internal_error("Failed to retrieve documents")
-        
-        # Calculate pagination metadata
+
+        # Pagination metadata (normalize for FE)
         current_limit = limit or 50
         current_offset = offset or 0
         current_page = (current_offset // current_limit) + 1
-        total_pages = (total_count + current_limit - 1) // current_limit  # Ceiling division
-        
+        total_pages = (total_count + current_limit - 1) // current_limit
+
         pagination_info = {
             "total": total_count,
             "page": current_page,
@@ -71,145 +133,143 @@ def get_documents():
             "limit": current_limit,
             "offset": current_offset
         }
-        
-        response_data = {
-            "documents": documents,
-            "pagination": pagination_info
-        }
-        
-        logger.info(f"Successfully retrieved {len(documents)} of {total_count} documents (page {current_page}/{total_pages})")
-        return APIResponse.success(response_data, f"Retrieved {len(documents)} of {total_count} documents")
-        
+
+        logger.debug(
+            "[ROUTE] /documents pagination: "
+            f"count={total_count}, page={current_page}, totalPages={total_pages}, "
+            f"limit={current_limit}, offset={current_offset}"
+        )
+        logger.info(f"[ROUTE] Retrieved {len(documents)} of {total_count} docs (page {current_page}/{total_pages})")
+
+        return APIResponse.success(
+            {"documents": documents, "pagination": pagination_info},
+            "Documents retrieved"
+        )
+
     except Exception as e:
         logger.error(f"Unexpected error in get_documents: {str(e)}")
         return APIResponse.internal_error()
 
-@documents_bp.route('/<int:document_id>', methods=['GET'])
-def get_document(document_id):
-    """Get a specific document by ID"""
-    logger.info(f"GET /documents/{document_id} - Request from {request.remote_addr}")
-    
+@documents_router.get('/{document_id}')
+async def get_document(document_id: int, request: Request):
+    """Get a specific document by ID (raw document only)"""
+    logger.info(f"GET /documents/{document_id} - Request from {request.client.host}")
+
     if not db_service:
         return APIResponse.internal_error("Database service not available")
-    
+
     try:
         document, error = db_service.get_document_by_id(document_id)
-        
+
         if error:
             if "not found" in error.lower():
                 return APIResponse.not_found(f"Document with ID {document_id}")
             else:
                 logger.error(f"Database error: {error}")
                 return APIResponse.internal_error("Failed to retrieve document")
-        
+
         logger.info(f"Successfully retrieved document {document_id}")
         return APIResponse.success(document, "Document retrieved successfully")
-        
+
     except Exception as e:
         logger.error(f"Unexpected error in get_document: {str(e)}")
         return APIResponse.internal_error()
 
-@documents_bp.route('', methods=['POST'])
-def create_document():
-    """Create a new document"""
-    logger.info(f"POST /documents - Request from {request.remote_addr}")
-    
+@documents_router.get('/{document_id}/complete')
+async def get_complete_document(document_id: int, request: Request):
+    """Get complete document information including both raw and processed data"""
+    logger.info(f"GET /documents/{document_id}/complete - Request from {request.client.host}")
+
     if not db_service:
         return APIResponse.internal_error("Database service not available")
-    
+
     try:
-        # Validate request data
-        if not request.is_json:
-            return APIResponse.validation_error("Request must be JSON")
-        
-        try:
-            data = request.get_json()
-        except Exception as json_error:
-            return APIResponse.validation_error(f"Invalid JSON format: {str(json_error)}")
-            
-        if not data:
-            return APIResponse.validation_error("Request body cannot be empty")
-        
-        # Create and validate document model
+        document, error = db_service.get_complete_document_by_id(document_id)
+
+        if error:
+            if "not found" in error.lower():
+                return APIResponse.not_found(f"Document with ID {document_id}")
+            else:
+                logger.error(f"Database error: {error}")
+                return APIResponse.internal_error("Failed to retrieve complete document")
+
+        logger.info(f"Successfully retrieved complete document {document_id}")
+        return APIResponse.success(document, "Complete document retrieved successfully")
+
+    except Exception as e:
+        logger.error(f"Unexpected error in get_complete_document: {str(e)}")
+        return APIResponse.internal_error()
+
+@documents_router.post('', status_code=201)
+async def create_document(request: Request, body: DocumentCreateRequest):
+    """Create a new document"""
+    logger.info(f"POST /documents - Request from {request.client.host}")
+
+    if not db_service:
+        return APIResponse.internal_error("Database service not available")
+
+    try:
+        data = body.dict()
+
         document_model = DocumentModel(data)
         is_valid, errors = document_model.validate()
-        
         if not is_valid:
             return APIResponse.validation_error("; ".join(errors))
-        
-        # Create document in database
+
         created_document, error = db_service.create_document(document_model.to_dict())
-        
         if error:
             logger.error(f"Database error: {error}")
             return APIResponse.internal_error("Failed to create document")
-        
+
         logger.info(f"Successfully created document with ID: {created_document.get('id')}")
         return APIResponse.success(created_document, "Document created successfully", 201)
-        
+
     except Exception as e:
         logger.error(f"Unexpected error in create_document: {str(e)}")
         return APIResponse.internal_error()
 
-@documents_bp.route('/<int:document_id>', methods=['PUT'])
-def update_document(document_id):
+@documents_router.put('/{document_id}')
+async def update_document(document_id: int, request: Request, body: DocumentUpdateRequest):
     """Update an existing document"""
-    logger.info(f"PUT /documents/{document_id} - Request from {request.remote_addr}")
-    
+    logger.info(f"PUT /documents/{document_id} - Request from {request.client.host}")
+
     if not db_service:
         return APIResponse.internal_error("Database service not available")
-    
+
     try:
-        # Validate request data
-        if not request.is_json:
-            return APIResponse.validation_error("Request must be JSON")
-        
-        try:
-            data = request.get_json()
-        except Exception as json_error:
-            return APIResponse.validation_error(f"Invalid JSON format: {str(json_error)}")
-            
-        if not data:
-            return APIResponse.validation_error("Request body cannot be empty")
-        
-        # Add ID to data for validation
+        data = body.dict(exclude_unset=True)
         data['document_id'] = document_id
-        
-        # Create and validate document model
+
         document_model = DocumentModel(data)
         is_valid, errors = document_model.validate()
-        
         if not is_valid:
             return APIResponse.validation_error("; ".join(errors))
-        
-        # Update document in database
+
         updated_document, error = db_service.update_document(document_id, document_model.to_dict())
-        
         if error:
             if "not found" in error.lower():
                 return APIResponse.not_found(f"Document with ID {document_id}")
             else:
                 logger.error(f"Database error: {error}")
                 return APIResponse.internal_error("Failed to update document")
-        
+
         logger.info(f"Successfully updated document {document_id}")
         return APIResponse.success(updated_document, "Document updated successfully")
-        
+
     except Exception as e:
         logger.error(f"Unexpected error in update_document: {str(e)}")
         return APIResponse.internal_error()
 
-@documents_bp.route('/<int:document_id>', methods=['DELETE'])
-def delete_document(document_id):
+@documents_router.delete('/{document_id}')
+async def delete_document(document_id: int, request: Request):
     """Delete a document"""
-    logger.info(f"DELETE /documents/{document_id} - Request from {request.remote_addr}")
+    logger.info(f"DELETE /documents/{document_id} - Request from {request.client.host}")
     
     if not db_service:
         return APIResponse.internal_error("Database service not available")
     
     try:
         success, error = db_service.delete_document(document_id)
-        
         if not success:
             if error and "not found" in error.lower():
                 return APIResponse.not_found(f"Document with ID {document_id}")
@@ -224,34 +284,18 @@ def delete_document(document_id):
         logger.error(f"Unexpected error in delete_document: {str(e)}")
         return APIResponse.internal_error()
 
-@documents_bp.route('/<int:document_id>/status', methods=['PATCH'])
-def update_document_status(document_id):
+@documents_router.patch('/{document_id}/status')
+async def update_document_status(document_id: int, request: Request, body: DocumentStatusRequest):
     """Update document status"""
-    logger.info(f"PATCH /documents/{document_id}/status - Request from {request.remote_addr}")
-    
+    logger.info(f"PATCH /documents/{document_id}/status - Request from {request.client.host}")
+
     if not db_service:
         return APIResponse.internal_error("Database service not available")
-    
+
     try:
-        # Validate request data
-        if not request.is_json:
-            return APIResponse.validation_error("Request must be JSON")
-        
-        try:
-            data = request.get_json()
-        except Exception as json_error:
-            return APIResponse.validation_error(f"Invalid JSON format: {str(json_error)}")
-            
-        if not data or 'status' not in data:
-            return APIResponse.validation_error("Status field is required")
-        
-        status = data.get('status')
-        if not isinstance(status, str):
-            return APIResponse.validation_error("Status must be a string")
-        
-        # Update document status
+        status = body.status
+
         success, error = db_service.update_document_status(document_id, status)
-        
         if not success:
             if error and "not found" in error.lower():
                 return APIResponse.not_found(f"Document with ID {document_id}")
@@ -260,128 +304,90 @@ def update_document_status(document_id):
             else:
                 logger.error(f"Database error: {error}")
                 return APIResponse.internal_error("Failed to update document status")
-        
+
         logger.info(f"Successfully updated document {document_id} status to '{status}'")
         return APIResponse.success(None, f"Document status updated to '{status}'")
-        
+
     except Exception as e:
         logger.error(f"Unexpected error in update_document_status: {str(e)}")
         return APIResponse.internal_error()
 
-@documents_bp.route('/processed', methods=['POST'])
-def create_processed_document():
+@documents_router.post('/processed', status_code=201)
+async def create_processed_document(request: Request, body: ProcessedDocumentRequest):
     """Create a new processed document entry with empty tag fields"""
-    logger.info(f"POST /documents/processed - Request from {request.remote_addr}")
-    
+    logger.info(f"POST /documents/processed - Request from {request.client.host}")
+
     if not db_service:
         return APIResponse.internal_error("Database service not available")
-    
+
     try:
-        # Validate request data
-        if not request.is_json:
-            return APIResponse.validation_error("Request must be JSON")
-        
-        try:
-            data = request.get_json()
-        except Exception as json_error:
-            return APIResponse.validation_error(f"Invalid JSON format: {str(json_error)}")
-            
-        if not data:
-            return APIResponse.validation_error("Request body cannot be empty")
-        
-        # Validate required fields
-        if 'document_id' not in data:
-            return APIResponse.validation_error("document_id field is required")
-        
-        # Create processed document
+        data = body.dict()
+
         created_document, error = db_service.create_processed_document(data)
-        
         if error:
             logger.error(f"Database error: {error}")
             return APIResponse.internal_error("Failed to create processed document")
-        
+
         logger.info(f"Successfully created processed document for document_id: {data['document_id']}")
         return APIResponse.success(created_document, "Processed document created successfully", 201)
-        
+
     except Exception as e:
         logger.error(f"Unexpected error in create_processed_document: {str(e)}")
         return APIResponse.internal_error()
 
-@documents_bp.route('/<int:document_id>/tags', methods=['PATCH', 'OPTIONS'])
-def update_document_tags(document_id):
+@documents_router.patch('/{document_id}/tags')
+async def update_document_tags(document_id: int, request: Request, body: DocumentTagsRequest):
     """Update confirmed_tags, user_added_labels, and user_removed_tags for a document"""
-    
-    # Handle OPTIONS preflight request
-    if request.method == 'OPTIONS':
-        return '', 200
-    
-    logger.info(f"PATCH /documents/{document_id}/tags - Request from {request.remote_addr}")
-    
+    logger.info(f"PATCH /documents/{document_id}/tags - Request from {request.client.host}")
+
     if not db_service:
         return APIResponse.internal_error("Database service not available")
-    
+
     try:
-        # Validate request data
-        if not request.is_json:
-            return APIResponse.validation_error("Request must be JSON")
-        
-        try:
-            data = request.get_json()
-        except Exception as json_error:
-            return APIResponse.validation_error(f"Invalid JSON format: {str(json_error)}")
-            
-        if not data:
-            return APIResponse.validation_error("Request body cannot be empty")
-        
-        # Validate that at least one tag field is provided
-        valid_fields = ['confirmed_tags', 'user_added_labels', 'user_removed_tags', 'user_id', 'explanations']
+        data = body.dict(exclude_unset=True)
+
         tag_fields = ['confirmed_tags', 'user_added_labels', 'user_removed_tags']
-        
         has_tag_field = any(field in data for field in tag_fields)
         if not has_tag_field:
             return APIResponse.validation_error(f"At least one of the following fields is required: {', '.join(tag_fields)}")
-        
-        # Validate array fields
+
         for field in tag_fields:
-            if field in data and not isinstance(data[field], list):
-                return APIResponse.validation_error(f"{field} must be an array")
-        
-        # Update document tags
+            if field in data:
+                if field == 'confirmed_tags':
+                    if not isinstance(data[field], (list, dict)):
+                        return APIResponse.validation_error(f"{field} must be an array or object")
+                else:
+                    if not isinstance(data[field], list):
+                        return APIResponse.validation_error(f"{field} must be an array")
+
         updated_document, error = db_service.update_document_tags(document_id, data)
-        
         if error:
             if "not found" in error.lower() or "no processed document found" in error.lower():
                 return APIResponse.not_found(f"Processed document for document_id {document_id}")
             else:
                 logger.error(f"Database error: {error}")
                 return APIResponse.internal_error("Failed to update document tags")
-        
+
         logger.info(f"Successfully updated tags for document {document_id}")
         return APIResponse.success(updated_document, "Document tags updated successfully")
-        
+
     except Exception as e:
         logger.error(f"Unexpected error in update_document_tags: {str(e)}")
         return APIResponse.internal_error()
 
-@documents_bp.route('/unprocessed', methods=['GET'])
-def get_unprocessed_documents():
+@documents_router.get('/unprocessed')
+async def get_unprocessed_documents(request: Request, limit: int = Query(1)):
     """Get raw documents that haven't been processed yet"""
-    logger.info(f"GET /documents/unprocessed - Request from {request.remote_addr}")
-    
+    logger.info(f"GET /documents/unprocessed - Request from {request.client.host}")
+
     if not db_service:
         return APIResponse.internal_error("Database service not available")
-    
+
     try:
-        # Get query parameters
-        limit = request.args.get('limit', default=1, type=int)
-        
-        # Validate parameters
         if limit <= 0:
             return APIResponse.validation_error("Limit must be greater than 0")
         
-        # Get unprocessed documents
         unprocessed_docs, error = db_service.get_unprocessed_documents(limit)
-        
         if error:
             logger.error(f"Database error: {error}")
             return APIResponse.internal_error("Failed to retrieve unprocessed documents")
@@ -399,22 +405,19 @@ def get_unprocessed_documents():
         logger.error(f"Unexpected error in get_unprocessed_documents: {str(e)}")
         return APIResponse.internal_error()
 
-@documents_bp.route('/<int:document_id>/explanations', methods=['GET'])
-def get_document_explanations(document_id):
+@documents_router.get('/{document_id}/explanations')
+async def get_document_explanations(document_id: int, request: Request):
     """Get explanations for a specific document"""
-    logger.info(f"GET /documents/{document_id}/explanations - Request from {request.remote_addr}")
+    logger.info(f"GET /documents/{document_id}/explanations - Request from {request.client.host}")
 
     if not db_service:
         return APIResponse.internal_error("Database service not available")
 
     try:
-        # Get explanations for document
         explanations, error = db_service.get_explanations_for_document(document_id)
-
         if error:
             logger.error(f"Database error: {error}")
             return APIResponse.internal_error("Failed to retrieve explanations")
-
         if not explanations:
             return APIResponse.success([], "No explanations found for this document")
 
@@ -425,7 +428,7 @@ def get_document_explanations(document_id):
         logger.error(f"Unexpected error in get_document_explanations: {str(e)}")
         return APIResponse.internal_error()
 
-@documents_bp.route('/test', methods=['GET'])
-def test_route():
-    """Simple test route to verify blueprint works"""
+@documents_router.get('/test')
+async def test_route():
+    """Simple test route to verify router works"""
     return APIResponse.success({"test": "explanations route working"}, "Test successful")

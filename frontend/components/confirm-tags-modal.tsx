@@ -141,7 +141,7 @@ export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsMo
             Edit Document Tags
           </DialogTitle>
           <DialogDescription>
-            Review and edit AI-generated tags, or add your own custom tags to organize this document.
+            Review and edit AI/LLM-generated tags, or add your own custom tags to organize this document.
           </DialogDescription>
         </DialogHeader>
 
@@ -251,7 +251,7 @@ export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsMo
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-lg">
                       <Brain className="w-5 h-5 text-purple-600" />
-                      AI Suggested Tags
+                      AI/LLM Suggested Tags
                       <span className="text-xs font-normal text-gray-500 ml-auto">(Click to toggle)</span>
                     </CardTitle>
                   </CardHeader>

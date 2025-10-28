@@ -49,6 +49,25 @@ services:
       - text-extraction-service
     env_file:
       - .env
+    environment:
+      - AI_SERVICE_TIMEONE=120
+      - LLM_SERVICE_TIMEOUT=120
+
+  tag-service:
+    build: ./tag-service
+    ports:
+      - "5007:5007"
+    env_file:
+      - .env
+    environment:
+      # These must exist in your .env file
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5007/tags"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   text-extraction-service:
     build: ./text-extraction-service
@@ -58,6 +77,21 @@ services:
       - .env
     environment:
       - PORT=5008
+
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - company-service
+      - document-service
+      - s3-service
+      - ai-service
+      - llm-service
+      - prediction-service
+      - text-extraction-service
+    env_file:
+      - .env
 
   nginx:
     image: nginx:latest
@@ -72,4 +106,5 @@ services:
       - ai-service
       - llm-service
       - prediction-service
+      - tag-service
       - text-extraction-service

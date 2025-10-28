@@ -59,19 +59,72 @@ STEP-BY-STEP ANALYSIS:
 3. What is the purpose? (report facts, give investment advice, announce news)
 4. Which classification path above best matches?
 
-CRITICAL: Choose ONE exact path from the list above. Respond with ONLY this JSON:
+CONFIDENCE SCORING INSTRUCTIONS:
+Use these standardized confidence levels for ALL classifications (primary, secondary, tertiary):
 
+• Very Confident (0.85-1.0): Classification is unambiguous with clear, strong indicators
+• Confident (0.70-0.84): Strong indicators present with minor uncertainty
+• Moderately Confident (0.55-0.69): Some uncertainty, requires interpretation of context
+• Low Confidence (0.40-0.54): Significant uncertainty, limited clear indicators
+• Very Low Confidence (0.25-0.39): High uncertainty, ambiguous or conflicting signals
+
+CONFIDENCE FACTORS:
+Positive (+confidence): Clear terminology match, identifiable source, explicit purpose, matching structure
+Negative (-confidence): Ambiguous language, mixed signals, unclear source/purpose, atypical format
+
+CRITICAL: You may provide up to 2 classifications per level if appropriate (e.g., if document has dual nature or multiple strong themes).
+
+Respond with ONLY this JSON format:
+
+For SINGLE classification per level:
 {{
-    "primary": "EXACT_PRIMARY_NAME",
-    "secondary": "EXACT_SECONDARY_NAME",
-    "tertiary": "EXACT_TERTIARY_NAME",
-    "confidence_primary": 0.95,
-    "confidence_secondary": 0.90,
-    "confidence_tertiary": 0.85,
-    "reasoning": "Brief explanation of why this classification path was chosen"
+    "primary": [
+        {{
+            "tag": "EXACT_PRIMARY_NAME",
+            "confidence": 0.87,
+            "reasoning": "Why this specific primary classification is appropriate"
+        }}
+    ],
+    "secondary": [
+        {{
+            "tag": "EXACT_SECONDARY_NAME",
+            "confidence": 0.84,
+            "reasoning": "Why this specific secondary classification is appropriate"
+        }}
+    ],
+    "tertiary": [
+        {{
+            "tag": "EXACT_TERTIARY_NAME",
+            "confidence": 0.81,
+            "reasoning": "Why this specific tertiary classification is appropriate"
+        }}
+    ]
 }}
 
-Use ONLY the exact category names from the paths above. No variations."""
+For DUAL classification (when document truly fits 2 categories):
+{{
+    "primary": [
+        {{
+            "tag": "FIRST_PRIMARY",
+            "confidence": 0.88,
+            "reasoning": "Individual explanation for first classification"
+        }},
+        {{
+            "tag": "SECOND_PRIMARY",
+            "confidence": 0.82,
+            "reasoning": "Individual explanation for second classification"
+        }}
+    ],
+    "secondary": [...],
+    "tertiary": [...]
+}}
+
+RULES FOR MULTI-TAG:
+- Only provide 2 tags if document genuinely fits both categories
+- Each tag needs its own individual reasoning
+- Always return arrays, even for single tags
+
+Use ONLY the exact category names from the paths above. Apply confidence scoring standards consistently."""
         
         return prompt
     
@@ -110,17 +163,41 @@ DOCUMENT TO CLASSIFY:
 
 Given that this is a {primary} document, determine the most specific secondary and tertiary classification.
 
-CRITICAL: Choose ONE exact path from the list above. Respond with ONLY this JSON:
+CONFIDENCE SCORING INSTRUCTIONS:
+Use these standardized confidence levels:
 
+• Very Confident (0.85-1.0): Classification is unambiguous with clear, strong indicators
+• Confident (0.70-0.84): Strong indicators present with minor uncertainty
+• Moderately Confident (0.55-0.69): Some uncertainty, requires interpretation of context
+• Low Confidence (0.40-0.54): Significant uncertainty, limited clear indicators
+• Very Low Confidence (0.25-0.39): High uncertainty, ambiguous or conflicting signals
+
+CRITICAL: You may provide up to 2 classifications per level if appropriate.
+
+Respond with ONLY this JSON format (always use arrays):
 {{
-    "secondary": "EXACT_SECONDARY_NAME",
-    "tertiary": "EXACT_TERTIARY_NAME", 
-    "confidence_secondary": 0.90,
-    "confidence_tertiary": 0.85,
-    "reasoning": "Brief explanation of why this secondary/tertiary classification was chosen"
+    "secondary": [
+        {{
+            "tag": "EXACT_SECONDARY_NAME",
+            "confidence": 0.82,
+            "reasoning": "Why this specific secondary classification is appropriate"
+        }}
+    ],
+    "tertiary": [
+        {{
+            "tag": "EXACT_TERTIARY_NAME",
+            "confidence": 0.78,
+            "reasoning": "Why this specific tertiary classification is appropriate"
+        }}
+    ]
 }}
 
-Use ONLY the exact category names from the paths above."""
+RULES FOR MULTI-TAG:
+- Only provide 2 tags if document genuinely fits both categories
+- Each tag needs its own individual reasoning
+- Always return arrays, even for single tags
+
+Use ONLY the exact category names from the paths above. Apply confidence scoring standards consistently."""
         
         return prompt
     
@@ -155,14 +232,33 @@ DOCUMENT TO CLASSIFY:
 
 Given that this is a {primary} → {secondary} document, choose the most specific tertiary classification.
 
-CRITICAL: Choose ONE exact option from the list above. Respond with ONLY this JSON:
+CONFIDENCE SCORING INSTRUCTIONS:
+Use these standardized confidence levels:
 
+• Very Confident (0.85-1.0): Classification is unambiguous with clear, strong indicators
+• Confident (0.70-0.84): Strong indicators present with minor uncertainty
+• Moderately Confident (0.55-0.69): Some uncertainty, requires interpretation of context
+• Low Confidence (0.40-0.54): Significant uncertainty, limited clear indicators
+• Very Low Confidence (0.25-0.39): High uncertainty, ambiguous or conflicting signals
+
+CRITICAL: You may provide up to 2 classifications if appropriate.
+
+Respond with ONLY this JSON format (always use arrays):
 {{
-    "tertiary": "EXACT_TERTIARY_NAME",
-    "confidence_tertiary": 0.85,
-    "reasoning": "Brief explanation of why this tertiary classification was chosen"
+    "tertiary": [
+        {{
+            "tag": "EXACT_TERTIARY_NAME",
+            "confidence": 0.75,
+            "reasoning": "Why this specific tertiary classification is appropriate"
+        }}
+    ]
 }}
 
-Use ONLY the exact category names from the options above."""
+RULES FOR MULTI-TAG:
+- Only provide 2 tags if document genuinely fits both categories
+- Each tag needs its own individual reasoning
+- Always return arrays, even for single tags
+
+Use ONLY the exact category names from the options above. Apply confidence scoring standards consistently."""
         
         return prompt
