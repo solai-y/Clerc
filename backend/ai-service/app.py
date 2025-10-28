@@ -245,26 +245,28 @@ async def predict(request: PredictRequest) -> Any:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")
     elapsed = time.time() - t0
 
-    # Transform multi-class result to prediction service format
+    # Transform multi-class result to prediction service format (multi-label support)
     # The model returns: {'primary': [{label, confidence, key_evidence}, ...], 'secondary': [...], 'tertiary': [...]}
-    # Prediction service expects: {'primary': {pred, confidence, reasoning, key_evidence}, ...}
+    # Prediction service expects arrays: {'primary': [{label, confidence, key_evidence}, ...], ...}
 
     transformed_result = {}
 
     for level in ['primary', 'secondary', 'tertiary']:
         if level in raw_result and isinstance(raw_result[level], list) and len(raw_result[level]) > 0:
-            # Get the prediction with highest confidence for this level
-            top_prediction = max(raw_result[level], key=lambda x: x.get('confidence', 0))
+            # Return ALL predictions for multi-label support (not just top one)
+            predictions_for_level = []
 
-            transformed_result[level] = {
-                "pred": top_prediction.get('label', ''),
-                "confidence": top_prediction.get('confidence', 0.0),
-                "reasoning": f"AI model prediction (confidence: {top_prediction.get('confidence', 0.0):.2%})",
-                "key_evidence": top_prediction.get('key_evidence', {}),
-                # Include primary/secondary context for child levels
-                "primary": top_prediction.get('primary'),
-                "secondary": top_prediction.get('secondary'),
-            }
+            for pred in raw_result[level]:
+                predictions_for_level.append({
+                    "label": pred.get('label', ''),
+                    "confidence": pred.get('confidence', 0.0),
+                    "key_evidence": pred.get('key_evidence', {}),
+                    # Include primary/secondary context for child levels
+                    "primary": pred.get('primary'),
+                    "secondary": pred.get('secondary'),
+                })
+
+            transformed_result[level] = predictions_for_level
 
     # Include model_version if present in raw_result
     if 'model_version' in raw_result:

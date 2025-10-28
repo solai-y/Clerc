@@ -96,18 +96,24 @@ class TestPredictionFlow:
         assert data["confidence_analysis"]["trigger_level"] == "secondary"
         assert "secondary" in data["confidence_analysis"]["levels_below_threshold"]
         
-        # Verify final predictions
+        # Verify final predictions (now returns lists for multi-label support)
         # Primary should use AI (above threshold)
-        assert data["prediction"]["primary"]["source"] == "ai"
-        assert data["prediction"]["primary"]["pred"] == "News"
-        
+        assert isinstance(data["prediction"]["primary"], list), "primary should be a list"
+        assert len(data["prediction"]["primary"]) > 0, "primary should have at least one prediction"
+        assert data["prediction"]["primary"][0]["source"] == "ai"
+        assert data["prediction"]["primary"][0]["pred"] == "News"
+
         # Secondary should use LLM (below threshold)
-        assert data["prediction"]["secondary"]["source"] == "llm"
-        assert data["prediction"]["secondary"]["pred"] == "Technology"
-        
+        assert isinstance(data["prediction"]["secondary"], list), "secondary should be a list"
+        assert len(data["prediction"]["secondary"]) > 0, "secondary should have at least one prediction"
+        assert data["prediction"]["secondary"][0]["source"] == "llm"
+        assert data["prediction"]["secondary"][0]["pred"] == "Technology"
+
         # Tertiary should use LLM (child of triggered level)
-        assert data["prediction"]["tertiary"]["source"] == "llm"
-        assert data["prediction"]["tertiary"]["pred"] == "Management_Change"
+        assert isinstance(data["prediction"]["tertiary"], list), "tertiary should be a list"
+        assert len(data["prediction"]["tertiary"]) > 0, "tertiary should have at least one prediction"
+        assert data["prediction"]["tertiary"][0]["source"] == "llm"
+        assert data["prediction"]["tertiary"][0]["pred"] == "Management_Change"
     
     @pytest.mark.skip(reason="Async test with mocking requires services to be initialized")
     @pytest.mark.asyncio
