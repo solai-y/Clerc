@@ -6,15 +6,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react"
-import { apiClient } from "@/lib/api"
+import { apiClient, Document as ApiDocument } from "@/lib/api"
 import { HierarchyBasedConfirmTagsModal } from "./hierarchy-based-confirm-tags-modal"
 
-export interface Document {
+// Local simplified Document type for upload modal internal use
+interface LocalDocument {
   id: string
   name: string
   uploadDate: string
   tags: string[]
-  subtags: { [tagId: string]: string[] }
+  subtags?: { [tagId: string]: string[] }
   size: string
   status: string
   // optional for tag confirmation flow
@@ -25,7 +26,7 @@ export interface Document {
 interface UploadModalProps {
   isOpen: boolean
   onClose: () => void
-  onUploadComplete: (document: Document) => void
+  onUploadComplete: (document: ApiDocument) => void
 }
 
 function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
@@ -35,7 +36,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [showConfirmModal, setShowConfirmModal] = useState(false)
-  const [pendingDocument, setPendingDocument] = useState<Document | null>(null)
+  const [pendingDocument, setPendingDocument] = useState<LocalDocument | null>(null)
   const [predictionData, setPredictionData] = useState<any>(null)
   const [explanationData, setExplanationData] = useState<any[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -397,17 +398,12 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       setUploadProgress(90)
 
       // Step 5: Create frontend document object with real database data
-      const newDocument: Document = {
+      const newDocument: LocalDocument = {
         id: documentId.toString(),
         name: file.name,
         uploadDate: new Date().toISOString().split("T")[0],
         tags: extractedTags.map((t: any) => t.tag),
         size: formatFileSize(file.size),
-        type: file.type || "application/pdf",
-        link: s3Link || "",
-        company: null,
-        companyName: null,
-        uploaded_by: null,
         status: "processing",
         modelGeneratedTags: extractedTags.map((t: any) => ({
           tag: t.tag,
@@ -415,9 +411,6 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
           isConfirmed: false,
         })),
         userAddedTags: [],
-        primaryTags: [],
-        secondaryTags: [],
-        tertiaryTags: [],
       };
       
       setUploadProgress(100)
@@ -455,15 +448,27 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       // Extract tag names from the new JSONB structure for display
       const confirmedTagNames = confirmedTagsData.tags?.map((t: any) => t.tag) || []
 
-      // Update the document with confirmed tags
-      const finalDocument: Document = {
-        ...pendingDocument,
+      // Extract tags by hierarchy level
+      const primaryTags = confirmedTagsData.tags?.filter((t: any) => t.hierarchy_level === 'primary').map((t: any) => t.tag) || []
+      const secondaryTags = confirmedTagsData.tags?.filter((t: any) => t.hierarchy_level === 'secondary').map((t: any) => t.tag) || []
+      const tertiaryTags = confirmedTagsData.tags?.filter((t: any) => t.hierarchy_level === 'tertiary').map((t: any) => t.tag) || []
+
+      // Convert LocalDocument to ApiDocument with all required properties
+      const finalDocument: ApiDocument = {
+        id: pendingDocument.id,
+        name: pendingDocument.name,
+        uploadDate: pendingDocument.uploadDate,
         tags: confirmedTagNames,
-        modelGeneratedTags: pendingDocument.modelGeneratedTags?.map(tag => ({
-          ...tag,
-          isConfirmed: confirmedTagNames.includes(tag.tag)
-        })),
-        userAddedTags: [] // Not using user added tags in hierarchy-based system
+        size: pendingDocument.size,
+        type: "application/pdf", // Default type
+        link: "", // Will be populated from backend
+        company: null,
+        companyName: null,
+        uploaded_by: null,
+        status: "processing",
+        primaryTags: primaryTags,
+        secondaryTags: secondaryTags,
+        tertiaryTags: tertiaryTags,
       }
 
       // Update the backend with confirmed tags

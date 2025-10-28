@@ -53,6 +53,22 @@ services:
       - AI_SERVICE_TIMEONE=120
       - LLM_SERVICE_TIMEOUT=120
 
+  tag-service:
+    build: ./tag-service
+    ports:
+      - "5007:5007"
+    env_file:
+      - .env
+    environment:
+      # These must exist in your .env file
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5007/tags"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
   text-extraction-service:
     build: ./text-extraction-service
     ports:
@@ -101,5 +117,6 @@ services:
       - ai-service
       - llm-service
       - prediction-service
+      - tag-service
       - text-extraction-service
       - retraining-service

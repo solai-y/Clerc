@@ -78,7 +78,7 @@ export function HierarchyBasedConfirmTagsModal({
   useEffect(() => {
     const loadHierarchy = async () => {
       try {
-        const response = await fetch('/hierarchy.json')
+        const response = await fetch('/api/tags')
         const data = await response.json()
         setHierarchy(data)
       } catch (error) {

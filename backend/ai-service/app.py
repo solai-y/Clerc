@@ -14,8 +14,8 @@ from pydantic import BaseModel
 import joblib
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
-# Import your wrapper class + loader
-from train import build_best_model
+# Import train module (not specific function) so monkeypatching works in tests
+import train
 
 MODELS_DIR = Path("models_hier")
 PRIMARY_MODEL_PATH = MODELS_DIR / "primary.joblib"
@@ -206,7 +206,7 @@ except Exception as e:
 # Load models after ensuring they exist
 if BEST_MODEL_PATH.exists() or PRIMARY_MODEL_PATH.exists():
     try:
-        best_model = build_best_model(MODELS_DIR)
+        best_model = train.build_best_model(MODELS_DIR)
     except Exception as e:
         print(f"Failed to load models: {e}")
 else:
@@ -279,6 +279,57 @@ async def predict(request: PredictRequest) -> Any:
     }
 
 
+@app.get("/training/validate")
+def validate_training_data() -> Any:
+    """
+    Validate that training data meets minimum requirements before retraining.
+    Returns validation status and tag statistics.
+    """
+    import pandas as pd
+
+    try:
+        # Read training data
+        df = pd.read_csv("./training_data_text.csv")
+        df = df.dropna(subset=["text"]).reset_index(drop=True)
+
+        # Count documents per tag at each level
+        from collections import defaultdict
+
+        primary_counts = df["primary"].value_counts().to_dict()
+        secondary_counts = df["secondary"].value_counts().to_dict()
+        tertiary_counts = df["tertiary"].value_counts().to_dict()
+
+        # Check if any tag has fewer than 10 documents
+        MIN_DOCS = 10
+        invalid_tags = []
+
+        for tag, count in primary_counts.items():
+            if count < MIN_DOCS:
+                invalid_tags.append({"level": "primary", "tag": tag, "count": count, "required": MIN_DOCS})
+
+        for tag, count in secondary_counts.items():
+            if count < MIN_DOCS:
+                invalid_tags.append({"level": "secondary", "tag": tag, "count": count, "required": MIN_DOCS})
+
+        for tag, count in tertiary_counts.items():
+            if count < MIN_DOCS:
+                invalid_tags.append({"level": "tertiary", "tag": tag, "count": count, "required": MIN_DOCS})
+
+        is_valid = len(invalid_tags) == 0
+
+        return {
+            "valid": is_valid,
+            "total_documents": len(df),
+            "primary_tags": primary_counts,
+            "secondary_tags": secondary_counts,
+            "tertiary_tags": tertiary_counts,
+            "invalid_tags": invalid_tags,
+            "message": "Training data is valid" if is_valid else f"Found {len(invalid_tags)} tags with fewer than {MIN_DOCS} documents"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to validate training data: {e}")
+
+
 @app.post("/rebuild", status_code=202)
 def rebuild() -> Any:
     """
@@ -295,13 +346,14 @@ def rebuild() -> Any:
             t0 = time.time()
             # retrain (this runs train.py and saves to models_hier/)
             subprocess.run(["python", "train.py"], check=True)
-            # load new model
-            new_model = build_best_model(MODELS_DIR)
+            # load new model - use train.build_best_model so test monkeypatching works
+            new_model = train.build_best_model(MODELS_DIR)
             # atomic swap
             with _model_swap_lock:
                 best_model = new_model
             elapsed = time.time() - t0
-            print(f"Rebuild complete in {elapsed:.2f}s")
+            model_version = getattr(new_model, "version", "unknown")
+            print(f"Rebuild complete in {elapsed:.2f}s - swapped to model version: {model_version}")
         except Exception as e:
             print(f"Rebuild failed: {e}")
         finally:
