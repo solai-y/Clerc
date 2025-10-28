@@ -50,13 +50,6 @@ class UpdateTagsRequest(BaseModel):
     document_id: int = Field(..., description="Document ID")
     confirmed_tags: ConfirmedTags = Field(..., description="Confirmed tag hierarchies")
 
-class HierarchyInfo(BaseModel):
-    retraining_id: int
-    hierarchy: str
-    primary_tag_id: int
-    secondary_tag_id: int
-    tertiary_tag_id: int
-
 class TagHierarchyDetail(BaseModel):
     id: Optional[int]
     name: Optional[str]
@@ -66,7 +59,9 @@ class RetrainingDataRow(BaseModel):
     document_id: int
     text_preview: str
     text_length: int
-    hierarchy: Dict[str, TagHierarchyDetail]
+    primary_tags: List[TagHierarchyDetail]
+    secondary_tags: List[TagHierarchyDetail]
+    tertiary_tags: List[TagHierarchyDetail]
     created_at: Optional[str]
     updated_at: Optional[str]
 
@@ -203,7 +198,7 @@ async def update_tags(request: UpdateTagsRequest):
     """
     Update retraining data with confirmed tags (called after tag confirmation)
 
-    This will create multiple rows if there are multiple valid tag hierarchies.
+    Stores multiple tags per level as arrays - no hierarchy building required.
     """
     try:
         logger.info(f"Received update-tags request for document_id: {request.document_id}")
@@ -219,8 +214,6 @@ async def update_tags(request: UpdateTagsRequest):
 
         if not response.data or len(response.data) == 0:
             logger.warning(f"No existing retraining data found for document {request.document_id}, will create new entry")
-            # If no existing data, we'll need the text from somewhere else
-            # For now, we'll raise an error but with a more helpful message
             raise HTTPException(
                 status_code=404,
                 detail=f'Document text not found for document_id {request.document_id} - Must call /store-text before updating tags'
@@ -272,142 +265,72 @@ async def update_tags(request: UpdateTagsRequest):
                         else:
                             logger.warning(f"Could not find tag '{unmatched}' even with fuzzy matching")
 
-        # Build hierarchies from confirmed tags
-        # Simply use the tags as they are confirmed by the user
-        valid_hierarchies = []
-
-        # Get primary, secondary, tertiary tag IDs
-        primary_tag_ids = {}
-        secondary_tag_ids = {}
-        tertiary_tag_ids = {}
+        # Build tag ID arrays for each level
+        primary_tag_ids = []
+        secondary_tag_ids = []
+        tertiary_tag_ids = []
 
         for tag in primary_tags:
             tag_id = tag_lookup.get(tag.tag)
             if tag_id:
-                primary_tag_ids[tag.tag] = tag_id
+                primary_tag_ids.append(tag_id)
             else:
                 logger.warning(f"Primary tag '{tag.tag}' not found in tags table")
 
         for tag in secondary_tags:
             tag_id = tag_lookup.get(tag.tag)
             if tag_id:
-                secondary_tag_ids[tag.tag] = tag_id
+                secondary_tag_ids.append(tag_id)
             else:
                 logger.warning(f"Secondary tag '{tag.tag}' not found in tags table")
 
         for tag in tertiary_tags:
             tag_id = tag_lookup.get(tag.tag)
             if tag_id:
-                tertiary_tag_ids[tag.tag] = tag_id
+                tertiary_tag_ids.append(tag_id)
             else:
                 logger.warning(f"Tertiary tag '{tag.tag}' not found in tags table")
 
-        # Build valid hierarchies by tracing parent relationships from tertiary tags
-        # Each tertiary tag traces up to its secondary parent, then to primary parent
-        # This ensures we only store hierarchies that match the database structure
-
-        valid_hierarchies = []
-
-        # Start from tertiary tags and trace upward
-        for tertiary_name, tertiary_id in tertiary_tag_ids.items():
-            # Get the tertiary tag's parent (secondary)
-            tertiary_response = supabase.table('tags').select('parent_id').eq('id', tertiary_id).execute()
-
-            if not tertiary_response.data or not tertiary_response.data[0].get('parent_id'):
-                logger.warning(f"Tertiary tag '{tertiary_name}' (id={tertiary_id}) has no parent, skipping")
-                continue
-
-            secondary_id = tertiary_response.data[0]['parent_id']
-
-            # Get the secondary tag's name and parent (primary)
-            secondary_response = supabase.table('tags').select('id, tag_name, parent_id').eq('id', secondary_id).execute()
-
-            if not secondary_response.data:
-                logger.warning(f"Secondary tag id={secondary_id} not found, skipping")
-                continue
-
-            secondary_row = secondary_response.data[0]
-            secondary_name = secondary_row['tag_name']
-
-            # Check if this secondary was in the confirmed tags
-            if secondary_name not in secondary_tag_ids:
-                logger.warning(f"Secondary tag '{secondary_name}' traced from '{tertiary_name}' was not in confirmed tags, skipping")
-                continue
-
-            primary_id = secondary_row.get('parent_id')
-
-            if not primary_id:
-                logger.warning(f"Secondary tag '{secondary_name}' (id={secondary_id}) has no parent, skipping")
-                continue
-
-            # Get the primary tag's name
-            primary_response = supabase.table('tags').select('tag_name').eq('id', primary_id).execute()
-
-            if not primary_response.data:
-                logger.warning(f"Primary tag id={primary_id} not found, skipping")
-                continue
-
-            primary_name = primary_response.data[0]['tag_name']
-
-            # Check if this primary was in the confirmed tags
-            if primary_name not in primary_tag_ids:
-                logger.warning(f"Primary tag '{primary_name}' traced from '{secondary_name}' → '{tertiary_name}' was not in confirmed tags, skipping")
-                continue
-
-            # Valid hierarchy found!
-            hierarchy_display = f"{primary_name} → {secondary_name} → {tertiary_name}"
-            valid_hierarchies.append({
-                'primary_id': primary_id,
-                'secondary_id': secondary_id,
-                'tertiary_id': tertiary_id,
-                'primary_name': primary_name,
-                'secondary_name': secondary_name,
-                'tertiary_name': tertiary_name
-            })
-            logger.info(f"Valid hierarchy: {hierarchy_display}")
-
-        if not valid_hierarchies:
+        # Check if we found any valid tags
+        if not primary_tag_ids and not secondary_tag_ids and not tertiary_tag_ids:
             logger.warning(f"No tags found in database for document {request.document_id}")
             raise HTTPException(
                 status_code=400,
                 detail='No valid tags found in database - Make sure confirmed tags exist in the tags table'
             )
 
-        # Delete old rows for this document ONLY AFTER we successfully built new hierarchies
-        # This ensures we don't lose data if hierarchy building fails
+        # Delete old rows for this document
         supabase.table('retraining_data').delete().eq('document_id', request.document_id).execute()
         logger.info(f"Deleted old retraining rows for document {request.document_id}")
 
-        # Insert rows for each valid hierarchy
-        inserted_rows = []
-        for hierarchy in valid_hierarchies:
-            insert_response = supabase.table('retraining_data').insert({
-                'document_id': request.document_id,
-                'document_text': document_text,
-                'primary_tag_id': hierarchy['primary_id'],
-                'secondary_tag_id': hierarchy['secondary_id'],
-                'tertiary_tag_id': hierarchy['tertiary_id']
-            }).execute()
+        # Insert single row with tag arrays
+        insert_response = supabase.table('retraining_data').insert({
+            'document_id': request.document_id,
+            'document_text': document_text,
+            'primary_tag_ids': primary_tag_ids if primary_tag_ids else None,
+            'secondary_tag_ids': secondary_tag_ids if secondary_tag_ids else None,
+            'tertiary_tag_ids': tertiary_tag_ids if tertiary_tag_ids else None
+        }).execute()
 
-            if insert_response.data and len(insert_response.data) > 0:
-                result = insert_response.data[0]
-                inserted_rows.append({
-                    'retraining_id': result['id'],
-                    'hierarchy': f"{hierarchy['primary_name']} → {hierarchy['secondary_name']} → {hierarchy['tertiary_name']}",
-                    'primary_tag_id': result['primary_tag_id'],
-                    'secondary_tag_id': result['secondary_tag_id'],
-                    'tertiary_tag_id': result['tertiary_tag_id']
-                })
+        if not insert_response.data or len(insert_response.data) == 0:
+            raise HTTPException(status_code=500, detail='Failed to insert retraining data')
 
-        logger.info(f"Successfully inserted {len(inserted_rows)} retraining rows for document {request.document_id}")
+        result = insert_response.data[0]
+        logger.info(f"Successfully inserted retraining row for document {request.document_id}")
+        logger.info(f"Tags stored - Primary: {len(primary_tag_ids)}, Secondary: {len(secondary_tag_ids)}, Tertiary: {len(tertiary_tag_ids)}")
 
         return APIResponse(
             status="success",
-            message=f"Updated retraining data with {len(inserted_rows)} tag hierarchies",
+            message=f"Updated retraining data with tags",
             data={
+                'retraining_id': result['id'],
                 'document_id': request.document_id,
-                'hierarchies_count': len(inserted_rows),
-                'hierarchies': inserted_rows
+                'primary_tag_count': len(primary_tag_ids),
+                'secondary_tag_count': len(secondary_tag_ids),
+                'tertiary_tag_count': len(tertiary_tag_ids),
+                'primary_tag_ids': primary_tag_ids,
+                'secondary_tag_ids': secondary_tag_ids,
+                'tertiary_tag_ids': tertiary_tag_ids
             }
         )
 
@@ -434,12 +357,12 @@ async def get_retraining_data(document_id: int):
         # Get tag names for all tag IDs in the results
         tag_ids = set()
         for row in response.data:
-            if row.get('primary_tag_id'):
-                tag_ids.add(row['primary_tag_id'])
-            if row.get('secondary_tag_id'):
-                tag_ids.add(row['secondary_tag_id'])
-            if row.get('tertiary_tag_id'):
-                tag_ids.add(row['tertiary_tag_id'])
+            if row.get('primary_tag_ids'):
+                tag_ids.update(row['primary_tag_ids'])
+            if row.get('secondary_tag_ids'):
+                tag_ids.update(row['secondary_tag_ids'])
+            if row.get('tertiary_tag_ids'):
+                tag_ids.update(row['tertiary_tag_ids'])
 
         # Fetch all tag names in one query
         tag_names = {}
@@ -452,25 +375,29 @@ async def get_retraining_data(document_id: int):
         data = []
         for row in response.data:
             text = row.get('document_text', '')
+
+            # Build tag lists with names
+            primary_tags = [
+                {'id': tag_id, 'name': tag_names.get(tag_id)}
+                for tag_id in (row.get('primary_tag_ids') or [])
+            ]
+            secondary_tags = [
+                {'id': tag_id, 'name': tag_names.get(tag_id)}
+                for tag_id in (row.get('secondary_tag_ids') or [])
+            ]
+            tertiary_tags = [
+                {'id': tag_id, 'name': tag_names.get(tag_id)}
+                for tag_id in (row.get('tertiary_tag_ids') or [])
+            ]
+
             data.append({
                 'id': row['id'],
                 'document_id': row['document_id'],
                 'text_preview': text[:200] + '...' if len(text) > 200 else text,
                 'text_length': len(text),
-                'hierarchy': {
-                    'primary': {
-                        'id': row.get('primary_tag_id'),
-                        'name': tag_names.get(row.get('primary_tag_id'))
-                    },
-                    'secondary': {
-                        'id': row.get('secondary_tag_id'),
-                        'name': tag_names.get(row.get('secondary_tag_id'))
-                    },
-                    'tertiary': {
-                        'id': row.get('tertiary_tag_id'),
-                        'name': tag_names.get(row.get('tertiary_tag_id'))
-                    }
-                },
+                'primary_tags': primary_tags,
+                'secondary_tags': secondary_tags,
+                'tertiary_tags': tertiary_tags,
                 'created_at': row.get('created_at'),
                 'updated_at': row.get('updated_at')
             })
@@ -490,7 +417,7 @@ async def get_stats():
     """Get statistics about retraining data"""
     try:
         # Fetch all retraining data (select only needed fields for efficiency)
-        response = supabase.table('retraining_data').select('document_id, primary_tag_id, document_text').execute()
+        response = supabase.table('retraining_data').select('document_id, primary_tag_ids, secondary_tag_ids, tertiary_tag_ids, document_text').execute()
 
         if not response.data:
             return APIResponse(
@@ -507,7 +434,10 @@ async def get_stats():
         # Calculate statistics
         total_rows = len(response.data)
         unique_documents = len(set(row['document_id'] for row in response.data))
-        rows_with_tags = sum(1 for row in response.data if row.get('primary_tag_id') is not None)
+        rows_with_tags = sum(1 for row in response.data
+                            if (row.get('primary_tag_ids') and len(row['primary_tag_ids']) > 0) or
+                               (row.get('secondary_tag_ids') and len(row['secondary_tag_ids']) > 0) or
+                               (row.get('tertiary_tag_ids') and len(row['tertiary_tag_ids']) > 0))
 
         # Calculate average text length
         text_lengths = [len(row.get('document_text', '')) for row in response.data]

@@ -55,7 +55,8 @@
       "Bash(docker restart:*)",
       "Bash(docker ps:*)",
       "Bash(git checkout:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "Bash(docker network prune:*)"
     ],
     "deny": []
   }

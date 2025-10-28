@@ -47,7 +47,7 @@ const nextConfig = {
       { source: "/api/retraining", destination: `${BACKEND_ORIGIN}/retraining` },
       { source: "/api/retraining/:path*", destination: `${BACKEND_ORIGIN}/retraining/:path*` },
 
-      //Tag Taxonomy service
+      // Tag Taxonomy service
       { source: "/api/tags", destination: `${TAGS_ORIGIN}/tags` },
       { source: "/api/tags/:path*", destination: `${TAGS_ORIGIN}/tags/:path*` },
     ];

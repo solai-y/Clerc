@@ -129,20 +129,10 @@ class APIClient {
 
     const url = apiUrl(`/documents${params.toString() ? `?${params}` : ""}`);
 
-    console.log("[api] GET /documents with params:", {
-      ...options,
-      finalUrl: url
-    });
-
     const responseData = await this.fetchWithErrorHandling<{
       documents: BackendProcessedDocument[];
       pagination: { total: number; page: number; totalPages: number; limit: number; offset: number };
     }>(url);
-
-    console.log("[api] GET /documents response:", {
-      returned: responseData.documents?.length ?? 0,
-      pagination: responseData.pagination
-    });
 
     return responseData;
   }
@@ -496,12 +486,8 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     const tagsArray = confirmedTagsObj.confirmed_tags?.tags;
     if (!Array.isArray(tagsArray)) return [];
 
-    console.log('🆕 [API Transform] Found tags array:', tagsArray);
-
     // Process hierarchical tags from JSONB format - now supporting multiple tags per level
     tagsArray.forEach((tagObj: any) => {
-      console.log('🔍 [API Transform] Processing tag object:', tagObj);
-
       const tagData = {
         tag: tagObj.tag,
         source: tagObj.source || 'unknown',
@@ -510,13 +496,10 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
 
       if (tagObj.level === 'primary') {
         primaryTags.push(tagData);
-        console.log('🔵 [API Transform] Added primary tag:', tagData);
       } else if (tagObj.level === 'secondary') {
         secondaryTags.push(tagData);
-        console.log('🟢 [API Transform] Added secondary tag:', tagData);
       } else if (tagObj.level === 'tertiary') {
         tertiaryTags.push(tagData);
-        console.log('🟠 [API Transform] Added tertiary tag:', tagData);
       }
     });
 
@@ -544,16 +527,6 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     if (!tags.includes(ct)) tags.push(ct);
   });
 
-  console.log('📊 [API Transform] Final tag processing results:', {
-    document_id: processedDoc.document_id,
-    legacy_tags: tags,
-    primaryTags,
-    secondaryTags,
-    tertiaryTags,
-    userAddedTags,
-    modelGeneratedTags: modelGeneratedTags.length
-  });
-
   const sizeEstimate = processedDoc.raw_documents?.file_size
     ? formatFileSize(processedDoc.raw_documents.file_size)
     : "Size unavailable";
@@ -577,16 +550,6 @@ export function transformBackendDocument(processedDoc: BackendProcessedDocument)
     secondaryTags,
     tertiaryTags,
   };
-
-  console.log('✅ [API Transform] Transformed document:', {
-    id: transformedDocument.id,
-    name: transformedDocument.name,
-    tags: transformedDocument.tags,
-    primaryTags: transformedDocument.primaryTags,
-    secondaryTags: transformedDocument.secondaryTags,
-    tertiaryTags: transformedDocument.tertiaryTags,
-    userAddedTags: transformedDocument.userAddedTags
-  });
 
   return transformedDocument;
 }
