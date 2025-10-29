@@ -149,6 +149,7 @@ def get_tags() -> Dict[str, Dict[str, List[str]]]:
     """
     tags = fetch_all_tags()
     return build_hierarchy(tags)
+    
 
 @app.post("/tags", status_code=201)
 def add_tag(body: AddTagIn) -> dict:
@@ -221,3 +222,18 @@ def delete_tag(tag_id: int) -> dict:
     if not res.data:
         raise HTTPException(status_code=404, detail="Tag not found")
     return {"message": "Tag deleted"}
+
+
+@app.get("/e2e")
+def e2e_test():
+    """
+    Simple endpoint to test connectivity to Supabase and service health.
+    Returns count of tags or error message if connection fails.
+    """
+    try:
+        res = sb.table("tags").select("id").limit(1).execute()
+        if res.data is None:
+            return {"status": "fail", "message": "No data returned from Supabase"}
+        return {"status": "success", "message": "Connected to Supabase", "tag_sample_count": len(res.data)}
+    except Exception as e:
+        return {"status": "error", "message": f"Supabase connection failed: {str(e)}"}
