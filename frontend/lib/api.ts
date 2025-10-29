@@ -424,6 +424,7 @@ class APIClient {
     const msg = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: Failed to connect to API ${msg.slice(0, 200)}`);
   }
+  const data = await res.json();
   return data as { status: string; message: string; tag_sample_count?: number };
 }
 

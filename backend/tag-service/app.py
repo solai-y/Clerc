@@ -147,8 +147,11 @@ def get_tags() -> Dict[str, Dict[str, List[str]]]:
     Returns the full 3-level hierarchy:
     { "Disclosure": { "SEC_Filings": ["10-K", "S-1"], ... }, ... }
     """
-    tags = fetch_all_tags()
-    return build_hierarchy(tags)
+    try:
+        tags = fetch_all_tags()
+        return build_hierarchy(tags)
+    except Exception as e:
+        return {"error": str(e)}
     
 
 @app.post("/tags", status_code=201)

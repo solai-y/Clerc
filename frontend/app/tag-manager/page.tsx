@@ -6,7 +6,7 @@ import { TagProvider } from "@/contexts/tag-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertCircle } from "lucide-react";
 import { UserMenu } from '@/components/auth/user-menu';
-import { ArrowLeft, Settings, BookOpen } from 'lucide-react';
+import { ArrowLeft, Settings, BookOpen, Brain } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/auth-context';
@@ -69,6 +69,15 @@ export default function TagsManagerPage() {
                 <Settings className="w-4 h-4" />
                 <span>Confidence Config</span>
               </Button>
+              <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/admin/model-retrain')}
+              className="flex items-center gap-2"
+            >
+              <Brain className="w-4 h-4" />
+              <span>Model Retrain</span>
+            </Button>
               {authLoading ? (
                 <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full" />
               ) : user ? (
