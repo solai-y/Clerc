@@ -417,7 +417,10 @@ class APIClient {
   console.log("[api] GET /tags:", {
       finalUrl: url
     });    
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, { 
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store" });
     console.log(res);
     if (!res.ok) {
       const msg = await res.text().catch(() => "");
