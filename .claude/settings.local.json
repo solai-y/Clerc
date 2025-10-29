@@ -56,7 +56,8 @@
       "Bash(docker ps:*)",
       "Bash(git checkout:*)",
       "Bash(tee:*)",
-      "Bash(docker network prune:*)"
+      "Bash(docker network prune:*)",
+      "Read(//tmp/**)"
     ],
     "deny": []
   }

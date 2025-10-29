@@ -56,25 +56,25 @@ COMMENT ON COLUMN public.retraining_data.primary_tag_ids IS 'Array of primary cl
 COMMENT ON COLUMN public.retraining_data.secondary_tag_ids IS 'Array of secondary classification tag IDs from tags table';
 COMMENT ON COLUMN public.retraining_data.tertiary_tag_ids IS 'Array of tertiary classification tag IDs from tags table';
 
--- Migration script (run this if you have existing data)
--- ALTER TABLE public.retraining_data
---   DROP CONSTRAINT IF EXISTS retraining_data_primary_tag_fkey,
---   DROP CONSTRAINT IF EXISTS retraining_data_secondary_tag_fkey,
---   DROP CONSTRAINT IF EXISTS retraining_data_tertiary_tag_fkey;
---
--- ALTER TABLE public.retraining_data
---   ALTER COLUMN primary_tag_id TYPE INTEGER[] USING CASE WHEN primary_tag_id IS NULL THEN NULL ELSE ARRAY[primary_tag_id] END,
---   ALTER COLUMN secondary_tag_id TYPE INTEGER[] USING CASE WHEN secondary_tag_id IS NULL THEN NULL ELSE ARRAY[secondary_tag_id] END,
---   ALTER COLUMN tertiary_tag_id TYPE INTEGER[] USING CASE WHEN tertiary_tag_id IS NULL THEN NULL ELSE ARRAY[tertiary_tag_id] END;
---
--- ALTER TABLE public.retraining_data
---   RENAME COLUMN primary_tag_id TO primary_tag_ids;
--- ALTER TABLE public.retraining_data
---   RENAME COLUMN secondary_tag_id TO secondary_tag_ids;
--- ALTER TABLE public.retraining_data
---   RENAME COLUMN tertiary_tag_id TO tertiary_tag_ids;
---
--- DROP INDEX IF EXISTS idx_retraining_data_tags;
--- CREATE INDEX idx_retraining_data_primary_tags ON public.retraining_data USING GIN (primary_tag_ids);
--- CREATE INDEX idx_retraining_data_secondary_tags ON public.retraining_data USING GIN (secondary_tag_ids);
--- CREATE INDEX idx_retraining_data_tertiary_tags ON public.retraining_data USING GIN (tertiary_tag_ids);
+Migration script (run this if you have existing data)
+ALTER TABLE public.retraining_data
+  DROP CONSTRAINT IF EXISTS retraining_data_primary_tag_fkey,
+  DROP CONSTRAINT IF EXISTS retraining_data_secondary_tag_fkey,
+  DROP CONSTRAINT IF EXISTS retraining_data_tertiary_tag_fkey;
+
+ALTER TABLE public.retraining_data
+  ALTER COLUMN primary_tag_id TYPE INTEGER[] USING CASE WHEN primary_tag_id IS NULL THEN NULL ELSE ARRAY[primary_tag_id] END,
+  ALTER COLUMN secondary_tag_id TYPE INTEGER[] USING CASE WHEN secondary_tag_id IS NULL THEN NULL ELSE ARRAY[secondary_tag_id] END,
+  ALTER COLUMN tertiary_tag_id TYPE INTEGER[] USING CASE WHEN tertiary_tag_id IS NULL THEN NULL ELSE ARRAY[tertiary_tag_id] END;
+
+ALTER TABLE public.retraining_data
+  RENAME COLUMN primary_tag_id TO primary_tag_ids;
+ALTER TABLE public.retraining_data
+  RENAME COLUMN secondary_tag_id TO secondary_tag_ids;
+ALTER TABLE public.retraining_data
+  RENAME COLUMN tertiary_tag_id TO tertiary_tag_ids;
+
+DROP INDEX IF EXISTS idx_retraining_data_tags;
+CREATE INDEX idx_retraining_data_primary_tags ON public.retraining_data USING GIN (primary_tag_ids);
+CREATE INDEX idx_retraining_data_secondary_tags ON public.retraining_data USING GIN (secondary_tag_ids);
+CREATE INDEX idx_retraining_data_tertiary_tags ON public.retraining_data USING GIN (tertiary_tag_ids);

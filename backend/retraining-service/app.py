@@ -458,6 +458,145 @@ async def get_stats():
         logger.error(f"Failed to get stats: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+@app.get("/retraining/export-csv")
+async def export_csv():
+    """
+    Export retraining data as CSV with hierarchical tag structure.
+    Each row represents a valid hierarchy path (primary -> secondary -> tertiary).
+    """
+    try:
+        from fastapi.responses import StreamingResponse
+        import csv
+        import io
+        from typing import Set, Tuple
+
+        # Fetch all retraining data
+        response = supabase.table('retraining_data').select('*').execute()
+
+        if not response.data or len(response.data) == 0:
+            raise HTTPException(status_code=404, detail='No retraining data found')
+
+        # Collect all unique tag IDs
+        all_tag_ids = set()
+        for row in response.data:
+            if row.get('primary_tag_ids'):
+                all_tag_ids.update(row['primary_tag_ids'])
+            if row.get('secondary_tag_ids'):
+                all_tag_ids.update(row['secondary_tag_ids'])
+            if row.get('tertiary_tag_ids'):
+                all_tag_ids.update(row['tertiary_tag_ids'])
+
+        # Fetch ALL tag data (we need parent_id info for tags not in the confirmed lists)
+        tag_data = {}
+        tags_response = supabase.table('tags').select('id, tag_name, parent_id').execute()
+        if tags_response.data:
+            tag_data = {tag['id']: {'name': tag['tag_name'], 'parent_id': tag['parent_id']} for tag in tags_response.data}
+
+        # Helper function to find parent in hierarchy
+        def find_parent_in_list(tag_id: int, tag_ids_list: list) -> int | None:
+            """Find if the parent of tag_id exists in tag_ids_list"""
+            if tag_id not in tag_data:
+                return None
+            parent_id = tag_data[tag_id].get('parent_id')
+            if parent_id and parent_id in tag_ids_list:
+                return parent_id
+            return None
+
+        def find_grandparent_in_list(tag_id: int, tag_ids_list: list) -> int | None:
+            """Find if the grandparent of tag_id exists in tag_ids_list"""
+            if tag_id not in tag_data:
+                return None
+            parent_id = tag_data[tag_id].get('parent_id')
+            if not parent_id or parent_id not in tag_data:
+                return None
+            grandparent_id = tag_data[parent_id].get('parent_id')
+            if grandparent_id and grandparent_id in tag_ids_list:
+                return grandparent_id
+            return None
+
+        # Build CSV in memory
+        output = io.StringIO()
+        csv_writer = csv.writer(output)
+        csv_writer.writerow(['document_id', 'document_text', 'primary_tag', 'secondary_tag', 'tertiary_tag'])
+
+        for row in response.data:
+            document_id = row.get('document_id', '')
+            document_text = row.get('document_text', '')
+            primary_ids = row.get('primary_tag_ids') or []
+            secondary_ids = row.get('secondary_tag_ids') or []
+            tertiary_ids = row.get('tertiary_tag_ids') or []
+
+            # Track which tags have been used to avoid duplicates
+            used_combinations: Set[Tuple[int | None, int | None, int | None]] = set()
+
+            # 1. Start from tertiary tags and trace upward
+            for tertiary_id in tertiary_ids:
+                secondary_id = find_parent_in_list(tertiary_id, secondary_ids)
+                primary_id = None
+
+                if secondary_id:
+                    # Found matching secondary, now find primary
+                    primary_id = find_parent_in_list(secondary_id, primary_ids)
+                else:
+                    # Secondary not in list, check if grandparent (primary) is in list
+                    primary_id = find_grandparent_in_list(tertiary_id, primary_ids)
+
+                # Build the row
+                primary_name = tag_data[primary_id]['name'] if primary_id and primary_id in tag_data else None
+                secondary_name = tag_data[secondary_id]['name'] if secondary_id and secondary_id in tag_data else None
+                tertiary_name = tag_data[tertiary_id]['name'] if tertiary_id in tag_data else None
+
+                combination = (primary_id, secondary_id, tertiary_id)
+                if combination not in used_combinations:
+                    csv_writer.writerow([document_id, document_text, primary_name or '', secondary_name or '', tertiary_name or ''])
+                    used_combinations.add(combination)
+
+            # 2. Process secondary tags that weren't traced from tertiary
+            for secondary_id in secondary_ids:
+                # Check if this secondary was already used
+                already_used = any(combo[1] == secondary_id for combo in used_combinations)
+                if already_used:
+                    continue
+
+                # Find its primary parent
+                primary_id = find_parent_in_list(secondary_id, primary_ids)
+
+                primary_name = tag_data[primary_id]['name'] if primary_id and primary_id in tag_data else None
+                secondary_name = tag_data[secondary_id]['name'] if secondary_id in tag_data else None
+
+                combination = (primary_id, secondary_id, None)
+                if combination not in used_combinations:
+                    csv_writer.writerow([document_id, document_text, primary_name or '', secondary_name or '', ''])
+                    used_combinations.add(combination)
+
+            # 3. Process primary tags that weren't traced at all
+            for primary_id in primary_ids:
+                # Check if this primary was already used
+                already_used = any(combo[0] == primary_id for combo in used_combinations)
+                if already_used:
+                    continue
+
+                primary_name = tag_data[primary_id]['name'] if primary_id in tag_data else None
+
+                combination = (primary_id, None, None)
+                if combination not in used_combinations:
+                    csv_writer.writerow([document_id, document_text, primary_name or '', '', ''])
+                    used_combinations.add(combination)
+
+        # Prepare the CSV for download
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=retraining_data.csv"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to export CSV: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
