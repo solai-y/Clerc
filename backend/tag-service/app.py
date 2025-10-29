@@ -224,7 +224,7 @@ def delete_tag(tag_id: int) -> dict:
     return {"message": "Tag deleted"}
 
 
-@app.get("/e2e")
+@app.get("/tags/e2e")
 def e2e_test():
     """
     Simple endpoint to test connectivity to Supabase and service health.
