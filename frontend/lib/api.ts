@@ -412,6 +412,24 @@ class APIClient {
 
   // ======================= TAG SERVICE (NEW) =======================
   // Always fetch from backend tag-service via Next.js rewrite; no JSON fallback.
+  async checkApiConnection(): Promise<{ status: string; message: string; tag_sample_count?: number }> {
+  const url = apiUrl("/tags/e2e");
+  const res = await fetch(url, { 
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store" 
+  });
+
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}: Failed to connect to API ${msg.slice(0, 200)}`);
+  }
+  return data as { status: string; message: string; tag_sample_count?: number };
+}
+
+
+
+  
   async getTagHierarchy(): Promise<TagHierarchy> {
     const url = apiUrl("/tags");
   console.log("[api] GET /tags:", {
