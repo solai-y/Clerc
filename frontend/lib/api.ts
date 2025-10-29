@@ -418,6 +418,7 @@ class APIClient {
       finalUrl: url
     });    
     const res = await fetch(url, { cache: "no-store" });
+    console.log(res);
     if (!res.ok) {
       const msg = await res.text().catch(() => "");
       throw new Error(`HTTP ${res.status}: Failed to fetch tags ${msg.slice(0, 200)}`);
