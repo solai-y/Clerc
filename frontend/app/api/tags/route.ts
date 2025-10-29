@@ -1,19 +1,30 @@
 import { NextResponse } from "next/server";
 import { apiClient } from '@/lib/api';
+import { da } from "date-fns/locale";
 
 // GET: fetch tag hierarchy from apiClient
-export async function GET() {
+// export async function GET() {
+//   try {
+//     const data = await apiClient.getTagHierarchy();
+//     return NextResponse.json(data);
+//   } catch (error) {
+//     return NextResponse.json({ error: "Failed to load tag hierarchy" }, { status: 500 });
+//   }
+// }
+
+export async function GET(req: Request) {
+  const pathname = new URL(req.url).pathname;
+
+  if (pathname.endsWith("/e2e")) {
+    // Health check endpoint
+    return NextResponse.json({ status: "ok", message: "E2E health check passed" });
+  }
+
   try {
-    console.log('entered the function');
     const data = await apiClient.getTagHierarchy();
-    console.log(data)
     return NextResponse.json(data);
-  } catch (error: any) {
-    console.error('Error loading tag hierarchy:', error.message || error);
-    if (error.stack) {
-      console.error(error.stack);
-    }
-    return NextResponse.json({ error: "Failed to load tag hierarchy", details: error.message || String(error) }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: "Failed to load tag hierarchy" }, { status: 500 });
   }
 }
 
