@@ -30,7 +30,10 @@ class Config:
     HOST = os.getenv("HOST", "0.0.0.0")
     PORT = int(os.getenv("PORT", "8000"))
 
-# Tag hierarchy structure
+    # Tag Service Configuration
+    TAG_SERVICE_URL = os.getenv("TAG_SERVICE_URL", "http://tag-service:5007")
+
+# Tag hierarchy structure (fallback only - prefer dynamic fetching from tag-service)
 TAG_HIERARCHY: Dict[str, Any] = {
     "Disclosure": {
         "Annual_Reports": [],
