@@ -58,7 +58,8 @@
       "Bash(docker restart:*)",
       "Bash(docker ps:*)",
       "Bash(git checkout:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(tee:*)"
     ],
     "deny": []
   }

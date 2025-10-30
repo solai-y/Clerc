@@ -79,7 +79,7 @@ export function DocumentDetailsModal({
   useEffect(() => {
     const loadHierarchy = async () => {
       try {
-        const response = await fetch('/hierarchy.json')
+        const response = await fetch('/api/tags')
         const data = await response.json()
         setHierarchy(data)
       } catch (error) {
@@ -105,7 +105,9 @@ export function DocumentDetailsModal({
         // Fetch complete document details (includes confirmed_tags from processed_documents)
         const documentResponse = await apiClient.getCompleteDocument(parseInt(document.id))
 
+        console.log("🗄️ Full document response:", documentResponse)
         console.log("🗄️ confirmed_tags field:", documentResponse.confirmed_tags)
+        console.log("🗄️ confirmed_tags type:", typeof documentResponse.confirmed_tags, Array.isArray(documentResponse.confirmed_tags))
 
         setDbPredictions(documentResponse.confirmed_tags)
 
@@ -133,72 +135,38 @@ export function DocumentDetailsModal({
     }
   }, [document.id, toast])
 
-  // Process prediction data into enhanced tags (from database OR props)
+  // Process confirmed tags only (not AI predictions from explanations)
   const enhancedTags = useMemo<EnhancedTag[]>(() => {
     const tags: EnhancedTag[] = []
+    // Track by tag name + level to allow same tag name at different hierarchy levels
     const processedTags = new Set<string>()
 
-    // Determine which explanations to use: database or props
-    const explanationsToUse = dbExplanations.length > 0 ? dbExplanations : propsExplanations
-
-    // First, process explanations to get the correct hierarchy levels and sources
-    if (explanationsToUse && explanationsToUse.length > 0) {
-      console.log("📊 Processing explanations for hierarchy:", explanationsToUse)
-
-      for (const explanation of explanationsToUse) {
-        // Handle both database format (predicted_tag, classification_level)
-        // and props format (tag, level)
-        const tagName = (explanation as any).predicted_tag || (explanation as any).tag
-        const tagLevel = (explanation as any).classification_level || (explanation as any).level
-        const tagSource = (explanation as any).source_service || (explanation as any).source
-        const tagConfidence = explanation.confidence || 0
-
-        console.log("🔍 Processing explanation:", {
-          tagName,
-          tagLevel,
-          tagSource,
-          tagConfidence
-        })
-
-        if (tagName && tagLevel && !processedTags.has(tagName)) {
-          processedTags.add(tagName)
-
-          // Use the actual classification level
-          const level = tagLevel as 'primary' | 'secondary' | 'tertiary'
-
-          const enhancedTag = {
-            tag: tagName,
-            confidence: tagConfidence,
-            source: tagSource as 'ai' | 'llm' | 'human',
-            level: level,
-            reasoning: explanation.reasoning || `${tagSource?.toUpperCase()} prediction`,
-            isConfirmed: true
-          }
-
-          console.log("✅ Adding enhanced tag:", enhancedTag)
-          tags.push(enhancedTag)
-        }
-      }
-    }
-
-    // Also process confirmed_tags directly (not just as fallback)
-    // This ensures we capture all tags even if explanations don't cover everything
+    // DocumentDetailsModal should ONLY show confirmed_tags, not original AI predictions
+    // Users may have deleted some AI predictions, so we should respect their choices
     if (dbPredictions) {
       console.log("📊 Processing database confirmed_tags:", dbPredictions)
 
-      // Handle JSONB confirmed_tags structure: {confirmed_tags: {tags: [...]}}
+      // confirmed_tags can be an array directly, or nested in a JSONB structure
       let confirmedTagsArray = [];
 
-      if (dbPredictions?.confirmed_tags?.tags && Array.isArray(dbPredictions.confirmed_tags.tags)) {
-        confirmedTagsArray = dbPredictions.confirmed_tags.tags;
-      } else if (Array.isArray(dbPredictions)) {
-        // Legacy format - array of tags
+      if (Array.isArray(dbPredictions)) {
+        // Direct array format
         confirmedTagsArray = dbPredictions;
+      } else if (dbPredictions?.confirmed_tags?.tags && Array.isArray(dbPredictions.confirmed_tags.tags)) {
+        // JSONB structure format: {confirmed_tags: {tags: [...]}}
+        confirmedTagsArray = dbPredictions.confirmed_tags.tags;
+      } else if (dbPredictions?.tags && Array.isArray(dbPredictions.tags)) {
+        // Alternative JSONB structure format: {tags: [...]}
+        confirmedTagsArray = dbPredictions.tags;
       }
 
+      console.log("📊 Extracted confirmed tags array:", confirmedTagsArray)
+
       for (const confirmedTag of confirmedTagsArray) {
-        if (confirmedTag.tag && !processedTags.has(confirmedTag.tag)) {
-          processedTags.add(confirmedTag.tag)
+        // Use tag name + level as unique key to allow same tag at different levels
+        const tagKey = `${confirmedTag.tag}:${confirmedTag.level}`
+        if (confirmedTag.tag && !processedTags.has(tagKey)) {
+          processedTags.add(tagKey)
 
           const enhancedTag = {
             tag: confirmedTag.tag,
@@ -217,7 +185,7 @@ export function DocumentDetailsModal({
 
     console.log("✅ Enhanced tags result:", tags)
     return tags
-  }, [dbPredictions, dbExplanations, propsExplanations])
+  }, [dbPredictions])
 
   // State for multi-tag selection - arrays instead of single strings
   const [selectedPrimaryTags, setSelectedPrimaryTags] = useState<string[]>([])
@@ -306,7 +274,34 @@ export function DocumentDetailsModal({
   }
 
   const removePrimaryTag = (tag: string) => {
+    // Remove the primary tag
     setSelectedPrimaryTags(selectedPrimaryTags.filter(t => t !== tag))
+
+    // Cascade delete: remove all child secondary and tertiary tags
+    if (hierarchy[tag]) {
+      const childSecondaries = Object.keys(hierarchy[tag])
+
+      // Remove secondary tags that belong to this primary
+      setSelectedSecondaryTags(prev =>
+        prev.filter(secondaryTag => !childSecondaries.includes(secondaryTag))
+      )
+
+      // Remove tertiary tags that belong to this primary's secondaries
+      const childTertiaries = new Set<string>()
+      childSecondaries.forEach(secondary => {
+        const tertiaries = hierarchy[tag][secondary]
+        if (tertiaries && tertiaries.length > 0) {
+          tertiaries.forEach(tertiary => childTertiaries.add(tertiary))
+        } else {
+          // If no tertiary options, the secondary itself is the tertiary
+          childTertiaries.add(secondary)
+        }
+      })
+
+      setSelectedTertiaryTags(prev =>
+        prev.filter(tertiaryTag => !childTertiaries.has(tertiaryTag))
+      )
+    }
   }
 
   const addSecondaryTag = (tag: string) => {
@@ -316,7 +311,28 @@ export function DocumentDetailsModal({
   }
 
   const removeSecondaryTag = (tag: string) => {
+    // Remove the secondary tag
     setSelectedSecondaryTags(selectedSecondaryTags.filter(t => t !== tag))
+
+    // Cascade delete: remove all child tertiary tags
+    // Find which primary this secondary belongs to and get its tertiary children
+    const childTertiaries = new Set<string>()
+
+    selectedPrimaryTags.forEach(primary => {
+      if (hierarchy[primary]?.[tag]) {
+        const tertiaries = hierarchy[primary][tag]
+        if (tertiaries && tertiaries.length > 0) {
+          tertiaries.forEach(tertiary => childTertiaries.add(tertiary))
+        } else {
+          // If no tertiary options, the secondary itself is the tertiary
+          childTertiaries.add(tag)
+        }
+      }
+    })
+
+    setSelectedTertiaryTags(prev =>
+      prev.filter(tertiaryTag => !childTertiaries.has(tertiaryTag))
+    )
   }
 
   const addTertiaryTag = (tag: string) => {
@@ -661,6 +677,10 @@ export function DocumentDetailsModal({
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-2 mb-3 min-h-[40px]">
+                      {(() => {
+                        console.log("🏷️ Rendering Tertiary Tags:", selectedTertiaryTags)
+                        return null
+                      })()}
                       {selectedTertiaryTags.length === 0 ? (
                         <p className="text-sm text-gray-500 italic">No tertiary tags selected. Use the dropdown below to add tags.</p>
                       ) : (
@@ -852,21 +872,6 @@ export function DocumentDetailsModal({
                                   </div>
                                 </div>
                               )}
-
-                              {/* Opposing Evidence */}
-                              {explanation.shap_data.opposing?.length > 0 && (
-                                <div>
-                                  <div className="text-xs font-medium text-red-700">Opposing:</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {explanation.shap_data.opposing.map((item: any, idx: number) => (
-                                      <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-800 border border-red-300">
-                                        <span className="font-mono mr-1">{item.token?.trim() || item}</span>
-                                        <span className="text-red-600 font-semibold">{item.impact || ''}</span>
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
                             </div>
                           </div>
                       )}
@@ -954,28 +959,6 @@ export function DocumentDetailsModal({
                     <p className="text-sm text-gray-500">No document link available</p>
                   </div>
                 )}
-
-                {/* Tags Section */}
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-green-800 mb-3 flex items-center">
-                    <Tag className="w-4 h-4 mr-2" />
-                    Document Tags ({document.tags?.length || 0})
-                  </h4>
-                  {document.tags && document.tags.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {document.tags.map((tag, index) => (
-                        <span
-                          key={index}
-                          className="inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium border border-green-300"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-500 italic">No tags assigned to this document</p>
-                  )}
-                </div>
               </div>
             </TabsContent>
           </div>

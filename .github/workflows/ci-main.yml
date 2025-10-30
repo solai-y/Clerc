@@ -10,11 +10,13 @@ jobs:
     steps:
       - name: Fail if PR is not from dev branch
         run: |
+          echo "Target branch: ${{ github.base_ref }}"
           echo "Source branch: ${{ github.head_ref }}"
-          if [ "${{ github.head_ref }}" != "dev" ]; then
+          if [ "${{ github.base_ref }}" == "main" ] && [ "${{ github.head_ref }}" != "dev" ]; then
             echo "❌ Only PRs from dev branch are allowed to merge to main."
             exit 1
           fi
+          echo "✅ PR source check passed"
 
   build-and-test:
     needs: check-pr-source   # <-- Add this line!

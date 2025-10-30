@@ -12,8 +12,21 @@ def test_predict_success(client, app_module):
     expected = app_module.clean_text(raw_text)
     assert data["processed_text"] == expected
 
-    # basic structure of prediction
+    # basic structure of prediction (now arrays for multi-label support)
     p = data["prediction"]
     assert "primary" in p and "secondary" in p and "tertiary" in p
-    assert p["primary"]["pred"] == "Disclosure"
-    assert "confidence" in p["primary"]
+
+    # Verify arrays are returned
+    assert isinstance(p["primary"], list), "primary should be a list"
+    assert isinstance(p["secondary"], list), "secondary should be a list"
+    assert isinstance(p["tertiary"], list), "tertiary should be a list"
+
+    # Verify at least one prediction per level
+    assert len(p["primary"]) > 0, "primary should have at least one prediction"
+    assert len(p["secondary"]) > 0, "secondary should have at least one prediction"
+    assert len(p["tertiary"]) > 0, "tertiary should have at least one prediction"
+
+    # Verify structure of first prediction
+    assert "label" in p["primary"][0], "primary prediction should have 'label'"
+    assert "confidence" in p["primary"][0], "primary prediction should have 'confidence'"
+    assert p["primary"][0]["label"] == "Disclosure", f"Expected 'Disclosure', got {p['primary'][0]['label']}"

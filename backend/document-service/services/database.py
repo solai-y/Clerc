@@ -157,13 +157,19 @@ class DatabaseService:
             # Server-side sort (use fully qualified column so PostgREST orders on the related table)
             sort_map = {
                 'name':  ('document_name',  'raw_documents'),
-                'date':  ('upload_date',    'raw_documents'),
+                'date':  ('processing_date', 'processed_documents'),  # Sort by processing_date to show recently updated docs first
                 'size':  ('file_size',      'raw_documents'),
             }
             sort_key = (sort_by or 'date').lower()
-            col_name, foreign_table = sort_map.get(sort_key, ('upload_date', 'raw_documents'))
+            col_name, foreign_table = sort_map.get(sort_key, ('processing_date', 'processed_documents'))
             desc = (sort_order or 'desc').lower() == 'desc'
-            order_col = f"{foreign_table}.{col_name}"  # e.g. "raw_documents.document_name"
+
+            # For processed_documents columns, no need to qualify with table name
+            if foreign_table == 'processed_documents':
+                order_col = col_name
+            else:
+                order_col = f"{foreign_table}.{col_name}"  # e.g. "raw_documents.document_name"
+
             self.logger.debug(f"[DB] Applying server-side order: {order_col} desc={desc}")
             # IMPORTANT: pass a single fully-qualified column; don't use foreign_table arg (supabase-py ignores it)
             query = query.order(order_col, desc=desc)
@@ -187,11 +193,12 @@ class DatabaseService:
             return data, None
 
         except Exception as e:
-            # Fallback path: fetch a window and filter/sort locally to avoid 500s.
+            # Fallback path: fetch all documents and filter/sort locally to avoid 500s.
             self.logger.warning(f"[DB] Server-side query failed, falling back to Python filter/sort: {e}")
 
             try:
-                fetch_limit = max(limit or 50, 100)
+                # When searching, fetch ALL documents to ensure we don't miss results
+                fetch_limit = 10000 if search else max(limit or 50, 100)
                 self.logger.debug(f"[DB] Fallback fetch size: {fetch_limit}")
                 response = self.supabase.table('processed_documents').select("""
                     *,
@@ -568,8 +575,8 @@ class DatabaseService:
             rows.sort(key=lambda r: (safe_get(r, ['raw_documents', 'document_name'], "") or "").lower(), reverse=reverse)
         elif key == 'size':
             rows.sort(key=lambda r: safe_get(r, ['raw_documents', 'file_size'], -1) or -1, reverse=reverse)
-        else:  # 'date'
-            rows.sort(key=lambda r: safe_get(r, ['raw_documents', 'upload_date'], "") or "", reverse=reverse)
+        else:  # 'date' - sort by processing_date to show recently updated docs first
+            rows.sort(key=lambda r: r.get('processing_date', "") or "", reverse=reverse)
         return rows
 
     def _paginate_in_python(self, rows: List[Dict], *, limit: Optional[int], offset: Optional[int]) -> List[Dict]:
@@ -683,9 +690,13 @@ class DatabaseService:
                 if not isinstance(tag_data['user_removed_tags'], list):
                     return None, "user_removed_tags must be an array"
                 update_data['user_removed_tags'] = tag_data['user_removed_tags']
-            
+
+            from datetime import datetime, timezone
+
             update_data['user_reviewed'] = True
-            update_data['reviewed_at'] = 'now()'
+            current_time = datetime.now(timezone.utc).isoformat()
+            update_data['reviewed_at'] = current_time
+            update_data['processing_date'] = current_time  # Update processing_date so document appears at top when sorted by date
             if 'user_id' in tag_data:
                 update_data['user_id'] = tag_data['user_id']
 
@@ -697,13 +708,15 @@ class DatabaseService:
             if response.data:
                 updated_doc = response.data[0]
 
-                if 'explanations' in tag_data:
-                    self.logger.info(f"Creating explanations during tag update for process_id {process_id}: {len(tag_data['explanations'])} explanations")
-                    explanation_error = self.create_explanations(process_id, tag_data['explanations'])
-                    if explanation_error:
-                        self.logger.warning(f"Failed to create explanations during tag update for process_id {process_id}: {explanation_error}")
-                    else:
-                        self.logger.info(f"Successfully created explanations during tag update for process_id {process_id}")
+                # Don't re-create explanations when confirming tags - explanations should only be created once during initial processing
+                # Keeping this code commented out to prevent duplicate explanations on tag confirmation
+                # if 'explanations' in tag_data:
+                #     self.logger.info(f"Creating explanations during tag update for process_id {process_id}: {len(tag_data['explanations'])} explanations")
+                #     explanation_error = self.create_explanations(process_id, tag_data['explanations'])
+                #     if explanation_error:
+                #         self.logger.warning(f"Failed to create explanations during tag update for process_id {process_id}: {explanation_error}")
+                #     else:
+                #         self.logger.info(f"Successfully created explanations during tag update for process_id {process_id}")
 
                 self.logger.info(f"Updated tags for processed document {process_id} (document_id: {document_id})")
                 return updated_doc, None

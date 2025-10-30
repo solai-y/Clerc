@@ -78,7 +78,7 @@ export function HierarchyBasedConfirmTagsModal({
   useEffect(() => {
     const loadHierarchy = async () => {
       try {
-        const response = await fetch('/hierarchy.json')
+        const response = await fetch('/api/tags')
         const data = await response.json()
         setHierarchy(data)
       } catch (error) {
@@ -139,6 +139,7 @@ export function HierarchyBasedConfirmTagsModal({
   // Process prediction data into enhanced tags (from database OR props)
   const enhancedTags = useMemo<EnhancedTag[]>(() => {
     const tags: EnhancedTag[] = []
+    // Track by tag name + level to allow same tag name at different hierarchy levels
     const processedTags = new Set<string>()
 
     // Determine which explanations to use: database or props
@@ -163,8 +164,10 @@ export function HierarchyBasedConfirmTagsModal({
           tagConfidence
         })
 
-        if (tagName && tagLevel && !processedTags.has(tagName)) {
-          processedTags.add(tagName)
+        // Use tag name + level as unique key to allow same tag at different levels
+        const tagKey = `${tagName}:${tagLevel}`
+        if (tagName && tagLevel && !processedTags.has(tagKey)) {
+          processedTags.add(tagKey)
 
           // Use the actual classification level
           const level = tagLevel as 'primary' | 'secondary' | 'tertiary'
@@ -172,7 +175,9 @@ export function HierarchyBasedConfirmTagsModal({
           // Find matching prediction data for confidence score (if using db explanations)
           let confidence = tagConfidence
           if (dbPredictions && Array.isArray(dbPredictions)) {
-            const matchingPred = dbPredictions.find(pred => pred.tag === tagName)
+            const matchingPred = dbPredictions.find(pred =>
+              pred.tag === tagName && pred.hierarchy_level === tagLevel
+            )
             confidence = matchingPred?.score || confidence
           }
 
@@ -197,8 +202,10 @@ export function HierarchyBasedConfirmTagsModal({
       console.log("📊 Processing database predictions:", dbPredictions)
 
       for (const pred of dbPredictions) {
-        if (pred.tag && !processedTags.has(pred.tag)) {
-          processedTags.add(pred.tag)
+        // Use tag name + level as unique key to allow same tag at different levels
+        const tagKey = `${pred.tag}:${pred.hierarchy_level}`
+        if (pred.tag && !processedTags.has(tagKey)) {
+          processedTags.add(tagKey)
 
           // Use the hierarchy_level from the database instead of reassigning based on confidence
           const level = pred.hierarchy_level as 'primary' | 'secondary' | 'tertiary'
@@ -311,7 +318,34 @@ export function HierarchyBasedConfirmTagsModal({
   }
 
   const removePrimaryTag = (tag: string) => {
+    // Remove the primary tag
     setSelectedPrimaryTags(selectedPrimaryTags.filter(t => t !== tag))
+
+    // Cascade delete: remove all child secondary and tertiary tags
+    if (hierarchy[tag]) {
+      const childSecondaries = Object.keys(hierarchy[tag])
+
+      // Remove secondary tags that belong to this primary
+      setSelectedSecondaryTags(prev =>
+        prev.filter(secondaryTag => !childSecondaries.includes(secondaryTag))
+      )
+
+      // Remove tertiary tags that belong to this primary's secondaries
+      const childTertiaries = new Set<string>()
+      childSecondaries.forEach(secondary => {
+        const tertiaries = hierarchy[tag][secondary]
+        if (tertiaries && tertiaries.length > 0) {
+          tertiaries.forEach(tertiary => childTertiaries.add(tertiary))
+        } else {
+          // If no tertiary options, the secondary itself is the tertiary
+          childTertiaries.add(secondary)
+        }
+      })
+
+      setSelectedTertiaryTags(prev =>
+        prev.filter(tertiaryTag => !childTertiaries.has(tertiaryTag))
+      )
+    }
   }
 
   const addSecondaryTag = (tag: string) => {
@@ -321,7 +355,28 @@ export function HierarchyBasedConfirmTagsModal({
   }
 
   const removeSecondaryTag = (tag: string) => {
+    // Remove the secondary tag
     setSelectedSecondaryTags(selectedSecondaryTags.filter(t => t !== tag))
+
+    // Cascade delete: remove all child tertiary tags
+    // Find which primary this secondary belongs to and get its tertiary children
+    const childTertiaries = new Set<string>()
+
+    selectedPrimaryTags.forEach(primary => {
+      if (hierarchy[primary]?.[tag]) {
+        const tertiaries = hierarchy[primary][tag]
+        if (tertiaries && tertiaries.length > 0) {
+          tertiaries.forEach(tertiary => childTertiaries.add(tertiary))
+        } else {
+          // If no tertiary options, the secondary itself is the tertiary
+          childTertiaries.add(tag)
+        }
+      }
+    })
+
+    setSelectedTertiaryTags(prev =>
+      prev.filter(tertiaryTag => !childTertiaries.has(tertiaryTag))
+    )
   }
 
   const addTertiaryTag = (tag: string) => {
@@ -796,21 +851,6 @@ export function HierarchyBasedConfirmTagsModal({
                                   </div>
                                 </div>
                               )}
-
-                              {/* Opposing Evidence */}
-                              {explanation.shap_data.opposing?.length > 0 && (
-                                <div>
-                                  <div className="text-xs font-medium text-red-700">Opposing:</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {explanation.shap_data.opposing.map((item: any, idx: number) => (
-                                      <span key={idx} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-800 border border-red-300">
-                                        <span className="font-mono mr-1">{item.token?.trim() || item}</span>
-                                        <span className="text-red-600 font-semibold">{item.impact || ''}</span>
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
                             </div>
                           </div>
                       )}
@@ -898,28 +938,6 @@ export function HierarchyBasedConfirmTagsModal({
                     <p className="text-sm text-gray-500">No document link available</p>
                   </div>
                 )}
-
-                {/* Tags Section */}
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-green-800 mb-3 flex items-center">
-                    <Tag className="w-4 h-4 mr-2" />
-                    Document Tags ({document.tags?.length || 0})
-                  </h4>
-                  {document.tags && document.tags.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {document.tags.map((tag, index) => (
-                        <span
-                          key={index}
-                          className="inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium border border-green-300"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-500 italic">No tags assigned to this document</p>
-                  )}
-                </div>
               </div>
             </TabsContent>
           </div>
