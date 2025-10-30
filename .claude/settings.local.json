@@ -59,7 +59,9 @@
       "Bash(docker ps:*)",
       "Bash(git checkout:*)",
       "Bash(git add:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "Bash(git fetch:*)",
+      "Bash(git stash:*)"
     ],
     "deny": []
   }
