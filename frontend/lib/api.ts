@@ -433,22 +433,57 @@ class APIClient {
   
   async getTagHierarchy(): Promise<TagHierarchy> {
     const url = apiUrl("/tags");
-  console.log("[api] GET /tags:", {
-      finalUrl: url
-    });    
-    const res = await fetch(url, { 
+    console.log("🏷️ [TAG SERVICE DEBUG] Starting getTagHierarchy");
+    console.log("🏷️ [TAG SERVICE DEBUG] Environment:", {
+      isServer: typeof window === "undefined",
+      BACKEND_ORIGIN: process.env.BACKEND_ORIGIN || "not set",
+      NODE_ENV: process.env.NODE_ENV,
+      computedUrl: url,
+      currentHostname: typeof window !== "undefined" ? window.location.hostname : "server-side"
+    });
+
+    const res = await fetch(url, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
-      cache: "no-store" });
-    console.log(res);
+      cache: "no-store"
+    });
+
+    console.log("🏷️ [TAG SERVICE DEBUG] Response received:", {
+      status: res.status,
+      statusText: res.statusText,
+      ok: res.ok,
+      url: res.url,
+      headers: {
+        contentType: res.headers.get("content-type"),
+        cors: res.headers.get("access-control-allow-origin")
+      }
+    });
+
     if (!res.ok) {
       const msg = await res.text().catch(() => "");
+      console.error("🏷️ [TAG SERVICE ERROR] Failed to fetch tags:", {
+        status: res.status,
+        statusText: res.statusText,
+        responseBody: msg.slice(0, 500)
+      });
       throw new Error(`HTTP ${res.status}: Failed to fetch tags ${msg.slice(0, 200)}`);
     }
+
     const data = await res.json();
+    console.log("🏷️ [TAG SERVICE DEBUG] Data received:", {
+      dataType: typeof data,
+      isObject: typeof data === "object",
+      keys: data ? Object.keys(data).slice(0, 5) : [],
+      firstKey: data ? Object.keys(data)[0] : null,
+      sampleValue: data ? data[Object.keys(data)[0]] : null
+    });
+
     if (!data || typeof data !== "object") {
+      console.error("🏷️ [TAG SERVICE ERROR] Unexpected response shape:", data);
       throw new Error("Unexpected tags response shape.");
     }
+
+    console.log("🏷️ [TAG SERVICE DEBUG] Successfully loaded tag hierarchy");
     return data as TagHierarchy;
   }
 

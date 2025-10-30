@@ -47,8 +47,14 @@ const nextConfig = {
       { source: "/api/tags/:path*", destination: `${BACKEND_ORIGIN}/tags/:path*` },
     ];
 
-    console.log("[Next.js Config] API rewrite rules configured.");
-    apiRewrites.forEach(r => console.log(`- ${r.source} -> ${r.destination}`));
+    console.log("[Next.js Config] ==========================================");
+    console.log("[Next.js Config] API rewrite rules configured for BACKEND_ORIGIN:", BACKEND_ORIGIN);
+    console.log("[Next.js Config] Tag service rewrite specifically:");
+    const tagRewrite = apiRewrites.find(r => r.source === "/api/tags");
+    console.log(`[Next.js Config]   /api/tags -> ${tagRewrite?.destination}`);
+    console.log("[Next.js Config] All rewrites:");
+    apiRewrites.forEach(r => console.log(`[Next.js Config]   - ${r.source} -> ${r.destination}`));
+    console.log("[Next.js Config] ==========================================");
 
     return apiRewrites;
   },
