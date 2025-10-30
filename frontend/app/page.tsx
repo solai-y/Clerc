@@ -139,7 +139,7 @@ export default function HomePage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => router.push("/tags")}
+                onClick={() => router.push("/tag-manager")}
                 className="flex items-center gap-2"
               >
                 <Tags className="w-4 h-4" />
