@@ -3,10 +3,9 @@
 // Detect environment
 const isVercel = !!process.env.VERCEL;
 const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN || (isVercel ? "https://clercbackend.clerc.uk" : "http://localhost");
-const TAGS_ORIGIN = process.env.TAGS_ORIGIN || (isVercel ? BACKEND_ORIGIN : "http://localhost:5007");
 
 // This log is crucial for debugging Vercel builds.
-console.log(`[Next.js Config] Build environment detected. Vercel: ${isVercel}. Backend Origin: ${BACKEND_ORIGIN}. Tags Origin: ${TAGS_ORIGIN}`);
+console.log(`[Next.js Config] Build environment detected. Vercel: ${isVercel}. Backend Origin: ${BACKEND_ORIGIN}.`);
 
 if (!BACKEND_ORIGIN) {
   throw new Error("FATAL: BACKEND_ORIGIN environment variable is not set.");
@@ -44,12 +43,18 @@ const nextConfig = {
       { source: "/api/text-extract/:path*", destination: `${BACKEND_ORIGIN}/text-extract/:path*` },
 
       // NEW: Tag Taxonomy service (local default :5007)
-      { source: "/api/tags", destination: `${TAGS_ORIGIN}/tags` },
-      { source: "/api/tags/:path*", destination: `${TAGS_ORIGIN}/tags/:path*` },
+      { source: "/api/tags", destination: `${BACKEND_ORIGIN}/tags` },
+      { source: "/api/tags/:path*", destination: `${BACKEND_ORIGIN}/tags/:path*` },
     ];
 
-    console.log("[Next.js Config] API rewrite rules configured.");
-    apiRewrites.forEach(r => console.log(`- ${r.source} -> ${r.destination}`));
+    console.log("[Next.js Config] ==========================================");
+    console.log("[Next.js Config] API rewrite rules configured for BACKEND_ORIGIN:", BACKEND_ORIGIN);
+    console.log("[Next.js Config] Tag service rewrite specifically:");
+    const tagRewrite = apiRewrites.find(r => r.source === "/api/tags");
+    console.log(`[Next.js Config]   /api/tags -> ${tagRewrite?.destination}`);
+    console.log("[Next.js Config] All rewrites:");
+    apiRewrites.forEach(r => console.log(`[Next.js Config]   - ${r.source} -> ${r.destination}`));
+    console.log("[Next.js Config] ==========================================");
 
     return apiRewrites;
   },

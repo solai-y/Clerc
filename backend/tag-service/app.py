@@ -29,7 +29,8 @@ app = FastAPI(
 # Allow frontend (Next.js) to call the service directly or via proxy
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=['http://localhost:3000'],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -71,11 +72,6 @@ def fetch_tag_by_name(name: str, parent_id: Optional[int]) -> Optional[dict]:
     res = q.execute()
     items = res.data or []
     return items[0] if items else None
-
-def ensure_unique_in_scope(name: str, parent_id: Optional[int]) -> None:
-    existing = fetch_tag_by_name(name, parent_id)
-    if existing:
-        raise HTTPException(status_code=409, detail="Tag name already exists in this scope.")
 
 def ensure_global_unique(name: str, exclude_id: Optional[int] = None) -> None:
     """
@@ -151,8 +147,12 @@ def get_tags() -> Dict[str, Dict[str, List[str]]]:
     Returns the full 3-level hierarchy:
     { "Disclosure": { "SEC_Filings": ["10-K", "S-1"], ... }, ... }
     """
-    tags = fetch_all_tags()
-    return build_hierarchy(tags)
+    try:
+        tags = fetch_all_tags()
+        return build_hierarchy(tags)
+    except Exception as e:
+        return {"error": str(e)}
+    
 
 @app.post("/tags", status_code=201)
 def add_tag(body: AddTagIn) -> dict:
@@ -175,7 +175,6 @@ def add_tag(body: AddTagIn) -> dict:
         if parent_id is None:
             raise HTTPException(status_code=400, detail="Tertiary requires parentPrimary and parentSecondary")
 
-    # ensure_unique_in_scope(body.name, parent_id)
     ensure_global_unique(body.name)
 
 
@@ -207,9 +206,6 @@ def rename_tag(body: RenameTagIn) -> dict:
     if not target:
         raise HTTPException(status_code=404, detail="Tag to rename not found in this scope")
 
-    # if body.oldName.lower() != body.newName.lower():
-    #     ensure_unique_in_scope(body.newName, parent_id)
-
     if body.oldName.strip().lower() != body.newName.strip().lower():
         ensure_global_unique(body.newName, exclude_id=target["id"])
 
@@ -229,3 +225,18 @@ def delete_tag(tag_id: int) -> dict:
     if not res.data:
         raise HTTPException(status_code=404, detail="Tag not found")
     return {"message": "Tag deleted"}
+
+
+@app.get("/tags/e2e")
+def e2e_test():
+    """
+    Simple endpoint to test connectivity to Supabase and service health.
+    Returns count of tags or error message if connection fails.
+    """
+    try:
+        res = sb.table("tags").select("id").limit(1).execute()
+        if res.data is None:
+            return {"status": "fail", "message": "No data returned from Supabase"}
+        return {"status": "success", "message": "Connected to Supabase", "tag_sample_count": len(res.data)}
+    except Exception as e:
+        return {"status": "error", "message": f"Supabase connection failed: {str(e)}"}
