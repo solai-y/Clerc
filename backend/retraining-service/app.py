@@ -517,7 +517,7 @@ async def export_csv():
         # Build CSV in memory
         output = io.StringIO()
         csv_writer = csv.writer(output)
-        csv_writer.writerow(['document_id', 'document_text', 'primary_tag', 'secondary_tag', 'tertiary_tag'])
+        csv_writer.writerow(['primary', 'secondary', 'tertiary', 'text'])
 
         for row in response.data:
             document_id = row.get('document_id', '')
@@ -548,7 +548,7 @@ async def export_csv():
 
                 combination = (primary_id, secondary_id, tertiary_id)
                 if combination not in used_combinations:
-                    csv_writer.writerow([document_id, document_text, primary_name or '', secondary_name or '', tertiary_name or ''])
+                    csv_writer.writerow([primary_name or '', secondary_name or '', tertiary_name or '', document_text])
                     used_combinations.add(combination)
 
             # 2. Process secondary tags that weren't traced from tertiary
@@ -566,7 +566,7 @@ async def export_csv():
 
                 combination = (primary_id, secondary_id, None)
                 if combination not in used_combinations:
-                    csv_writer.writerow([document_id, document_text, primary_name or '', secondary_name or '', ''])
+                    csv_writer.writerow([primary_name or '', secondary_name or '', '', document_text])
                     used_combinations.add(combination)
 
             # 3. Process primary tags that weren't traced at all
@@ -580,7 +580,7 @@ async def export_csv():
 
                 combination = (primary_id, None, None)
                 if combination not in used_combinations:
-                    csv_writer.writerow([document_id, document_text, primary_name or '', '', ''])
+                    csv_writer.writerow([primary_name or '', '', '', document_text])
                     used_combinations.add(combination)
 
         # Prepare the CSV for download
