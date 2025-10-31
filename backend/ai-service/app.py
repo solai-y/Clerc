@@ -219,6 +219,7 @@ def validate_training_data() -> Any:
 def rebuild() -> Any:
     """
     Trigger a rebuild of the model in the background.
+    Fetches latest training data from retraining-service, then trains.
     Requests keep using the old model until the swap is complete.
     """
     if _rebuilding.is_set():
@@ -229,18 +230,67 @@ def rebuild() -> Any:
         try:
             _rebuilding.set()
             t0 = time.time()
-            # retrain (this runs train.py and saves to models_hier/)
+
+            # Step 1: Fetch CSV from retraining-service
+            print("Fetching training data from retraining-service...")
+            retraining_service_url = os.getenv("RETRAINING_SERVICE_URL", "http://retraining-service:5009")
+            csv_url = f"{retraining_service_url}/retraining/export-csv"
+
+            import requests
+            response = requests.get(csv_url, timeout=60)
+            response.raise_for_status()
+
+            # Step 2: Validate CSV has data
+            csv_content = response.text
+            if not csv_content or len(csv_content.strip()) == 0:
+                raise ValueError("Received empty CSV from retraining-service")
+
+            lines = csv_content.strip().split('\n')
+            if len(lines) < 2:
+                raise ValueError(f"CSV has insufficient data: only {len(lines)} line(s)")
+
+            # Step 3: Validate CSV header
+            expected_columns = {'primary', 'secondary', 'tertiary', 'text'}
+            header = lines[0].split(',')
+            header_set = {col.strip() for col in header}
+            if not expected_columns.issubset(header_set):
+                raise ValueError(f"CSV header missing required columns. Expected: {expected_columns}, Got: {header_set}")
+
+            print(f"✓ Fetched CSV with {len(lines) - 1} data rows")
+
+            # Step 4: Backup existing training data (optional safety)
+            training_csv_path = Path("./training_data_text.csv")
+            if training_csv_path.exists():
+                backup_path = Path("./training_data_text.csv.backup")
+                import shutil
+                shutil.copy2(training_csv_path, backup_path)
+                print(f"✓ Backed up existing training data to {backup_path}")
+
+            # Step 5: Write new CSV
+            with open(training_csv_path, 'w', encoding='utf-8') as f:
+                f.write(csv_content)
+            print(f"✓ Saved training data to {training_csv_path}")
+
+            # Step 6: Retrain (this runs train.py and saves to models_hier/)
+            print("Starting model training...")
             subprocess.run(["python", "train.py"], check=True)
-            # load new model - use train.build_best_model so test monkeypatching works
+
+            # Step 7: Load new model - use train.build_best_model so test monkeypatching works
             new_model = train.build_best_model(MODELS_DIR)
-            # atomic swap
+
+            # Step 8: Atomic swap
             with _model_swap_lock:
                 best_model = new_model
+
             elapsed = time.time() - t0
             model_version = getattr(new_model, "version", "unknown")
-            print(f"Rebuild complete in {elapsed:.2f}s - swapped to model version: {model_version}")
+            print(f"✓ Rebuild complete in {elapsed:.2f}s - swapped to model version: {model_version}")
+        except requests.exceptions.RequestException as e:
+            print(f"✗ Failed to fetch training data from retraining-service: {e}")
+        except ValueError as e:
+            print(f"✗ CSV validation failed: {e}")
         except Exception as e:
-            print(f"Rebuild failed: {e}")
+            print(f"✗ Rebuild failed: {e}")
         finally:
             _rebuilding.clear()
 

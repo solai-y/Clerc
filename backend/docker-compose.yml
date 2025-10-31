@@ -26,8 +26,12 @@ services:
       dockerfile: ./ai-service/Dockerfile
     ports:
       - "5004:5004"
+    depends_on:
+      - retraining-service
     env_file:
       - .env
+    environment:
+      - RETRAINING_SERVICE_URL=http://retraining-service:5009
 
   llm-service:
     build:
