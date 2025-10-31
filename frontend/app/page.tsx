@@ -14,11 +14,31 @@ import { DocumentPagination } from "@/components/document-pagination"
 import { UserMenu } from "@/components/auth/user-menu"
 import { useDocuments } from "@/hooks/use-documents"
 import { useAuth } from "@/contexts/auth-context"
-import { apiClient } from "@/lib/api"
-import type { Document as AppDocument } from "@/lib/api" // used for details modal state
-import type { Document as UploadModalDocument } from "@/components/upload-modal" // matches UploadModal prop type
+import { apiClient, Document } from "@/lib/api"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import FilterPanel, { TagFilters } from "@/components/filters/filter-panel"
+
+// Tag normalization function - defined outside component to prevent recreation
+function dedupeAndSort(set: Set<string>): string[] {
+  const arr = Array.from(set)
+  // Use a Map to deduplicate by normalized form but keep original
+  const normalized = new Map<string, string>()
+  arr.forEach(tag => {
+    // Aggressive normalize: trim, replace underscores with spaces, collapse spaces, lowercase for comparison
+    const norm = tag.trim()
+      .replace(/_/g, ' ')           // underscores to spaces
+      .replace(/\s+/g, ' ')         // collapse multiple spaces
+      .replace(/\u00A0/g, ' ')      // non-breaking spaces to regular spaces
+      .replace(/[\u200B-\u200D\uFEFF]/g, '') // remove zero-width chars
+      .toLowerCase()
+    // Keep the first occurrence with preferred formatting (spaces not underscores)
+    if (!normalized.has(norm)) {
+      const cleaned = tag.trim().replace(/_/g, ' ').replace(/\s+/g, ' ')
+      normalized.set(norm, cleaned)
+    }
+  })
+  return Array.from(normalized.values()).sort()
+}
 
 export default function HomePage() {
   const router = useRouter()
@@ -39,7 +59,7 @@ export default function HomePage() {
   const [sortBy, setSortBy] = useState<"name" | "date" | "size">("date")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
-  const [detailsDocument, setDetailsDocument] = useState<AppDocument | null>(null)
+  const [detailsDocument, setDetailsDocument] = useState<Document | null>(null)
 
   // Tag filters state
   const [tagFilters, setTagFilters] = useState<TagFilters>({
@@ -57,11 +77,16 @@ export default function HomePage() {
     return () => clearTimeout(t)
   }, [searchTerm])
 
+  // Create stable string key for tag filters to avoid hook dependency issues
+  // Using JSON.stringify of the entire object ensures stability
+  const tagFiltersKey = JSON.stringify(tagFilters)
+
   // Reset to page 1 when search, sort, or filters change
   useEffect(() => {
     console.log("[page] 📄 reset page due to search/sort/filter change")
     setCurrentPage(1)
-  }, [debouncedSearchTerm, sortBy, sortOrder, tagFilters])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm, sortBy, sortOrder, tagFiltersKey])
 
   // Fetch documents (server-side search + sort + tag filtering)
   const {
@@ -92,40 +117,48 @@ export default function HomePage() {
     tertiary: [],
   })
 
-  // Fetch all tags on mount (once) - independent of current filters
+  // Fetch all tags from tag-service (much more efficient than scanning documents)
   useEffect(() => {
     const fetchAllTags = async () => {
       try {
-        console.log('[page] 🏷️ Fetching all available tags...')
-        // Fetch a large sample of documents to get all possible tags
-        const { documents: allDocs } = await apiClient.getDocuments({ limit: 1000 })
+        console.log('[page] 🏷️ Fetching tag hierarchy from tag-service...')
+
+        // Fetch from tag-service instead of scanning all documents
+        const hierarchy = await apiClient.getTagHierarchy()
 
         const primary = new Set<string>()
         const secondary = new Set<string>()
         const tertiary = new Set<string>()
 
-        allDocs.forEach((doc) => {
-          // Extract from confirmed_tags structure
-          const confirmedTags = doc.confirmed_tags as any
-          if (confirmedTags?.confirmed_tags?.tags) {
-            confirmedTags.confirmed_tags.tags.forEach((tagObj: any) => {
-              if (tagObj.level === 'primary') primary.add(tagObj.tag)
-              if (tagObj.level === 'secondary') secondary.add(tagObj.tag)
-              if (tagObj.level === 'tertiary') tertiary.add(tagObj.tag)
-            })
-          }
+        // Extract tags from hierarchy
+        // Structure: { "Primary": { "Secondary": ["Tertiary1", "Tertiary2"] } }
+        Object.keys(hierarchy).forEach(primaryTag => {
+          primary.add(primaryTag)
+
+          const secondaryObj = hierarchy[primaryTag]
+          Object.keys(secondaryObj).forEach(secondaryTag => {
+            secondary.add(secondaryTag)
+
+            const tertiaryArray = secondaryObj[secondaryTag]
+            if (Array.isArray(tertiaryArray)) {
+              tertiaryArray.forEach(tertiaryTag => {
+                tertiary.add(tertiaryTag)
+              })
+            }
+          })
         })
 
+        // Use the dedupeAndSort function defined outside component
         const tagLists = {
-          primary: Array.from(primary).sort(),
-          secondary: Array.from(secondary).sort(),
-          tertiary: Array.from(tertiary).sort(),
+          primary: dedupeAndSort(primary),
+          secondary: dedupeAndSort(secondary),
+          tertiary: dedupeAndSort(tertiary),
         }
 
-        console.log('[page] 🏷️ Available tags loaded:', tagLists)
+        console.log('[page] 🏷️ Available tags loaded from hierarchy:', tagLists)
         setAvailableTags(tagLists)
       } catch (err) {
-        console.error('[page] ❌ Failed to fetch available tags:', err)
+        console.error('[page] ❌ Failed to fetch tag hierarchy:', err)
       }
     }
 
@@ -141,9 +174,9 @@ export default function HomePage() {
     }
   }
 
-  // Match UploadModal prop exactly: (document: UploadModalDocument) => void
+  // Match UploadModal prop exactly: (document: Document) => void
   // Keep it sync to satisfy the prop type; we still trigger an async refetch.
-  const handleUploadComplete = (_newDocument: UploadModalDocument): void => {
+  const handleUploadComplete = (_newDocument: Document): void => {
     refetch().finally(() => setIsUploadModalOpen(false))
   }
 

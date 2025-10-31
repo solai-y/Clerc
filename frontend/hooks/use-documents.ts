@@ -58,11 +58,17 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
     tertiaryTags,
     autoFetch = true
   } = params
-  
+
   const [documents, setDocuments] = useState<Document[]>([])
   const [pagination, setPagination] = useState<PaginationInfo | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Stringify tag arrays for stable dependency tracking
+  // Don't use useMemo here - just create stable strings directly
+  const primaryTagsKey = JSON.stringify(primaryTags || [])
+  const secondaryTagsKey = JSON.stringify(secondaryTags || [])
+  const tertiaryTagsKey = JSON.stringify(tertiaryTags || [])
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true)
@@ -125,7 +131,8 @@ export function useDocuments(params: UseDocumentsParams = {}): UseDocumentsRetur
     } finally {
       setLoading(false)
     }
-  }, [limit, offset, search, sortBy, sortOrder, status, companyId, primaryTags, secondaryTags, tertiaryTags])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [limit, offset, search, sortBy, sortOrder, status, companyId, primaryTagsKey, secondaryTagsKey, tertiaryTagsKey])
 
   // CRUD helpers
   const createDocument = useCallback(async (

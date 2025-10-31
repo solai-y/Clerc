@@ -531,22 +531,33 @@ class DatabaseService:
                 if not tags_list:
                     continue
 
-                # Extract tags by level
-                doc_primary = {t['tag'] for t in tags_list if t.get('level') == 'primary'}
-                doc_secondary = {t['tag'] for t in tags_list if t.get('level') == 'secondary'}
-                doc_tertiary = {t['tag'] for t in tags_list if t.get('level') == 'tertiary'}
+                # Normalize tag function: handles underscores, spaces, case-insensitive
+                def normalize_tag(tag: str) -> str:
+                    """Normalize tag for comparison: trim, replace underscores/multiple spaces, lowercase"""
+                    import re
+                    return re.sub(r'\s+', ' ', tag.strip().replace('_', ' ')).lower()
+
+                # Extract tags by level and normalize them
+                doc_primary = {normalize_tag(t['tag']) for t in tags_list if t.get('level') == 'primary'}
+                doc_secondary = {normalize_tag(t['tag']) for t in tags_list if t.get('level') == 'secondary'}
+                doc_tertiary = {normalize_tag(t['tag']) for t in tags_list if t.get('level') == 'tertiary'}
+
+                # Normalize filter tags as well
+                norm_primary = [normalize_tag(tag) for tag in primary_tags] if primary_tags else []
+                norm_secondary = [normalize_tag(tag) for tag in secondary_tags] if secondary_tags else []
+                norm_tertiary = [normalize_tag(tag) for tag in tertiary_tags] if tertiary_tags else []
 
                 # OR logic within each tier, AND logic across tiers
-                if primary_tags and len(primary_tags) > 0:
-                    if not any(tag in doc_primary for tag in primary_tags):
+                if norm_primary and len(norm_primary) > 0:
+                    if not any(tag in doc_primary for tag in norm_primary):
                         continue
 
-                if secondary_tags and len(secondary_tags) > 0:
-                    if not any(tag in doc_secondary for tag in secondary_tags):
+                if norm_secondary and len(norm_secondary) > 0:
+                    if not any(tag in doc_secondary for tag in norm_secondary):
                         continue
 
-                if tertiary_tags and len(tertiary_tags) > 0:
-                    if not any(tag in doc_tertiary for tag in tertiary_tags):
+                if norm_tertiary and len(norm_tertiary) > 0:
+                    if not any(tag in doc_tertiary for tag in norm_tertiary):
                         continue
 
             out.append(r)

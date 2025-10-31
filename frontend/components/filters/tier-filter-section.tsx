@@ -48,7 +48,17 @@ export default function TierFilterSection({
 }: TierFilterSectionProps) {
   const styles = colorStyles[color]
 
-  if (availableTags.length === 0) {
+  // Deduplicate tags at component level as safety measure
+  const uniqueTags = Array.from(new Set(availableTags))
+
+  // Debug logging
+  if (availableTags.length !== uniqueTags.length) {
+    console.warn(`[TierFilterSection] ${tierLevel}: Removed ${availableTags.length - uniqueTags.length} duplicates`)
+    console.warn(`[TierFilterSection] ${tierLevel}: Original:`, availableTags)
+    console.warn(`[TierFilterSection] ${tierLevel}: Unique:`, uniqueTags)
+  }
+
+  if (uniqueTags.length === 0) {
     return null
   }
 
@@ -78,11 +88,11 @@ export default function TierFilterSection({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {availableTags.map((tag) => {
+        {uniqueTags.map((tag, index) => {
           const isSelected = selectedTags.includes(tag)
           return (
             <label
-              key={tag}
+              key={`${tierLevel}-${tag}`}
               className={cn(
                 'flex items-center gap-2 px-3 py-1.5 rounded-md border cursor-pointer transition-all',
                 isSelected
