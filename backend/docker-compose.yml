@@ -21,16 +21,22 @@ services:
       - .env
 
   ai-service:
-    build: ./ai-service
-    ports: 
+    build:
+      context: .
+      dockerfile: ./ai-service/Dockerfile
+    ports:
       - "5004:5004"
     env_file:
       - .env
 
   llm-service:
-    build: ./llm-service
+    build:
+      context: .
+      dockerfile: ./llm-service/Dockerfile
     ports:
       - "5005:5005"
+    depends_on:
+      - tag-service
     env_file:
       - .env
     environment:
@@ -38,6 +44,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY2}
       - AWS_REGION=${AWS_REGION2}
       - CLAUDE_MODEL_ID=${CLAUDE_MODEL_ID}
+      - TAG_SERVICE_URL=http://tag-service:5007
 
   prediction-service:
     build: ./prediction-service

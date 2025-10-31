@@ -56,6 +56,10 @@
       "Bash(docker ps:*)",
       "Bash(git checkout:*)",
       "Bash(tee:*)",
+      "Bash(for service in ai llm documents predict text-extract tags company s3)",
+      "Bash(do)",
+      "Bash(git add:*)",
+      "Bash(tee:*)",
       "Bash(docker network prune:*)",
       "Read(//tmp/**)"
     ],
