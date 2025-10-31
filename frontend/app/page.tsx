@@ -14,10 +14,31 @@ import { DocumentPagination } from "@/components/document-pagination"
 import { UserMenu } from "@/components/auth/user-menu"
 import { useDocuments } from "@/hooks/use-documents"
 import { useAuth } from "@/contexts/auth-context"
-import { apiClient } from "@/lib/api"
-import type { Document as AppDocument } from "@/lib/api" // used for details modal state
-import type { Document as UploadModalDocument } from "@/components/upload-modal" // matches UploadModal prop type
+import { apiClient, Document } from "@/lib/api"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import FilterPanel, { TagFilters } from "@/components/filters/filter-panel"
+
+// Tag normalization function - defined outside component to prevent recreation
+function dedupeAndSort(set: Set<string>): string[] {
+  const arr = Array.from(set)
+  // Use a Map to deduplicate by normalized form but keep original
+  const normalized = new Map<string, string>()
+  arr.forEach(tag => {
+    // Aggressive normalize: trim, replace underscores with spaces, collapse spaces, lowercase for comparison
+    const norm = tag.trim()
+      .replace(/_/g, ' ')           // underscores to spaces
+      .replace(/\s+/g, ' ')         // collapse multiple spaces
+      .replace(/\u00A0/g, ' ')      // non-breaking spaces to regular spaces
+      .replace(/[\u200B-\u200D\uFEFF]/g, '') // remove zero-width chars
+      .toLowerCase()
+    // Keep the first occurrence with preferred formatting (spaces not underscores)
+    if (!normalized.has(norm)) {
+      const cleaned = tag.trim().replace(/_/g, ' ').replace(/\s+/g, ' ')
+      normalized.set(norm, cleaned)
+    }
+  })
+  return Array.from(normalized.values()).sort()
+}
 
 export default function HomePage() {
   const router = useRouter()
@@ -38,8 +59,14 @@ export default function HomePage() {
   const [sortBy, setSortBy] = useState<"name" | "date" | "size">("date")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
-  const [detailsDocument, setDetailsDocument] = useState<AppDocument | null>(null)
-  const [filterTag, setFilterTag] = useState<string>("")
+  const [detailsDocument, setDetailsDocument] = useState<Document | null>(null)
+
+  // Tag filters state
+  const [tagFilters, setTagFilters] = useState<TagFilters>({
+    primary: [],
+    secondary: [],
+    tertiary: [],
+  })
 
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 15
@@ -50,10 +77,18 @@ export default function HomePage() {
     return () => clearTimeout(t)
   }, [searchTerm])
 
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [debouncedSearchTerm, sortBy, sortOrder])
+  // Create stable string key for tag filters to avoid hook dependency issues
+  // Using JSON.stringify of the entire object ensures stability
+  const tagFiltersKey = JSON.stringify(tagFilters)
 
+  // Reset to page 1 when search, sort, or filters change
+  useEffect(() => {
+    console.log("[page] 📄 reset page due to search/sort/filter change")
+    setCurrentPage(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm, sortBy, sortOrder, tagFiltersKey])
+
+  // Fetch documents (server-side search + sort + tag filtering)
   const {
     documents,
     pagination,
@@ -66,18 +101,69 @@ export default function HomePage() {
     offset: (currentPage - 1) * itemsPerPage,
     sortBy,
     sortOrder,
+    primaryTags: tagFilters.primary.length > 0 ? tagFilters.primary : undefined,
+    secondaryTags: tagFilters.secondary.length > 0 ? tagFilters.secondary : undefined,
+    tertiaryTags: tagFilters.tertiary.length > 0 ? tagFilters.tertiary : undefined,
   })
 
-  const filteredDocuments = useMemo(() => {
-    const filtered = !filterTag ? documents : documents.filter((d) => d.tags.includes(filterTag))
-    return filtered
-  }, [documents, filterTag])
+  // Fetch ALL available tags (independent of current filters)
+  const [availableTags, setAvailableTags] = useState<{
+    primary: string[]
+    secondary: string[]
+    tertiary: string[]
+  }>({
+    primary: [],
+    secondary: [],
+    tertiary: [],
+  })
 
-  const availableTags = useMemo(() => {
-    const tags = new Set<string>()
-    documents.forEach((doc) => doc.tags.forEach((tag) => tags.add(tag)))
-    return Array.from(tags).sort()
-  }, [documents])
+  // Fetch all tags from tag-service (much more efficient than scanning documents)
+  useEffect(() => {
+    const fetchAllTags = async () => {
+      try {
+        console.log('[page] 🏷️ Fetching tag hierarchy from tag-service...')
+
+        // Fetch from tag-service instead of scanning all documents
+        const hierarchy = await apiClient.getTagHierarchy()
+
+        const primary = new Set<string>()
+        const secondary = new Set<string>()
+        const tertiary = new Set<string>()
+
+        // Extract tags from hierarchy
+        // Structure: { "Primary": { "Secondary": ["Tertiary1", "Tertiary2"] } }
+        Object.keys(hierarchy).forEach(primaryTag => {
+          primary.add(primaryTag)
+
+          const secondaryObj = hierarchy[primaryTag]
+          Object.keys(secondaryObj).forEach(secondaryTag => {
+            secondary.add(secondaryTag)
+
+            const tertiaryArray = secondaryObj[secondaryTag]
+            if (Array.isArray(tertiaryArray)) {
+              tertiaryArray.forEach(tertiaryTag => {
+                tertiary.add(tertiaryTag)
+              })
+            }
+          })
+        })
+
+        // Use the dedupeAndSort function defined outside component
+        const tagLists = {
+          primary: dedupeAndSort(primary),
+          secondary: dedupeAndSort(secondary),
+          tertiary: dedupeAndSort(tertiary),
+        }
+
+        console.log('[page] 🏷️ Available tags loaded from hierarchy:', tagLists)
+        setAvailableTags(tagLists)
+      } catch (err) {
+        console.error('[page] ❌ Failed to fetch tag hierarchy:', err)
+      }
+    }
+
+    fetchAllTags()
+  }, []) // Empty dependency array = runs once on mount
 
   const handleSort = (column: "name" | "date" | "size") => {
     if (sortBy === column) {
@@ -88,9 +174,9 @@ export default function HomePage() {
     }
   }
 
-  // Match UploadModal prop exactly: (document: UploadModalDocument) => void
+  // Match UploadModal prop exactly: (document: Document) => void
   // Keep it sync to satisfy the prop type; we still trigger an async refetch.
-  const handleUploadComplete = (_newDocument: UploadModalDocument): void => {
+  const handleUploadComplete = (_newDocument: Document): void => {
     refetch().finally(() => setIsUploadModalOpen(false))
   }
 
@@ -139,7 +225,7 @@ export default function HomePage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => router.push("/tags")}
+                onClick={() => router.push("/tag-manager")}
                 className="flex items-center gap-2"
               >
                 <Tags className="w-4 h-4" />
@@ -176,45 +262,37 @@ export default function HomePage() {
           </Alert>
         )}
 
-        {/* Search & Filters */}
-        <Card className="mb-6">
+        {/* Search */}
+        <Card className="mb-4">
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <Search className="w-5 h-5" />
-              <span>Search & Filter Documents</span>
+              <span>Search Documents</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col gap-4">
-              <div className="flex-1">
-                <Input
-                  placeholder="Search by document name..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full"
-                />
-              </div>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Select
-                  value={filterTag || "all-tags"}
-                  onValueChange={(value: string) => setFilterTag(value === "all-tags" ? "" : value)}
-                >
-                  <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="Filter by tag" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all-tags">All Tags</SelectItem>
-                    {availableTags.map((tag) => (
-                      <SelectItem key={tag} value={tag}>
-                        {tag}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            <Input
+              placeholder="Search by document name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full"
+            />
           </CardContent>
         </Card>
+
+        {/* Tag Filters */}
+        <div className="mb-6">
+          <FilterPanel
+            availableTags={availableTags}
+            selectedFilters={tagFilters}
+            onFilterChange={(filters) => {
+              console.log("[page] 🏷️ tag filters changed", filters)
+              setTagFilters(filters)
+            }}
+            filteredCount={pagination?.totalItems}
+            totalCount={pagination?.totalItems}
+          />
+        </div>
 
         {/* Documents Table */}
         <Card>
@@ -228,7 +306,7 @@ export default function HomePage() {
                     ? "Loading..."
                     : pagination
                     ? `Page ${pagination.currentPage} of ${pagination.totalPages} (${pagination.totalItems} total)`
-                    : `${filteredDocuments.length} documents`}
+                    : `${documents.length} documents`}
                 </span>
               </div>
 
@@ -269,7 +347,7 @@ export default function HomePage() {
             ) : (
               <>
                 <DocumentTable
-                  documents={filteredDocuments}
+                  documents={documents}
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={handleSort}
@@ -341,7 +419,6 @@ export default function HomePage() {
 
             setCurrentPage(1)
             setSearchTerm("")
-            setFilterTag("")
             setDetailsDocument(null)
             await refetch()
           }}

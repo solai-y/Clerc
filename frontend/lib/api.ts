@@ -59,6 +59,9 @@ export interface GetDocumentsOptions {
   sortOrder?: "asc" | "desc";
   status?: string;
   companyId?: number;
+  primaryTags?: string[];
+  secondaryTags?: string[];
+  tertiaryTags?: string[];
 }
 
 // ---------- Tag service types ----------
@@ -126,6 +129,17 @@ class APIClient {
     if (options.companyId != null) params.append("company_id", String(options.companyId));
     if (options.sortBy) params.append("sort_by", options.sortBy);
     if (options.sortOrder) params.append("sort_order", options.sortOrder);
+
+    // Add tag filters
+    if (options.primaryTags && options.primaryTags.length > 0) {
+      options.primaryTags.forEach((tag) => params.append("primary_tags[]", tag));
+    }
+    if (options.secondaryTags && options.secondaryTags.length > 0) {
+      options.secondaryTags.forEach((tag) => params.append("secondary_tags[]", tag));
+    }
+    if (options.tertiaryTags && options.tertiaryTags.length > 0) {
+      options.tertiaryTags.forEach((tag) => params.append("tertiary_tags[]", tag));
+    }
 
     const url = apiUrl(`/documents${params.toString() ? `?${params}` : ""}`);
 
@@ -402,17 +416,78 @@ class APIClient {
 
   // ======================= TAG SERVICE (NEW) =======================
   // Always fetch from backend tag-service via Next.js rewrite; no JSON fallback.
+  async checkApiConnection(): Promise<{ status: string; message: string; tag_sample_count?: number }> {
+  const url = apiUrl("/tags/e2e");
+  const res = await fetch(url, { 
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store" 
+  });
+
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}: Failed to connect to API ${msg.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  return data as { status: string; message: string; tag_sample_count?: number };
+}
+
+
+
+  
   async getTagHierarchy(): Promise<TagHierarchy> {
     const url = apiUrl("/tags");
-    const res = await fetch(url, { cache: "no-store" });
+    console.log("🏷️ [TAG SERVICE DEBUG] Starting getTagHierarchy");
+    console.log("🏷️ [TAG SERVICE DEBUG] Environment:", {
+      isServer: typeof window === "undefined",
+      BACKEND_ORIGIN: process.env.BACKEND_ORIGIN || "not set",
+      NODE_ENV: process.env.NODE_ENV,
+      computedUrl: url,
+      currentHostname: typeof window !== "undefined" ? window.location.hostname : "server-side"
+    });
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store"
+    });
+
+    console.log("🏷️ [TAG SERVICE DEBUG] Response received:", {
+      status: res.status,
+      statusText: res.statusText,
+      ok: res.ok,
+      url: res.url,
+      headers: {
+        contentType: res.headers.get("content-type"),
+        cors: res.headers.get("access-control-allow-origin")
+      }
+    });
+
     if (!res.ok) {
       const msg = await res.text().catch(() => "");
+      console.error("🏷️ [TAG SERVICE ERROR] Failed to fetch tags:", {
+        status: res.status,
+        statusText: res.statusText,
+        responseBody: msg.slice(0, 500)
+      });
       throw new Error(`HTTP ${res.status}: Failed to fetch tags ${msg.slice(0, 200)}`);
     }
+
     const data = await res.json();
+    console.log("🏷️ [TAG SERVICE DEBUG] Data received:", {
+      dataType: typeof data,
+      isObject: typeof data === "object",
+      keys: data ? Object.keys(data).slice(0, 5) : [],
+      firstKey: data ? Object.keys(data)[0] : null,
+      sampleValue: data ? data[Object.keys(data)[0]] : null
+    });
+
     if (!data || typeof data !== "object") {
+      console.error("🏷️ [TAG SERVICE ERROR] Unexpected response shape:", data);
       throw new Error("Unexpected tags response shape.");
     }
+
+    console.log("🏷️ [TAG SERVICE DEBUG] Successfully loaded tag hierarchy");
     return data as TagHierarchy;
   }
 

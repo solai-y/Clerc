@@ -2,6 +2,7 @@ import logging
 import os
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Query, Body
+from typing import List
 from fastapi.responses import JSONResponse
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
@@ -75,7 +76,10 @@ async def get_documents(
     status: Optional[str] = Query(None),
     company_id: Optional[int] = Query(None),
     sort_by: str = Query('date'),
-    sort_order: str = Query('desc')
+    sort_order: str = Query('desc'),
+    primary_tags: Optional[List[str]] = Query(None, alias="primary_tags[]"),
+    secondary_tags: Optional[List[str]] = Query(None, alias="secondary_tags[]"),
+    tertiary_tags: Optional[List[str]] = Query(None, alias="tertiary_tags[]")
 ):
     """List documents with server-side search, sort, filter, and pagination (with robust fallbacks)."""
     logger.info(f"GET /documents - Request from {request.client.host}")
@@ -84,10 +88,16 @@ async def get_documents(
         return APIResponse.internal_error("Database service not available")
 
     try:
-        logger.debug(
+        # Convert None to empty list for tag filters
+        primary_tags = primary_tags or []
+        secondary_tags = secondary_tags or []
+        tertiary_tags = tertiary_tags or []
+
+        logger.info(
             "[ROUTE] /documents params: "
             f"limit={limit}, offset={offset}, search={search!r}, status={status!r}, "
-            f"company_id={company_id}, sort_by={sort_by!r}, sort_order={sort_order!r}"
+            f"company_id={company_id}, sort_by={sort_by!r}, sort_order={sort_order!r}, "
+            f"primary_tags={primary_tags}, secondary_tags={secondary_tags}, tertiary_tags={tertiary_tags}"
         )
 
         # Basic validation
@@ -100,15 +110,20 @@ async def get_documents(
         if sort_order not in (None, 'asc', 'desc'):
             return APIResponse.validation_error("sort_order must be 'asc' or 'desc'")
 
-        # Count with the SAME filters (incl. search)
+        # Count with the SAME filters (incl. search + tag filters)
         total_count, count_error = db_service.get_total_documents_count(
-            search=search, status=status, company_id=company_id
+            search=search,
+            status=status,
+            company_id=company_id,
+            primary_tags=primary_tags,
+            secondary_tags=secondary_tags,
+            tertiary_tags=tertiary_tags
         )
         if count_error:
             logger.error(f"[ROUTE] Count error: {count_error}")
             return APIResponse.internal_error("Failed to retrieve documents count")
 
-        # Query documents (unified: search + filter + sort + pagination)
+        # Query documents (unified: search + filter + sort + pagination + tag filters)
         documents, error = db_service.query_documents(
             search=search,
             status=status,
@@ -116,7 +131,10 @@ async def get_documents(
             sort_by=sort_by,
             sort_order=sort_order,
             limit=limit,
-            offset=offset
+            offset=offset,
+            primary_tags=primary_tags,
+            secondary_tags=secondary_tags,
+            tertiary_tags=tertiary_tags
         )
         if error:
             logger.error(f"[ROUTE] Query error: {error}")
