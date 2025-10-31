@@ -3,6 +3,8 @@ FastAPI application for LLM-based document classification service
 """
 import logging
 import time
+import sys
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +13,13 @@ from fastapi.responses import JSONResponse
 from models import PredictionRequest, FullResponse
 from prediction_service import PredictionService
 from config import Config
+
+# Add parent directory to path to import shared utilities
+# Works both locally (when run from llm-service dir) and in Docker (when shared_utils is copied)
+parent_dir = Path(__file__).parent.parent
+if parent_dir not in [Path(p) for p in sys.path]:
+    sys.path.insert(0, str(parent_dir))
+from shared_utils.text_preprocessing import clean_text
 
 # Configure logging
 logging.basicConfig(
@@ -104,21 +113,21 @@ async def predict_document(request: PredictionRequest) -> FullResponse:
     try:
         logger.info(f"Received prediction request for levels: {request.predict}")
         logger.info(f"Context provided: {request.context}")
-        logger.info(f"Text length: {len(request.text)} characters")
-        
+        logger.info(f"Text length (raw): {len(request.text)} characters")
+
         # Validate request
         if not request.text.strip():
             raise HTTPException(
                 status_code=400,
                 detail="Text cannot be empty"
             )
-        
+
         if not request.predict:
             raise HTTPException(
                 status_code=400,
                 detail="Must specify at least one prediction level"
             )
-        
+
         valid_levels = {"primary", "secondary", "tertiary"}
         for level in request.predict:
             if level not in valid_levels:
@@ -126,10 +135,14 @@ async def predict_document(request: PredictionRequest) -> FullResponse:
                     status_code=400,
                     detail=f"Invalid prediction level: {level}. Must be one of: {valid_levels}"
                 )
-        
+
+        # Preprocess text using dynamic sampling (same as AI service)
+        preprocessed_text = clean_text(request.text, max_words=5000)
+        logger.info(f"Text length (preprocessed): {len(preprocessed_text)} characters")
+
         # Make prediction
         result = prediction_service.predict(
-            text=request.text,
+            text=preprocessed_text,
             predict_levels=request.predict,
             context=request.context
         )

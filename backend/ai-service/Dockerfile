@@ -14,11 +14,14 @@ WORKDIR /app
 #  && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps first (better caching)
-COPY requirements.txt .
+COPY ai-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy shared utilities
+COPY shared_utils /app/shared_utils
+
 # Copy the project files
-COPY . .
+COPY ai-service /app
 
 # Build-time training — bakes models into the image
 RUN python train.py
