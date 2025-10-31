@@ -55,7 +55,9 @@
       "Bash(docker restart:*)",
       "Bash(docker ps:*)",
       "Bash(git checkout:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "Bash(for service in ai llm documents predict text-extract tags company s3)",
+      "Bash(do)"
     ],
     "deny": []
   }
