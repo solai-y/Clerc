@@ -285,21 +285,58 @@ async def predict(request: PredictRequest) -> Any:
 def validate_training_data() -> Any:
     """
     Validate that training data meets minimum requirements before retraining.
-    Returns validation status and tag statistics.
+    Returns validation status and tag statistics dynamically from database.
     """
-    import pandas as pd
+    from collections import defaultdict
 
     try:
-        # Read training data
-        df = pd.read_csv("./training_data_text.csv")
-        df = df.dropna(subset=["text"]).reset_index(drop=True)
+        # Fetch documents from Supabase with confirmed tags
+        response = supabase.table("processed_documents") \
+            .select("confirmed_tags, user_reviewed") \
+            .eq("user_reviewed", True) \
+            .not_.is_("confirmed_tags", "null") \
+            .execute()
+
+        documents = response.data
 
         # Count documents per tag at each level
-        from collections import defaultdict
+        primary_counts = defaultdict(int)
+        secondary_counts = defaultdict(int)
+        tertiary_counts = defaultdict(int)
 
-        primary_counts = df["primary"].value_counts().to_dict()
-        secondary_counts = df["secondary"].value_counts().to_dict()
-        tertiary_counts = df["tertiary"].value_counts().to_dict()
+        for doc in documents:
+            confirmed_tags = doc.get("confirmed_tags")
+            if not confirmed_tags:
+                continue
+
+            # Handle nested structure: confirmed_tags.confirmed_tags.tags[]
+            if isinstance(confirmed_tags, dict):
+                tags_list = confirmed_tags.get("confirmed_tags", {}).get("tags", [])
+            else:
+                continue
+
+            for tag_obj in tags_list:
+                tag_name = tag_obj.get("tag")
+                tag_level = tag_obj.get("level")
+
+                if not tag_name or not tag_level:
+                    continue
+
+                # Normalize tag name (handle underscores and spaces)
+                import re
+                normalized_tag = re.sub(r'\s+', ' ', tag_name.strip().replace('_', ' '))
+
+                if tag_level == "primary":
+                    primary_counts[normalized_tag] += 1
+                elif tag_level == "secondary":
+                    secondary_counts[normalized_tag] += 1
+                elif tag_level == "tertiary":
+                    tertiary_counts[normalized_tag] += 1
+
+        # Convert to regular dicts
+        primary_counts = dict(primary_counts)
+        secondary_counts = dict(secondary_counts)
+        tertiary_counts = dict(tertiary_counts)
 
         # Check if any tag has fewer than 10 documents
         MIN_DOCS = 10
@@ -321,7 +358,7 @@ def validate_training_data() -> Any:
 
         return {
             "valid": is_valid,
-            "total_documents": len(df),
+            "total_documents": len(documents),
             "primary_tags": primary_counts,
             "secondary_tags": secondary_counts,
             "tertiary_tags": tertiary_counts,
