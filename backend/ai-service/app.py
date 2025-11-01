@@ -17,6 +17,12 @@ from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 # Import train module (not specific function) so monkeypatching works in tests
 import train
 
+# Initialize Supabase client for validation endpoint
+from supabase import create_client, Client
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+
 MODELS_DIR = Path("models_hier")
 PRIMARY_MODEL_PATH = MODELS_DIR / "primary.joblib"
 BEST_MODEL_PATH = MODELS_DIR / "best_model.joblib"
@@ -290,48 +296,48 @@ def validate_training_data() -> Any:
     from collections import defaultdict
 
     try:
-        # Fetch documents from Supabase with confirmed tags
-        response = supabase.table("processed_documents") \
-            .select("confirmed_tags, user_reviewed") \
-            .eq("user_reviewed", True) \
-            .not_.is_("confirmed_tags", "null") \
+        # Check if Supabase client is initialized
+        if not supabase:
+            raise HTTPException(status_code=500, detail="Supabase client not configured")
+
+        # Fetch tag IDs from retraining_data table (not document text to avoid timeout)
+        response = supabase.table("retraining_data") \
+            .select("id,primary_tag_ids,secondary_tag_ids,tertiary_tag_ids") \
+            .not_.is_("primary_tag_ids", "null") \
             .execute()
 
         documents = response.data
 
-        # Count documents per tag at each level
+        # Fetch tags table to map IDs to names
+        tags_response = supabase.table("tags").select("id,tag_name,parent_id").execute()
+        tags_map = {tag['id']: {'name': tag['tag_name'], 'parent_id': tag['parent_id']} for tag in tags_response.data}
+
+        # Count documents per tag
         primary_counts = defaultdict(int)
         secondary_counts = defaultdict(int)
         tertiary_counts = defaultdict(int)
 
         for doc in documents:
-            confirmed_tags = doc.get("confirmed_tags")
-            if not confirmed_tags:
-                continue
+            # Count primary tags
+            if doc.get('primary_tag_ids'):
+                for tag_id in doc['primary_tag_ids']:
+                    if tag_id in tags_map:
+                        tag_name = tags_map[tag_id]['name']
+                        primary_counts[tag_name] += 1
 
-            # Handle nested structure: confirmed_tags.confirmed_tags.tags[]
-            if isinstance(confirmed_tags, dict):
-                tags_list = confirmed_tags.get("confirmed_tags", {}).get("tags", [])
-            else:
-                continue
+            # Count secondary tags
+            if doc.get('secondary_tag_ids'):
+                for tag_id in doc['secondary_tag_ids']:
+                    if tag_id in tags_map:
+                        tag_name = tags_map[tag_id]['name']
+                        secondary_counts[tag_name] += 1
 
-            for tag_obj in tags_list:
-                tag_name = tag_obj.get("tag")
-                tag_level = tag_obj.get("level")
-
-                if not tag_name or not tag_level:
-                    continue
-
-                # Normalize tag name (handle underscores and spaces)
-                import re
-                normalized_tag = re.sub(r'\s+', ' ', tag_name.strip().replace('_', ' '))
-
-                if tag_level == "primary":
-                    primary_counts[normalized_tag] += 1
-                elif tag_level == "secondary":
-                    secondary_counts[normalized_tag] += 1
-                elif tag_level == "tertiary":
-                    tertiary_counts[normalized_tag] += 1
+            # Count tertiary tags
+            if doc.get('tertiary_tag_ids'):
+                for tag_id in doc['tertiary_tag_ids']:
+                    if tag_id in tags_map:
+                        tag_name = tags_map[tag_id]['name']
+                        tertiary_counts[tag_name] += 1
 
         # Convert to regular dicts
         primary_counts = dict(primary_counts)
