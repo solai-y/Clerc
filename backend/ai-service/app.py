@@ -6,6 +6,7 @@ import subprocess
 import threading
 import os
 import sys
+import logging
 from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException, Request
@@ -13,6 +14,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import joblib
+
+# Configure logging for better debugging in CI/CD
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 # Import train module (not specific function) so monkeypatching works in tests
 import train
@@ -176,24 +184,50 @@ def validate_training_data() -> Any:
     Validate that training data meets minimum requirements before retraining.
     Returns validation status and tag statistics dynamically from database.
     """
+    import traceback
+    import logging
     from collections import defaultdict
 
+    logger = logging.getLogger(__name__)
+
     try:
+        # Log validation start with current model status
+        model_status = "ok" if best_model is not None else "not_loaded"
+        model_version = getattr(best_model, "version", "unknown") if best_model else "none"
+        logger.info(f"Validation called. Model status: {model_status}, version: {model_version}")
+
         # Check if Supabase client is initialized
         if not supabase:
+            logger.error("Supabase client not configured")
             raise HTTPException(status_code=500, detail="Supabase client not configured")
 
         # Fetch tag IDs from retraining_data table (not document text to avoid timeout)
+        logger.info("Fetching training data from retraining_data table")
         response = supabase.table("retraining_data") \
             .select("id,primary_tag_ids,secondary_tag_ids,tertiary_tag_ids") \
             .not_.is_("primary_tag_ids", "null") \
             .execute()
 
         documents = response.data
+        logger.info(f"Fetched {len(documents)} documents from retraining_data")
+
+        if not documents:
+            logger.warning("No training documents found in retraining_data table")
+            return {
+                "valid": False,
+                "total_documents": 0,
+                "primary_tags": {},
+                "secondary_tags": {},
+                "tertiary_tags": {},
+                "invalid_tags": [],
+                "message": "No training data available"
+            }
 
         # Fetch tags table to map IDs to names
+        logger.info("Fetching tags from tags table")
         tags_response = supabase.table("tags").select("id,tag_name,parent_id").execute()
         tags_map = {tag['id']: {'name': tag['tag_name'], 'parent_id': tag['parent_id']} for tag in tags_response.data}
+        logger.info(f"Loaded {len(tags_map)} tags from database")
 
         # Count documents per tag
         primary_counts = defaultdict(int)
@@ -227,6 +261,8 @@ def validate_training_data() -> Any:
         secondary_counts = dict(secondary_counts)
         tertiary_counts = dict(tertiary_counts)
 
+        logger.info(f"Tag counts - Primary: {len(primary_counts)}, Secondary: {len(secondary_counts)}, Tertiary: {len(tertiary_counts)}")
+
         # Check if any tag has fewer than 10 documents
         MIN_DOCS = 10
         invalid_tags = []
@@ -245,6 +281,11 @@ def validate_training_data() -> Any:
 
         is_valid = len(invalid_tags) == 0
 
+        if invalid_tags:
+            logger.info(f"Validation failed: {len(invalid_tags)} tags below minimum - {invalid_tags}")
+        else:
+            logger.info("Validation passed: all tags meet minimum requirements")
+
         return {
             "valid": is_valid,
             "total_documents": len(documents),
@@ -254,8 +295,15 @@ def validate_training_data() -> Any:
             "invalid_tags": invalid_tags,
             "message": "Training data is valid" if is_valid else f"Found {len(invalid_tags)} tags with fewer than {MIN_DOCS} documents"
         }
+    except HTTPException:
+        # Re-raise HTTPException without wrapping
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to validate training data: {e}")
+        # Log full traceback for CI logs
+        tb = traceback.format_exc()
+        logger.error(f"Unhandled exception in /training/validate: {e}\n{tb}")
+        # Return structured error so tests can show the cause
+        raise HTTPException(status_code=500, detail=f"Internal validation error: {str(e)}. See server logs for traceback.")
 
 
 @app.post("/rebuild", status_code=202)
