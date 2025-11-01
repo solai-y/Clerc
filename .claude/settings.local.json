@@ -41,6 +41,9 @@
       "Bash(dos2unix:*)",
       "Bash(pip install:*)",
       "Bash(sed:*)",
+      "Bash(\"C:\\Users\\I757760\\Downloads\\FYP\\Clerc-1\\.venv\\Scripts\\python.exe\" -m pytest tests/unit/test_tag_filtering.py -v)",
+      "Bash(\"C:\\Users\\I757760\\Downloads\\FYP\\Clerc-1\\.venv\\Scripts\\python.exe\" -m pytest tests/unit/test_tag_filtering.py::TestTagFilteringMinimal::test_ac2_or_logic_within_same_tier -v)",
+      "Bash(\"C:\\Users\\I757760\\Downloads\\FYP\\Clerc-1\\.venv\\Scripts\\python.exe\" -m pytest tests/unit/test_tag_filtering.py::TestTagFilteringMinimal::test_ac1_filter_endpoint_accepts_tag_parameters -v -s)",
       "Bash(awk:*)",
       "Bash(docker compose:*)",
       "Bash(pytest:*)",
@@ -55,7 +58,13 @@
       "Bash(docker restart:*)",
       "Bash(docker ps:*)",
       "Bash(git checkout:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "Bash(for service in ai llm documents predict text-extract tags company s3)",
+      "Bash(do)",
+      "Bash(git add:*)",
+      "Bash(tee:*)",
+      "Bash(git fetch:*)",
+      "Bash(git stash:*)"
     ],
     "deny": []
   }

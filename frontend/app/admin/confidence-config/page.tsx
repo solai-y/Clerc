@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/lib/api';
-import { ArrowLeft, Settings, BookOpen, Brain } from 'lucide-react';
+import { ArrowLeft, Settings, BookOpen, Brain, Tags } from 'lucide-react';
 import { UserMenu } from '@/components/auth/user-menu';
 import { useAuth } from '@/contexts/auth-context';
 
@@ -152,6 +152,15 @@ export default function ConfidenceConfigPage() {
               <Brain className="w-4 h-4" />
               <span>Model Retrain</span>
             </Button>
+            <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/tag-manager")}
+                className="flex items-center gap-2"
+              >
+                <Tags className="w-4 h-4" />
+                <span>Tag Manager</span>
+              </Button>
             {authLoading ? (
               <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full" />
             ) : user ? (
