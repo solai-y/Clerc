@@ -463,6 +463,7 @@ async def export_csv():
     """
     Export retraining data as CSV with hierarchical tag structure.
     Each row represents a valid hierarchy path (primary -> secondary -> tertiary).
+    Uses pagination to avoid timeout on large datasets.
     """
     try:
         from fastapi.responses import StreamingResponse
@@ -470,27 +471,49 @@ async def export_csv():
         import io
         from typing import Set, Tuple
 
-        # Fetch all retraining data
-        response = supabase.table('retraining_data').select('*').execute()
+        # First, get the total count to determine if we have data
+        count_response = supabase.table('retraining_data').select('id', count='exact').limit(1).execute()
+        total_count = count_response.count if hasattr(count_response, 'count') else 0
 
-        if not response.data or len(response.data) == 0:
+        if total_count == 0:
             raise HTTPException(status_code=404, detail='No retraining data found')
 
-        # Collect all unique tag IDs
-        all_tag_ids = set()
-        for row in response.data:
-            if row.get('primary_tag_ids'):
-                all_tag_ids.update(row['primary_tag_ids'])
-            if row.get('secondary_tag_ids'):
-                all_tag_ids.update(row['secondary_tag_ids'])
-            if row.get('tertiary_tag_ids'):
-                all_tag_ids.update(row['tertiary_tag_ids'])
+        logger.info(f"Starting CSV export for {total_count} retraining rows")
 
-        # Fetch ALL tag data (we need parent_id info for tags not in the confirmed lists)
+        # Fetch ALL tag data once (we need parent_id info for tags not in the confirmed lists)
         tag_data = {}
         tags_response = supabase.table('tags').select('id, tag_name, parent_id').execute()
         if tags_response.data:
             tag_data = {tag['id']: {'name': tag['tag_name'], 'parent_id': tag['parent_id']} for tag in tags_response.data}
+
+        logger.info(f"Loaded {len(tag_data)} tags from database")
+
+        # Fetch retraining data in batches to avoid timeout
+        BATCH_SIZE = 50
+        all_rows = []
+        offset = 0
+
+        while True:
+            logger.info(f"Fetching batch at offset {offset}")
+            batch_response = supabase.table('retraining_data') \
+                .select('document_id, document_text, primary_tag_ids, secondary_tag_ids, tertiary_tag_ids') \
+                .range(offset, offset + BATCH_SIZE - 1) \
+                .execute()
+
+            if not batch_response.data or len(batch_response.data) == 0:
+                break
+
+            all_rows.extend(batch_response.data)
+            offset += BATCH_SIZE
+
+            # Stop if we got fewer rows than batch size (last batch)
+            if len(batch_response.data) < BATCH_SIZE:
+                break
+
+        logger.info(f"Fetched {len(all_rows)} total rows in batches")
+
+        if len(all_rows) == 0:
+            raise HTTPException(status_code=404, detail='No retraining data found')
 
         # Helper function to find parent in hierarchy
         def find_parent_in_list(tag_id: int, tag_ids_list: list) -> int | None:
@@ -519,7 +542,7 @@ async def export_csv():
         csv_writer = csv.writer(output)
         csv_writer.writerow(['primary', 'secondary', 'tertiary', 'text'])
 
-        for row in response.data:
+        for row in all_rows:
             document_id = row.get('document_id', '')
             document_text = row.get('document_text', '')
             primary_ids = row.get('primary_tag_ids') or []
