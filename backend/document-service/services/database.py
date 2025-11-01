@@ -360,6 +360,24 @@ class DatabaseService:
             error_msg = f"Failed to update document status: {str(e)}"
             self.logger.error(error_msg)
             return False, error_msg
+        
+    def update_document_timing(self, document_id: int, timing_ms: int) -> tuple[bool, Optional[str]]:
+        """Update document processing timing (in ms)"""
+        try:
+            self.logger.debug(f"[DB] update_document_timing id={document_id} -> {timing_ms} ms")
+            response = self.supabase.table('processed_documents').update({'processing_ms': timing_ms}).eq('document_id', document_id).execute()
+
+            if response.data:
+                self.logger.info(f"Updated document {document_id} processing timing to {timing_ms} ms")
+                return True, None
+            else:
+                return False, f"Document with ID {document_id} not found"
+        except Exception as e:
+            error_msg = f"Failed to update document timing: {str(e)}"
+            self.logger.error(error_msg)
+            return False, error_msg
+
+
 
     # ----------------------------------------------------------------
     # Helpers (attach company, filter/sort/paginate fallback)

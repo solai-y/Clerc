@@ -20,12 +20,13 @@ import { Document } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 
 interface ConfirmTagsModalProps {
-  document: Document
-  onConfirm: (documentId: string, confirmedTags: string[], userAddedTags: string[]) => Promise<void> | void
+  document: Document;
+  uploadStartTime: number | null; // receive upload time as prop
+  onConfirm: (documentId: string, confirmedTags: string[], userAddedTags: string[], timingMs?: number) => Promise<void> | void
   onClose: () => void
 }
 
-export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsModalProps) {
+export function ConfirmTagsModal({ document, onConfirm, onClose, uploadStartTime }: ConfirmTagsModalProps) {
   const { toast } = useToast()
   const modelGeneratedTags = useMemo(
     () => document.modelGeneratedTags ?? [],
@@ -45,11 +46,22 @@ export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsMo
   const [newTag, setNewTag] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [showDocumentPreview, setShowDocumentPreview] = useState(false)
-
+  const [modalAppearanceTime, setModalAppearanceTime] = useState<number | null>(null)
+  
   useEffect(() => {
     setConfirmedModelTags(new Set(modelGeneratedTags.map(t => t.tag)))
     setUserAddedTags(initialUserAdded)
   }, [modelGeneratedTags, initialUserAdded])
+
+  useEffect(() => {
+    if (uploadStartTime !== null) {
+      setTimeout(() => {
+        const tagsReturned = Date.now();
+        setModalAppearanceTime(tagsReturned) // Record time when modal renders
+        console.log("⏰ Tags returned to user at timestamp: ", tagsReturned);
+      }, 0)
+    }
+  }, [uploadStartTime])
 
   const addUserTag = () => {
     const trimmedTag = newTag.trim()
@@ -98,7 +110,11 @@ export function ConfirmTagsModal({ document, onConfirm, onClose }: ConfirmTagsMo
         ? Array.from(confirmedModelTags)
         : modelGeneratedTags.map(t => t.tag)
 
-      await onConfirm(document.id, finalConfirmedTags, userAddedTags)
+      const timingMs = uploadStartTime && modalAppearanceTime ? modalAppearanceTime - uploadStartTime : undefined;
+      console.log("⏰ Total time taken: ", timingMs);
+
+
+      await onConfirm(document.id, finalConfirmedTags, userAddedTags, timingMs)
       
       // Show success notification
       toast({
