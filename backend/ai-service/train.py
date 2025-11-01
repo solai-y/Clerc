@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Tuple, Dict, List, Any
 import re
 import math
+import os
 
 import joblib
 import numpy as np
@@ -20,11 +21,57 @@ from sklearn.metrics import accuracy_score, f1_score
 # For each layer, include ALL labels with confidence >= THRESHOLD.
 # If none pass, include the single top-1 label for that layer.
 # TODO: the threshold needs to be fetched dynamically
-THRESHOLD: float = 0.30 
+THRESHOLD: float = 0.30
 
-# =============================== HIERARCHY (enforced) ==========================
-# TODO: replace with a call to your tags table; keep the same structure
-HIERARCHY = {
+# =============================== DYNAMIC HIERARCHY FETCHING ====================
+def fetch_hierarchy_from_tag_service():
+    """
+    Fetch tag hierarchy from tag service dynamically (same pattern as LLM service).
+
+    Returns:
+        Dictionary in format: {"primary": {Primary: {Secondary: [Tertiary]}, ...}}
+
+    Raises:
+        Exception: If tag service is unreachable or returns invalid data
+    """
+    import requests
+
+    tag_service_url = os.getenv("TAG_SERVICE_URL", "http://tag-service:5007")
+
+    try:
+        print(f"Fetching tag hierarchy from: {tag_service_url}/tags")
+        response = requests.get(f"{tag_service_url}/tags", timeout=10)
+        response.raise_for_status()
+
+        hierarchy_flat = response.json()
+
+        # Validate structure
+        if not isinstance(hierarchy_flat, dict):
+            raise ValueError("Tag hierarchy must be a dictionary")
+
+        # Count tags for logging
+        primary_count = len(hierarchy_flat)
+        secondary_count = sum(len(secondaries) for secondaries in hierarchy_flat.values())
+        tertiary_count = sum(
+            len(tertiaries)
+            for secondaries in hierarchy_flat.values()
+            for tertiaries in secondaries.values()
+            if isinstance(tertiaries, list)
+        )
+
+        print(f"✓ Fetched hierarchy: {primary_count} primary, {secondary_count} secondary, {tertiary_count} tertiary tags")
+
+        # Wrap in "primary" key to match train.py expected structure
+        return {"primary": hierarchy_flat}
+
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Network error connecting to tag service: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Failed to fetch tag hierarchy: {str(e)}")
+
+# =============================== HIERARCHY (with dynamic fetching) =============
+# Fallback hierarchy (used if tag service is unavailable)
+FALLBACK_HIERARCHY = {
     "primary": {
         "Disclosure": {
             "Annual_Reports": [],
@@ -44,6 +91,15 @@ HIERARCHY = {
         }
     }
 }
+
+# Try to fetch from tag service (like LLM service does)
+try:
+    HIERARCHY = fetch_hierarchy_from_tag_service()
+    print("✓ Using dynamic hierarchy from tag-service")
+except Exception as e:
+    print(f"⚠ Failed to fetch dynamic hierarchy: {e}")
+    print("⚠ Using fallback hierarchy")
+    HIERARCHY = FALLBACK_HIERARCHY
 
 # Build allowed sets/maps
 ALLOWED_PRIMARY = set(HIERARCHY["primary"].keys())

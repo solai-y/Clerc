@@ -28,10 +28,12 @@ services:
       - "5004:5004"
     depends_on:
       - retraining-service
+      - tag-service
     env_file:
       - .env
     environment:
       - RETRAINING_SERVICE_URL=http://retraining-service:5009
+      - TAG_SERVICE_URL=http://tag-service:5007
 
   llm-service:
     build:
