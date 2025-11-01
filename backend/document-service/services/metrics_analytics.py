@@ -128,7 +128,7 @@ class MetricsAnalyticsService:
             if processing_times:
                 avg_timing = round(sum(processing_times) / len(processing_times) / 1000, 2)
                 median_timing = round(float(np.median(processing_times)) / 1000, 2)
-                percentile_95_timing = round(float(np.percentile(processing_times, 5)) / 1000, 2)
+                percentile_95_timing = round(float(np.percentile(processing_times, 95)) / 1000, 2)
             else:
                 avg_timing = median_timing = percentile_95_timing = 0.0
 
