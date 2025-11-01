@@ -9,6 +9,8 @@ import sys
 
 # Add the parent directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Add the backend directory to the path so we can import shared_utils
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from main import app
 from prediction_service import PredictionService

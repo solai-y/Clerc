@@ -2,14 +2,28 @@
 Hierarchy validation utilities
 """
 from typing import Optional, List, Dict, Any
-from config import TAG_HIERARCHY
 
 class HierarchyValidator:
     """Validates predictions against the tag hierarchy"""
-    
-    def __init__(self):
-        self.hierarchy = TAG_HIERARCHY
-    
+
+    def __init__(self, hierarchy: Optional[Dict[str, Any]] = None):
+        """
+        Initialize validator with a hierarchy
+
+        Args:
+            hierarchy: Tag hierarchy dict. If None, will need to be set via set_hierarchy()
+        """
+        self.hierarchy = hierarchy or {}
+
+    def set_hierarchy(self, hierarchy: Dict[str, Any]) -> None:
+        """
+        Update the hierarchy
+
+        Args:
+            hierarchy: New tag hierarchy dictionary
+        """
+        self.hierarchy = hierarchy
+
     def get_valid_primaries(self) -> List[str]:
         """Get all valid primary tags"""
         return list(self.hierarchy.keys())

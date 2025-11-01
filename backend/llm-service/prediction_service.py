@@ -7,15 +7,18 @@ from typing import Dict, List, Any
 from claude_client import ClaudeClient
 from prompt_generator import PromptGenerator
 from hierarchy_validator import HierarchyValidator
+from tag_client import TagServiceClient
 from models import PredictionLevel, KeyEvidence
+from config import Config
 
 logger = logging.getLogger(__name__)
 
 class PredictionService:
     """Main service for handling document classification predictions"""
-    
+
     def __init__(self):
         self.claude_client = ClaudeClient()
+        self.tag_client = TagServiceClient(Config.TAG_SERVICE_URL)
         self.prompt_generator = PromptGenerator()
         self.validator = HierarchyValidator()
         logger.info("Prediction service initialized")
@@ -23,18 +26,32 @@ class PredictionService:
     def predict(self, text: str, predict_levels: List[str], context: Dict[str, str]) -> Dict[str, Any]:
         """
         Main prediction method
-        
+
         Args:
             text: Preprocessed document content
             predict_levels: List of levels to predict (primary, secondary, tertiary)
             context: Already predicted levels for context
-            
+
         Returns:
             Prediction response matching AI service format
         """
         start_time = time.time()
-        
+
         try:
+            # Fetch latest tag hierarchy from tag service
+            logger.info("Fetching latest tag hierarchy from tag service")
+            try:
+                hierarchy = self.tag_client.fetch_hierarchy()
+                self.validator.set_hierarchy(hierarchy)
+                self.prompt_generator.validator.set_hierarchy(hierarchy)
+                logger.info("Successfully loaded tag hierarchy")
+            except Exception as e:
+                logger.warning(f"Failed to fetch tags from tag service: {e}. Using fallback hierarchy.")
+                # Fallback to static hierarchy from config
+                from config import TAG_HIERARCHY
+                self.validator.set_hierarchy(TAG_HIERARCHY)
+                self.prompt_generator.validator.set_hierarchy(TAG_HIERARCHY)
+
             # Generate appropriate prompt based on context
             prompt = self.prompt_generator.generate_prompt(text, predict_levels, context)
             
