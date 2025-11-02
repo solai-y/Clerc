@@ -33,6 +33,15 @@ try:
     for level, metrics in result['metrics'].items():
         print(f"   {level.capitalize()}: {metrics['accepted']}/{metrics['total']} accepted")
 
+    # Check timing stats presence and validity
+    for timing_metric in ['average_timing_s', 'median_timing_s', 'percentile_95_timing_s']:
+        timing_value = result.get(timing_metric)
+        if timing_value is None:
+            print(f"   ⚠️ Warning: {timing_metric} missing from result")
+        else:
+            print(f"   {timing_metric}: {timing_value}s")
+            assert isinstance(timing_value, (int, float)) and timing_value >= 0, f"{timing_metric} invalid"
+
 except Exception as e:
     print(f"❌ Error: {str(e)}")
     import traceback

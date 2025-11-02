@@ -88,12 +88,13 @@ A system with **high Perfect Match Rate** means users can frequently accept all 
 The service queries the `processed_documents` table:
 
 ```sql
-SELECT process_id, document_id, suggested_tags, confirmed_tags, reviewed_at
+SELECT process_id, document_id, suggested_tags, confirmed_tags, reviewed_at, processing_ms
 FROM processed_documents
 WHERE confirmed_tags IS NOT NULL
   AND suggested_tags IS NOT NULL
   AND confirmed_tags != '[]'
   AND suggested_tags != '[]'
+  AND processing_ms IS NOT NULL
   AND reviewed_at >= start_date_utc (if provided)
   AND reviewed_at <= end_date_utc (if provided)
 ```
@@ -232,7 +233,10 @@ curl "http://localhost:5002/metrics/top-tag-accuracy?end_date=2025-10-20"
         "accepted": 117,
         "total": 150
       }
-    }
+    },
+    "average_timing_s": 4.5,
+    "median_timing_s": 4.2,
+    "percentile_95_timing_s": 7.8
   }
 }
 ```
@@ -253,6 +257,9 @@ curl "http://localhost:5002/metrics/top-tag-accuracy?end_date=2025-10-20"
 | `date_range.start_date` | string | Start date filter (YYYY-MM-DD, Singapore timezone) |
 | `date_range.end_date` | string | End date filter (YYYY-MM-DD, Singapore timezone) |
 | `date_range.timezone` | string | Timezone used for date filtering |
+| `average_timing_s` | float |	Average processing time in seconds
+| `median_timing_s` |	float	| Median processing time in seconds
+| `percentile_95_timing_s`	| float	95th percentile processing time in seconds
 | `metrics.*.accepted` | int | Number of top-confidence tags accepted |
 | `metrics.*.total` | int | Total number of top-confidence tags suggested |
 

@@ -39,6 +39,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
   const [pendingDocument, setPendingDocument] = useState<LocalDocument | null>(null)
   const [predictionData, setPredictionData] = useState<any>(null)
   const [explanationData, setExplanationData] = useState<any[]>([])
+  const [uploadStartTime, setUploadStartTime] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -199,7 +200,9 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       setUploadError("File size exceeds 80 MB limit.")
       return
     }
-    
+    const startTime = Date.now();
+    setUploadStartTime(startTime);
+    console.log("⏰ Upload started at timestamp:", startTime);
     setUploadedFile(file)
     setIsUploading(true)
     setUploadProgress(0)
@@ -388,7 +391,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         suggested_tags: extractedTags,
         threshold_pct: 80, // Based on our confidence thresholds
         ocr_used: false, // Text extraction method would determine this
-        processing_ms: predictionResponse.elapsed_seconds ? Math.round(predictionResponse.elapsed_seconds * 1000) : undefined,
+        // processing_ms: predictionResponse.elapsed_seconds ? Math.round(predictionResponse.elapsed_seconds * 1000) : undefined,
         explanations: explanations, // Include explanations for storage
         prediction_response: predictionResponse // Include full response for debugging
       }
@@ -443,7 +446,8 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
-  const handleConfirmTags = async (documentId: string, confirmedTagsData: any) => {
+  const handleConfirmTags = async (documentId: string, confirmedTagsData: any, timingMs?: number) => {
+    console.log("Timing received in onConfirm:", timingMs);
     if (pendingDocument) {
       // Extract tag names from the new JSONB structure for display
       const confirmedTagNames = confirmedTagsData.tags?.map((t: any) => t.tag) || []
@@ -469,6 +473,11 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         primaryTags: primaryTags,
         secondaryTags: secondaryTags,
         tertiaryTags: tertiaryTags,
+      }
+
+      if (timingMs !== undefined) {
+        console.log("⏰ Total time taken from uploading to receiving tags:",timingMs)
+      await apiClient.updateDocumentTiming(documentId, timingMs);
       }
 
       // Update the backend with confirmed tags
@@ -659,6 +668,7 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       <HierarchyBasedConfirmTagsModal
         document={pendingDocument}
         explanations={explanationData}
+        uploadStartTime={uploadStartTime}
         onConfirm={handleConfirmTags}
         onClose={handleCloseConfirmModal}
       />

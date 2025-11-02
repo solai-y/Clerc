@@ -34,6 +34,8 @@ services:
     environment:
       - RETRAINING_SERVICE_URL=http://retraining-service:5009
       - TAG_SERVICE_URL=http://tag-service:5007
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
 
   llm-service:
     build:

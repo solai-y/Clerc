@@ -158,7 +158,14 @@ export default function HomePage() {
         console.log('[page] 🏷️ Available tags loaded from hierarchy:', tagLists)
         setAvailableTags(tagLists)
       } catch (err) {
-        console.error('[page] ❌ Failed to fetch tag hierarchy:', err)
+        const errorMessage = err instanceof Error ? err.message : String(err)
+
+        // Check if error is 502 Bad Gateway (services still starting up)
+        if (errorMessage.includes("502") || errorMessage.includes("Bad Gateway")) {
+          console.log('[page] ⏳ Tag service is still starting up. Tags will load when service is ready.')
+        } else {
+          console.error('[page] ❌ Failed to fetch tag hierarchy:', err)
+        }
       }
     }
 

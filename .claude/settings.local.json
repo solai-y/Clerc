@@ -62,6 +62,9 @@
       "Bash(tee:*)",
       "Bash(docker network prune:*)",
       "Read(//tmp/**)"
+      "Bash(git fetch:*)",
+      "Bash(git stash:*)",
+      "Bash(timeout 60 sh:*)"
     ],
     "deny": []
   }

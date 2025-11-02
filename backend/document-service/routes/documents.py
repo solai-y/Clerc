@@ -355,6 +355,40 @@ async def create_processed_document(request: Request, body: ProcessedDocumentReq
         logger.error(f"Unexpected error in create_processed_document: {str(e)}")
         return APIResponse.internal_error()
 
+
+@documents_router.patch("/{document_id}/timing")
+async def update_document_timing(document_id: int, request: Request, body: dict):
+    """
+    Update the timing column for a document (e.g., upload to tag confirmation time in ms)
+    """
+    logger.info(f"PATCH /documents/{document_id}/timing - Request from {request.client.host}")
+
+    if not db_service:
+        return APIResponse.internal_error("Database service not available")
+
+    try:
+        data = await request.json()
+
+        timing_ms = data.get("timingMs")
+        if timing_ms is None or not isinstance(timing_ms, int):
+            return APIResponse.validation_error("`timingMs` field is required and must be an integer")
+
+        updated_document, error = db_service.update_document_timing(document_id, timing_ms)
+        if error:
+            if "not found" in error.lower():
+                return APIResponse.not_found(f"Document {document_id} not found")
+            else:
+                logger.error(f"Database error: {error}")
+                return APIResponse.internal_error("Failed to update document timing")
+
+        logger.info(f"Successfully updated timing for document {document_id}")
+        return APIResponse.success(updated_document, "Document timing updated successfully")
+
+    except Exception as e:
+        logger.error(f"Unexpected error in update_document_timing: {str(e)}")
+        return APIResponse.internal_error()
+
+
 @documents_router.patch('/{document_id}/tags')
 async def update_document_tags(document_id: int, request: Request, body: DocumentTagsRequest):
     """Update confirmed_tags, user_added_labels, and user_removed_tags for a document"""

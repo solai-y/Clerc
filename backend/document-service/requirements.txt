@@ -7,3 +7,4 @@ python-dotenv==1.0.0
 pytest>=8.2.0
 httpx
 urllib3>=2.0.0
+numpy
