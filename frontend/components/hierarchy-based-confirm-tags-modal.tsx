@@ -50,7 +50,8 @@ interface TagHierarchy {
 
 interface HierarchyBasedConfirmTagsModalProps {
   document: Document
-  onConfirm: (documentId: string, confirmedTagsData: any) => Promise<void> | void
+  uploadStartTime: number | null;
+  onConfirm: (documentId: string, confirmedTagsData: any, timingMs?: number) => Promise<void> | void
   onClose: () => void
   // TEMPORARY: Keep explanations prop for SHAP data until orchestrator is fixed
   explanations?: any[]
@@ -60,7 +61,8 @@ export function HierarchyBasedConfirmTagsModal({
   document,
   onConfirm,
   onClose,
-  explanations = []
+  explanations = [],
+  uploadStartTime
 }: HierarchyBasedConfirmTagsModalProps) {
   const { toast } = useToast()
 
@@ -74,6 +76,7 @@ export function HierarchyBasedConfirmTagsModal({
   const [dbExplanations, setDbExplanations] = useState<any[]>([])
   const [dataLoading, setDataLoading] = useState(true)
   const [documentLink, setDocumentLink] = useState<string>(document.link || "")
+  const [modalAppearanceTime, setModalAppearanceTime] = useState<number | null>(null)
 
   useEffect(() => {
     const loadHierarchy = async () => {
@@ -93,6 +96,16 @@ export function HierarchyBasedConfirmTagsModal({
     }
     loadHierarchy()
   }, [toast])
+
+  useEffect(() => {
+      if (uploadStartTime !== null) {
+        setTimeout(() => {
+          const tagsReturned = Date.now();
+          setModalAppearanceTime(tagsReturned) // Record time when modal renders
+          console.log("⏰ Tags returned to user at timestamp: ", tagsReturned);
+        }, 0)
+      }
+    }, [uploadStartTime])
 
   // Fetch prediction and explanation data from database
   useEffect(() => {
@@ -398,6 +411,9 @@ export function HierarchyBasedConfirmTagsModal({
       return
     }
 
+    const timingMs = uploadStartTime && modalAppearanceTime ? modalAppearanceTime - uploadStartTime : undefined;
+    console.log("⏰ Total time taken: ", timingMs);
+
     setIsLoading(true)
     try {
       // Create the data structure for the backend API with multiple tags per level
@@ -451,7 +467,7 @@ export function HierarchyBasedConfirmTagsModal({
         }
       }
 
-      await onConfirm(document.id, confirmedTagsData)
+      await onConfirm(document.id, confirmedTagsData, timingMs)
 
       toast({
         title: "Success!",

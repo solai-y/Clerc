@@ -236,13 +236,33 @@ class APIClient {
     });
   }
 
+  async updateDocumentTiming(documentId: string, timingMs: number): Promise<void> {
+  console.log(timingMs);
+  const url = apiUrl(`/documents/${documentId}/timing`);
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ timingMs })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to update timing: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data;
+}
+
   async createProcessedDocument(data: {
     document_id: number;
     suggested_tags?: Array<{ tag: string; score: number }>;
     model_id?: number;
     threshold_pct?: number;
     ocr_used?: boolean;
-    processing_ms?: number;
+    // processing_ms?: number;
     company?: number;
     explanations?: Array<{
       level: string;

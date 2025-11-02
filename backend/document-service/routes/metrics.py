@@ -46,6 +46,7 @@ async def get_top_tag_accuracy(
         - perfect_matches: Number of perfect matches
         - date_range: Applied date filter (if any)
         - metrics: Detailed acceptance counts for each level
+        - 
     """
     try:
         if not metrics_service:
@@ -89,7 +90,10 @@ async def get_top_tag_accuracy(
         return APIResponse.success(
             result,
             f"Metrics calculated - Top-tag accuracy: {result['top_tag_accuracy']}% | "
-            f"Perfect match rate: {result['perfect_match_rate']}%"
+            f"Perfect match rate: {result['perfect_match_rate']}% |"
+            f"Avg Timing: {result.get('average_timing_s', 'N/A')}s | "
+            f"Median Timing: {result.get('median_timing_s', 'N/A')}s | "
+            f"95th Percentile Timing: {result.get('percentile_95_timing_s', 'N/A')}s"
         )
 
     except Exception as e:
