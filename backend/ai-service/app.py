@@ -262,45 +262,52 @@ def rebuild() -> Any:
             _rebuilding.set()
             t0 = time.time()
 
-            # Step 1: Fetch CSV from retraining-service
+            # Step 1: Try to fetch CSV from retraining-service
             print("Fetching training data from retraining-service...")
             retraining_service_url = os.getenv("RETRAINING_SERVICE_URL", "http://retraining-service:5009")
             csv_url = f"{retraining_service_url}/retraining/export-csv"
 
             import requests
-            response = requests.get(csv_url, timeout=60)
-            response.raise_for_status()
 
-            # Step 2: Validate CSV has data
-            csv_content = response.text
-            if not csv_content or len(csv_content.strip()) == 0:
-                raise ValueError("Received empty CSV from retraining-service")
+            try:
+                response = requests.get(csv_url, timeout=60)
+                response.raise_for_status()
 
-            lines = csv_content.strip().split('\n')
-            if len(lines) < 2:
-                raise ValueError(f"CSV has insufficient data: only {len(lines)} line(s)")
+                # Step 2: Validate CSV has data
+                csv_content = response.text
+                if not csv_content or len(csv_content.strip()) == 0:
+                    raise ValueError("Received empty CSV from retraining-service")
 
-            # Step 3: Validate CSV header
-            expected_columns = {'primary', 'secondary', 'tertiary', 'text'}
-            header = lines[0].split(',')
-            header_set = {col.strip() for col in header}
-            if not expected_columns.issubset(header_set):
-                raise ValueError(f"CSV header missing required columns. Expected: {expected_columns}, Got: {header_set}")
+                lines = csv_content.strip().split('\n')
+                if len(lines) < 2:
+                    raise ValueError(f"CSV has insufficient data: only {len(lines)} line(s)")
 
-            print(f"✓ Fetched CSV with {len(lines) - 1} data rows")
+                # Step 3: Validate CSV header
+                expected_columns = {'primary', 'secondary', 'tertiary', 'text'}
+                header = lines[0].split(',')
+                header_set = {col.strip() for col in header}
+                if not expected_columns.issubset(header_set):
+                    raise ValueError(f"CSV header missing required columns. Expected: {expected_columns}, Got: {header_set}")
 
-            # Step 4: Backup existing training data (optional safety)
-            training_csv_path = Path("./training_data_text.csv")
-            if training_csv_path.exists():
-                backup_path = Path("./training_data_text.csv.backup")
-                import shutil
-                shutil.copy2(training_csv_path, backup_path)
-                print(f"✓ Backed up existing training data to {backup_path}")
+                print(f"✓ Fetched CSV with {len(lines) - 1} data rows")
 
-            # Step 5: Write new CSV
-            with open(training_csv_path, 'w', encoding='utf-8') as f:
-                f.write(csv_content)
-            print(f"✓ Saved training data to {training_csv_path}")
+                # Step 4: Backup existing training data (optional safety)
+                training_csv_path = Path("./training_data_text.csv")
+                if training_csv_path.exists():
+                    backup_path = Path("./training_data_text.csv.backup")
+                    import shutil
+                    shutil.copy2(training_csv_path, backup_path)
+                    print(f"✓ Backed up existing training data to {backup_path}")
+
+                # Step 5: Write new CSV
+                with open(training_csv_path, 'w', encoding='utf-8') as f:
+                    f.write(csv_content)
+                print(f"✓ Saved training data to {training_csv_path}")
+
+            except Exception as e:
+                print(f"⚠ Failed to fetch training data from retraining-service: {e}")
+                print("⚠ Will use existing training_data_text.csv for rebuild")
+                # Continue with existing CSV - don't fail the rebuild
 
             # Step 6: Retrain (this runs train.py and saves to models_hier/)
             print("Starting model training...")
