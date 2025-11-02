@@ -45,7 +45,38 @@ def _need_training() -> bool:
 
 def _train_sync():
     MODELS_DIR.mkdir(exist_ok=True)
-    print("No models detected; running training once at startup...")
+    print("No models detected; fetching latest data and training at startup...")
+
+    # Fetch latest CSV from retraining-service before training
+    try:
+        import requests
+        retraining_service_url = os.getenv("RETRAINING_SERVICE_URL", "http://retraining-service:5009")
+        csv_url = f"{retraining_service_url}/retraining/export-csv"
+
+        print(f"Fetching training data from {csv_url}...")
+        response = requests.get(csv_url, timeout=120)
+        response.raise_for_status()
+
+        csv_content = response.text
+        if not csv_content or len(csv_content.strip()) == 0:
+            raise ValueError("Received empty CSV from retraining-service")
+
+        lines = csv_content.strip().split('\n')
+        if len(lines) < 2:
+            raise ValueError(f"CSV has insufficient data: only {len(lines)} line(s)")
+
+        print(f"✓ Fetched CSV with {len(lines) - 1} data rows")
+
+        # Write CSV to training_data_text.csv
+        training_csv_path = Path("./training_data_text.csv")
+        with open(training_csv_path, 'w', encoding='utf-8') as f:
+            f.write(csv_content)
+        print(f"✓ Saved training data to {training_csv_path}")
+
+    except Exception as e:
+        print(f"⚠ Failed to fetch latest training data: {e}")
+        print("⚠ Will use existing training_data_text.csv if available")
+
     # Call the training script; raise if it fails
     subprocess.run(["python", "train.py"], check=True)
     print("Initial training complete.")

@@ -92,6 +92,22 @@ FALLBACK_HIERARCHY = {
     }
 }
 
+# Helper function to build allowed sets from hierarchy
+def build_allowed_sets(hierarchy: Dict) -> Tuple[set, Dict[str, set], Dict[Tuple[str, str], set]]:
+    """
+    Build ALLOWED_PRIMARY, ALLOWED_SECONDARY, ALLOWED_TERTIARY from hierarchy dict.
+    """
+    allowed_primary = set(hierarchy["primary"].keys())
+    allowed_secondary: Dict[str, set] = {
+        p: set(sec_dict.keys()) for p, sec_dict in hierarchy["primary"].items()
+    }
+    allowed_tertiary: Dict[Tuple[str, str], set] = {}
+    for p, sec_dict in hierarchy["primary"].items():
+        for s, ter_list in sec_dict.items():
+            allowed_tertiary[(p, s)] = set(ter_list or [])
+
+    return allowed_primary, allowed_secondary, allowed_tertiary
+
 # Try to fetch from tag service (like LLM service does)
 try:
     HIERARCHY = fetch_hierarchy_from_tag_service()
@@ -102,14 +118,7 @@ except Exception as e:
     HIERARCHY = FALLBACK_HIERARCHY
 
 # Build allowed sets/maps
-ALLOWED_PRIMARY = set(HIERARCHY["primary"].keys())
-ALLOWED_SECONDARY: Dict[str, set] = {
-    p: set(sec_dict.keys()) for p, sec_dict in HIERARCHY["primary"].items()
-}
-ALLOWED_TERTIARY: Dict[Tuple[str, str], set] = {}
-for p, sec_dict in HIERARCHY["primary"].items():
-    for s, ter_list in sec_dict.items():
-        ALLOWED_TERTIARY[(p, s)] = set(ter_list or [])
+ALLOWED_PRIMARY, ALLOWED_SECONDARY, ALLOWED_TERTIARY = build_allowed_sets(HIERARCHY)
 
 # =============================== Pipeline =====================================
 def make_pipeline():
@@ -251,6 +260,8 @@ class HierarchicalBestModel:
       - select all classes with confidence >= self.threshold
       - if none pass threshold, keep the single top-1
       - expand to next layer for ALL selected parents
+
+    Supports dynamic hierarchy at prediction time by refetching from tag-service.
     """
     def __init__(self, primary_model, secondary_models, tertiary_models, threshold: float = THRESHOLD):
         self.primary_model = primary_model
@@ -258,6 +269,33 @@ class HierarchicalBestModel:
         self.tertiary_models = tertiary_models    # {(primary, secondary): model}
         self.threshold = float(threshold)
         self._shap_cache = {}
+        self._hierarchy_cache = None  # Cache hierarchy for performance
+        self._hierarchy_cache_time = 0  # Timestamp of last fetch
+
+    def _get_current_hierarchy(self):
+        """
+        Get current hierarchy from tag-service with caching (60 second TTL).
+        Falls back to module-level HIERARCHY if tag-service is unavailable.
+        """
+        import time
+        CACHE_TTL = 60  # seconds
+
+        now = time.time()
+        if self._hierarchy_cache is not None and (now - self._hierarchy_cache_time) < CACHE_TTL:
+            return self._hierarchy_cache
+
+        try:
+            hierarchy = fetch_hierarchy_from_tag_service()
+            self._hierarchy_cache = hierarchy
+            self._hierarchy_cache_time = now
+            return hierarchy
+        except Exception as e:
+            # Fallback to module-level HIERARCHY if fetch fails
+            if self._hierarchy_cache is not None:
+                # Use stale cache if available
+                return self._hierarchy_cache
+            # Otherwise use module-level fallback
+            return HIERARCHY
 
     # ---------- scoring helpers ----------
     @staticmethod
@@ -397,6 +435,10 @@ class HierarchicalBestModel:
           "tertiary":  [ {primary, secondary, label, confidence, key_evidence}, ... ]
         }
         """
+        # Fetch current hierarchy dynamically
+        current_hierarchy = self._get_current_hierarchy()
+        allowed_primary, allowed_secondary, allowed_tertiary = build_allowed_sets(current_hierarchy)
+
         out: Dict[str, Any] = {"threshold": self.threshold, "primary": [], "secondary": [], "tertiary": []}
 
         # PRIMARY
@@ -404,6 +446,8 @@ class HierarchicalBestModel:
             return out  # nothing trained; return empty lists
 
         prim_scores = self._scores_confidences(self.primary_model, text)
+        # Filter to only allowed primary tags from current hierarchy
+        prim_scores = [item for item in prim_scores if item["label"] in allowed_primary]
         prim_selected = self._select_by_threshold(prim_scores)
 
         # attach SHAP for each selected primary
@@ -426,6 +470,9 @@ class HierarchicalBestModel:
                 continue
 
             sec_scores = self._scores_confidences(s_model, text)
+            # Filter to only allowed secondary tags for this primary
+            allowed_sec = allowed_secondary.get(p_label, set())
+            sec_scores = [item for item in sec_scores if item["label"] in allowed_sec]
             sec_selected = self._select_by_threshold(sec_scores)
 
             for s_item in sec_selected:
@@ -448,6 +495,9 @@ class HierarchicalBestModel:
                 continue
 
             ter_scores = self._scores_confidences(t_model, text)
+            # Filter to only allowed tertiary tags for this (primary, secondary)
+            allowed_ter = allowed_tertiary.get((p_label, s_label), set())
+            ter_scores = [item for item in ter_scores if item["label"] in allowed_ter]
             ter_selected = self._select_by_threshold(ter_scores)
 
             for t_item in ter_selected:
