@@ -404,6 +404,35 @@ export default function ModelRetrainPage() {
             </Alert>
           )}
 
+          {/* Training Statistics */}
+          {validation && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Training Data Statistics</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <p className="text-lg font-semibold">Total Documents: {validation.total_documents}</p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600 mb-1">Primary Tags</p>
+                    <p className="text-xl font-bold">{Object.keys(validation.primary_tags).length}</p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600 mb-1">Secondary Tags</p>
+                    <p className="text-xl font-bold">{Object.keys(validation.secondary_tags).length}</p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600 mb-1">Tertiary Tags</p>
+                    <p className="text-xl font-bold">{Object.keys(validation.tertiary_tags).length}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Excluded Tags Warning */}
           {validation && !validation.valid && validation.invalid_tags.length > 0 && (
             <Card className="border-orange-200 bg-orange-50">
@@ -430,35 +459,6 @@ export default function ModelRetrainPage() {
                 <p className="text-sm text-orange-700 mt-4">
                   <strong>Note:</strong> These tags will not be available in the retrained model. Add more training documents for these tags to include them in future retraining.
                 </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Training Statistics */}
-          {validation && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Training Data Statistics</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <p className="text-lg font-semibold">Total Documents: {validation.total_documents}</p>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Primary Tags</p>
-                    <p className="text-xl font-bold">{Object.keys(validation.primary_tags).length}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Secondary Tags</p>
-                    <p className="text-xl font-bold">{Object.keys(validation.secondary_tags).length}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Tertiary Tags</p>
-                    <p className="text-xl font-bold">{Object.keys(validation.tertiary_tags).length}</p>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           )}
