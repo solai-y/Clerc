@@ -5,6 +5,7 @@ from typing import Tuple, Dict, List, Any
 import re
 import math
 import os
+from collections import Counter
 
 import joblib
 import numpy as np
@@ -17,23 +18,10 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import accuracy_score, f1_score
 
 # =============================== INFERENCE CONFIG ==============================
-# Global threshold for including labels per layer at inference time.
-# For each layer, include ALL labels with confidence >= THRESHOLD.
-# If none pass, include the single top-1 label for that layer.
-# TODO: the threshold needs to be fetched dynamically
 THRESHOLD: float = 0.30
 
 # =============================== DYNAMIC HIERARCHY FETCHING ====================
 def fetch_hierarchy_from_tag_service():
-    """
-    Fetch tag hierarchy from tag service dynamically (same pattern as LLM service).
-
-    Returns:
-        Dictionary in format: {"primary": {Primary: {Secondary: [Tertiary]}, ...}}
-
-    Raises:
-        Exception: If tag service is unreachable or returns invalid data
-    """
     import requests
 
     tag_service_url = os.getenv("TAG_SERVICE_URL", "http://tag-service:5007")
@@ -45,11 +33,9 @@ def fetch_hierarchy_from_tag_service():
 
         hierarchy_flat = response.json()
 
-        # Validate structure
         if not isinstance(hierarchy_flat, dict):
             raise ValueError("Tag hierarchy must be a dictionary")
 
-        # Count tags for logging
         primary_count = len(hierarchy_flat)
         secondary_count = sum(len(secondaries) for secondaries in hierarchy_flat.values())
         tertiary_count = sum(
@@ -61,7 +47,6 @@ def fetch_hierarchy_from_tag_service():
 
         print(f"✓ Fetched hierarchy: {primary_count} primary, {secondary_count} secondary, {tertiary_count} tertiary tags")
 
-        # Wrap in "primary" key to match train.py expected structure
         return {"primary": hierarchy_flat}
 
     except requests.exceptions.RequestException as e:
@@ -70,7 +55,6 @@ def fetch_hierarchy_from_tag_service():
         raise Exception(f"Failed to fetch tag hierarchy: {str(e)}")
 
 # =============================== HIERARCHY (with dynamic fetching) =============
-# Fallback hierarchy (used if tag service is unavailable)
 FALLBACK_HIERARCHY = {
     "primary": {
         "Disclosure": {
@@ -92,11 +76,7 @@ FALLBACK_HIERARCHY = {
     }
 }
 
-# Helper function to build allowed sets from hierarchy
 def build_allowed_sets(hierarchy: Dict) -> Tuple[set, Dict[str, set], Dict[Tuple[str, str], set]]:
-    """
-    Build ALLOWED_PRIMARY, ALLOWED_SECONDARY, ALLOWED_TERTIARY from hierarchy dict.
-    """
     allowed_primary = set(hierarchy["primary"].keys())
     allowed_secondary: Dict[str, set] = {
         p: set(sec_dict.keys()) for p, sec_dict in hierarchy["primary"].items()
@@ -105,10 +85,8 @@ def build_allowed_sets(hierarchy: Dict) -> Tuple[set, Dict[str, set], Dict[Tuple
     for p, sec_dict in hierarchy["primary"].items():
         for s, ter_list in sec_dict.items():
             allowed_tertiary[(p, s)] = set(ter_list or [])
-
     return allowed_primary, allowed_secondary, allowed_tertiary
 
-# Try to fetch from tag service (like LLM service does)
 try:
     HIERARCHY = fetch_hierarchy_from_tag_service()
     print("✓ Using dynamic hierarchy from tag-service")
@@ -117,7 +95,6 @@ except Exception as e:
     print("⚠ Using fallback hierarchy")
     HIERARCHY = FALLBACK_HIERARCHY
 
-# Build allowed sets/maps
 ALLOWED_PRIMARY, ALLOWED_SECONDARY, ALLOWED_TERTIARY = build_allowed_sets(HIERARCHY)
 
 # =============================== Pipeline =====================================
@@ -148,17 +125,14 @@ df = df.dropna(subset=["text"]).reset_index(drop=True)
 assert {"text", "primary", "secondary", "tertiary"}.issubset(df.columns), \
     "df must have columns: text, primary, secondary, tertiary"
 
-# Primary filter
 df_primary = df[df["primary"].isin(ALLOWED_PRIMARY)].copy()
 
-# Secondary filter
 def _is_allowed_secondary(row) -> bool:
     p, s = row["primary"], row["secondary"]
     return p in ALLOWED_SECONDARY and s in ALLOWED_SECONDARY.get(p, set())
 
 df_secondary = df_primary[df_primary.apply(_is_allowed_secondary, axis=1)].copy()
 
-# Tertiary filter — only keep rows for (p,s) that define a non-empty tertiary set and contain valid tertiary
 def _is_allowed_tertiary(row) -> bool:
     p, s, t = row["primary"], row["secondary"], row["tertiary"]
     allowed_set = ALLOWED_TERTIARY.get((p, s), set())
@@ -166,7 +140,6 @@ def _is_allowed_tertiary(row) -> bool:
 
 df_tertiary = df_secondary[df_secondary.apply(_is_allowed_tertiary, axis=1)].copy()
 
-# Visibility
 print("\n=== HIERARCHY ENFORCEMENT SUMMARY ===")
 print(f"Rows total:              {len(df)}")
 print(f"Rows after PRIMARY filt: {len(df_primary)}")
@@ -183,11 +156,16 @@ results_hier = {"primary": {}, "secondary": {}, "tertiary": {}}
 if df_primary["primary"].nunique() >= 2:
     X = df_primary["text"].values
     y = df_primary["primary"].values
-    Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-    _, best_pipe_primary, _ = _train_simple(Xtr, ytr, "primary")
-    results_hier["primary"] = _evaluate_and_report(best_pipe_primary, Xte, yte, "PRIMARY")
-    joblib.dump(best_pipe_primary, models_dir / "primary.joblib")
-    print(f"Saved PRIMARY model → {(models_dir / 'primary.joblib').resolve()}")
+    counts = Counter(y)
+    if min(counts.values()) < 2:
+        print("Skipping primary model train_test_split due to classes with less than 2 samples.")
+        best_pipe_primary = None
+    else:
+        Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+        _, best_pipe_primary, _ = _train_simple(Xtr, ytr, "primary")
+        results_hier["primary"] = _evaluate_and_report(best_pipe_primary, Xte, yte, "PRIMARY")
+        joblib.dump(best_pipe_primary, models_dir / "primary.joblib")
+        print(f"Saved PRIMARY model → {(models_dir / 'primary.joblib').resolve()}")
 else:
     unique_p = list(df_primary["primary"].unique())
     print(f"[WARN] PRIMARY has <2 classes ({unique_p}). Skipping primary model.")
@@ -202,6 +180,11 @@ for p in sorted(ALLOWED_PRIMARY):
     sub = df_secondary[df_secondary["primary"] == p].copy()
     if sub["secondary"].nunique() < 2:
         print(f"[WARN] SECONDARY for primary='{p}' has <2 classes. Skipping.")
+        continue
+
+    counts = Counter(sub["secondary"])
+    if min(counts.values()) < 2:
+        print(f"[WARN] SECONDARY for primary='{p}' has class(es) with less than 2 samples. Skipping.")
         continue
 
     Xp_tr, Xp_te, yp_tr, yp_te = train_test_split(
@@ -225,6 +208,11 @@ for p, s in sorted(valid_ps_pairs):
 
     if sub["tertiary"].nunique() < 2:
         print(f"[WARN] TERTIARY for (primary='{p}', secondary='{s}') has <2 classes. Skipping.")
+        continue
+
+    counts = Counter(sub["tertiary"])
+    if min(counts.values()) < 2:
+        print(f"[WARN] TERTIARY for (primary='{p}', secondary='{s}') has class(es) with less than 2 samples. Skipping.")
         continue
 
     Xt_tr, Xt_te, yt_tr, yt_te = train_test_split(
