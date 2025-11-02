@@ -4,6 +4,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 from dotenv import load_dotenv
+import numpy as np
 
 load_dotenv()
 
@@ -76,8 +77,8 @@ class MetricsAnalyticsService:
             # Filter out null and empty arrays at database level
             self.logger.info("Fetching processed documents with suggested_tags and confirmed_tags")
             query = self.supabase.table('processed_documents').select(
-                'process_id, document_id, suggested_tags, confirmed_tags, reviewed_at'
-            ).not_.is_('confirmed_tags', 'null').not_.is_('suggested_tags', 'null').neq('confirmed_tags', '[]').neq('suggested_tags', '[]')
+                'process_id, document_id, suggested_tags, confirmed_tags, reviewed_at', 'processing_ms'
+            ).not_.is_('confirmed_tags', 'null').not_.is_('suggested_tags', 'null').not_.is_('processing_ms', 'null').neq('confirmed_tags', '[]').neq('suggested_tags', '[]')
 
             # Apply date filters if provided
             if start_datetime_utc:
@@ -104,7 +105,10 @@ class MetricsAnalyticsService:
                         "primary": {"accepted": 0, "total": 0},
                         "secondary": {"accepted": 0, "total": 0},
                         "tertiary": {"accepted": 0, "total": 0}
-                    }
+                    },
+                    "average_timing_s": 0.0,
+                    "median_timing_s": 0.0,
+                    "percentile_95_timing_s": 0.0
                 }
                 # Add date range info if filter was applied
                 if start_date or end_date:
@@ -116,6 +120,18 @@ class MetricsAnalyticsService:
                 return result
 
             documents = response.data
+            self.logger.info(f"Analyzing {len(documents)} documents")
+
+            # Extract processing times ignoring nulls
+            processing_times = [doc['processing_ms'] for doc in documents if doc.get('processing_ms') is not None]
+
+            if processing_times:
+                avg_timing = round(sum(processing_times) / len(processing_times) / 1000, 2)
+                median_timing = round(float(np.median(processing_times)) / 1000, 2)
+                percentile_95_timing = round(float(np.percentile(processing_times, 95)) / 1000, 2)
+            else:
+                avg_timing = median_timing = percentile_95_timing = 0.0
+
             self.logger.info(f"Analyzing {len(documents)} documents")
 
             # Initialize counters for each hierarchy level
@@ -209,7 +225,10 @@ class MetricsAnalyticsService:
                 "total_documents": len(documents),
                 "documents_with_all_levels": documents_with_all_levels,
                 "perfect_matches": perfect_match_count,
-                "metrics": metrics
+                "metrics": metrics,
+                "average_timing_s": avg_timing,
+                "median_timing_s": median_timing,
+                "percentile_95_timing_s": percentile_95_timing
             }
 
             # Add date range info if filter was applied

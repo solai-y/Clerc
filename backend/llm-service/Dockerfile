@@ -10,14 +10,17 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for better caching)
-COPY requirements.txt .
+COPY llm-service/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Copy shared utilities
+COPY shared_utils /app/shared_utils
+
 # Copy application code
-COPY . .
+COPY llm-service /app
 
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash appuser && \

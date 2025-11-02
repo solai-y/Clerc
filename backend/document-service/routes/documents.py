@@ -1,5 +1,6 @@
 import logging
 from fastapi import APIRouter, HTTPException, Request, Query, Body
+from typing import List
 from fastapi.responses import JSONResponse
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
@@ -73,7 +74,10 @@ async def get_documents(
     status: Optional[str] = Query(None),
     company_id: Optional[int] = Query(None),
     sort_by: str = Query('date'),
-    sort_order: str = Query('desc')
+    sort_order: str = Query('desc'),
+    primary_tags: Optional[List[str]] = Query(None, alias="primary_tags[]"),
+    secondary_tags: Optional[List[str]] = Query(None, alias="secondary_tags[]"),
+    tertiary_tags: Optional[List[str]] = Query(None, alias="tertiary_tags[]")
 ):
     """List documents with server-side search, sort, filter, and pagination (with robust fallbacks)."""
     logger.info(f"GET /documents - Request from {request.client.host}")
@@ -82,10 +86,16 @@ async def get_documents(
         return APIResponse.internal_error("Database service not available")
 
     try:
-        logger.debug(
+        # Convert None to empty list for tag filters
+        primary_tags = primary_tags or []
+        secondary_tags = secondary_tags or []
+        tertiary_tags = tertiary_tags or []
+
+        logger.info(
             "[ROUTE] /documents params: "
             f"limit={limit}, offset={offset}, search={search!r}, status={status!r}, "
-            f"company_id={company_id}, sort_by={sort_by!r}, sort_order={sort_order!r}"
+            f"company_id={company_id}, sort_by={sort_by!r}, sort_order={sort_order!r}, "
+            f"primary_tags={primary_tags}, secondary_tags={secondary_tags}, tertiary_tags={tertiary_tags}"
         )
 
         # Basic validation
@@ -98,15 +108,20 @@ async def get_documents(
         if sort_order not in (None, 'asc', 'desc'):
             return APIResponse.validation_error("sort_order must be 'asc' or 'desc'")
 
-        # Count with the SAME filters (incl. search)
+        # Count with the SAME filters (incl. search + tag filters)
         total_count, count_error = db_service.get_total_documents_count(
-            search=search, status=status, company_id=company_id
+            search=search,
+            status=status,
+            company_id=company_id,
+            primary_tags=primary_tags,
+            secondary_tags=secondary_tags,
+            tertiary_tags=tertiary_tags
         )
         if count_error:
             logger.error(f"[ROUTE] Count error: {count_error}")
             return APIResponse.internal_error("Failed to retrieve documents count")
 
-        # Query documents (unified: search + filter + sort + pagination)
+        # Query documents (unified: search + filter + sort + pagination + tag filters)
         documents, error = db_service.query_documents(
             search=search,
             status=status,
@@ -114,7 +129,10 @@ async def get_documents(
             sort_by=sort_by,
             sort_order=sort_order,
             limit=limit,
-            offset=offset
+            offset=offset,
+            primary_tags=primary_tags,
+            secondary_tags=secondary_tags,
+            tertiary_tags=tertiary_tags
         )
         if error:
             logger.error(f"[ROUTE] Query error: {error}")
@@ -334,6 +352,40 @@ async def create_processed_document(request: Request, body: ProcessedDocumentReq
     except Exception as e:
         logger.error(f"Unexpected error in create_processed_document: {str(e)}")
         return APIResponse.internal_error()
+
+
+@documents_router.patch("/{document_id}/timing")
+async def update_document_timing(document_id: int, request: Request, body: dict):
+    """
+    Update the timing column for a document (e.g., upload to tag confirmation time in ms)
+    """
+    logger.info(f"PATCH /documents/{document_id}/timing - Request from {request.client.host}")
+
+    if not db_service:
+        return APIResponse.internal_error("Database service not available")
+
+    try:
+        data = await request.json()
+
+        timing_ms = data.get("timingMs")
+        if timing_ms is None or not isinstance(timing_ms, int):
+            return APIResponse.validation_error("`timingMs` field is required and must be an integer")
+
+        updated_document, error = db_service.update_document_timing(document_id, timing_ms)
+        if error:
+            if "not found" in error.lower():
+                return APIResponse.not_found(f"Document {document_id} not found")
+            else:
+                logger.error(f"Database error: {error}")
+                return APIResponse.internal_error("Failed to update document timing")
+
+        logger.info(f"Successfully updated timing for document {document_id}")
+        return APIResponse.success(updated_document, "Document timing updated successfully")
+
+    except Exception as e:
+        logger.error(f"Unexpected error in update_document_timing: {str(e)}")
+        return APIResponse.internal_error()
+
 
 @documents_router.patch('/{document_id}/tags')
 async def update_document_tags(document_id: int, request: Request, body: DocumentTagsRequest):

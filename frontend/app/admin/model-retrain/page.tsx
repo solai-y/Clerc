@@ -9,7 +9,7 @@ import { apiClient } from '@/lib/api';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
-import { ArrowLeft, Settings, BookOpen } from 'lucide-react';
+import { ArrowLeft, Settings, BookOpen, Tags } from 'lucide-react';
 import { UserMenu } from '@/components/auth/user-menu';
 import { useAuth } from '@/contexts/auth-context';
 
@@ -274,6 +274,15 @@ export default function ModelRetrainPage() {
                   <Settings className="w-4 h-4" />
                   <span>Confidence Config</span>
                 </Button>
+                <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/tag-manager")}
+                className="flex items-center gap-2"
+              >
+                <Tags className="w-4 h-4" />
+                <span>Tag Manager</span>
+              </Button>
                 {authLoading ? (
                   <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full" />
                 ) : user ? (
@@ -340,6 +349,15 @@ export default function ModelRetrainPage() {
               >
                 <Settings className="w-4 h-4" />
                 <span>Confidence Config</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/tag-manager")}
+                className="flex items-center gap-2"
+              >
+                <Tags className="w-4 h-4" />
+                <span>Tag Manager</span>
               </Button>
               {authLoading ? (
                 <div className="w-8 h-8 animate-pulse bg-gray-200 rounded-full" />
