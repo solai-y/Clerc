@@ -115,11 +115,21 @@ export default function ModelRetrainPage() {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      toast({
-        title: "Validation Error",
-        description: `Failed to validate training data: ${errorMessage}`,
-        variant: "destructive",
-      });
+
+      // Check if error is 502 Bad Gateway (AI service still loading)
+      if (errorMessage.includes("502") || errorMessage.includes("Bad Gateway")) {
+        toast({
+          title: "AI Service Loading",
+          description: "The AI service is still loading models on startup. This usually takes 2-3 minutes. Please wait and try again.",
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "Validation Error",
+          description: `Failed to validate training data: ${errorMessage}`,
+          variant: "destructive",
+        });
+      }
       setValidation(null);
     } finally {
       setValidating(false);
