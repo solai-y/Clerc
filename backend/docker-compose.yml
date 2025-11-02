@@ -28,6 +28,9 @@ services:
       - "5004:5004"
     env_file:
       - .env
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
 
   llm-service:
     build:
