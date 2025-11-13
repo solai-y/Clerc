@@ -144,6 +144,19 @@ else:
 _model_swap_lock = threading.Lock()
 _rebuilding = threading.Event()  # True while rebuilding
 
+# Rebuild status tracking (detailed state for frontend)
+_rebuild_status = {
+    "is_rebuilding": False,
+    "status": "idle",  # idle, in_progress, completed, failed
+    "message": "",
+    "progress": 0,  # 0-100
+    "error": None,
+    "started_at": None,
+    "completed_at": None,
+    "duration_seconds": None
+}
+_rebuild_status_lock = threading.Lock()
+
 
 # ------------------- Routes -------------------
 @app.get("/e2e")
@@ -151,6 +164,16 @@ def health() -> Any:
     status = "ok" if best_model is not None else "model_unavailable"
     rebuilding = _rebuilding.is_set()
     return {"status": "AI Service is reachable", "model_status": status, "rebuilding": rebuilding}
+
+
+@app.get("/rebuild/status")
+def get_rebuild_status() -> Any:
+    """
+    Get detailed rebuild status including progress, success/failure, and error messages.
+    Frontend should poll this instead of /health for accurate rebuild feedback.
+    """
+    with _rebuild_status_lock:
+        return dict(_rebuild_status)
 
 
 @app.post("/predict")
@@ -349,11 +372,30 @@ def rebuild() -> Any:
 
     def _do_rebuild():
         global best_model
+        import datetime
+
+        # Initialize status
+        with _rebuild_status_lock:
+            _rebuild_status.update({
+                "is_rebuilding": True,
+                "status": "in_progress",
+                "message": "Starting rebuild...",
+                "progress": 0,
+                "error": None,
+                "started_at": datetime.datetime.now().isoformat(),
+                "completed_at": None,
+                "duration_seconds": None
+            })
+
         try:
             _rebuilding.set()
             t0 = time.time()
 
             # Step 1: Try to fetch CSV from retraining-service
+            with _rebuild_status_lock:
+                _rebuild_status["message"] = "Fetching training data from retraining-service..."
+                _rebuild_status["progress"] = 10
+
             print("Fetching training data from retraining-service...")
             retraining_service_url = os.getenv("RETRAINING_SERVICE_URL", "http://retraining-service:5009")
             csv_url = f"{retraining_service_url}/retraining/export-csv"
@@ -382,6 +424,10 @@ def rebuild() -> Any:
 
                 print(f"✓ Fetched CSV with {len(lines) - 1} data rows")
 
+                with _rebuild_status_lock:
+                    _rebuild_status["message"] = f"Fetched {len(lines) - 1} training samples"
+                    _rebuild_status["progress"] = 20
+
                 # Step 4: Backup existing training data (optional safety)
                 training_csv_path = Path("./training_data_text.csv")
                 if training_csv_path.exists():
@@ -395,17 +441,36 @@ def rebuild() -> Any:
                     f.write(csv_content)
                 print(f"✓ Saved training data to {training_csv_path}")
 
+                with _rebuild_status_lock:
+                    _rebuild_status["message"] = "Training data saved, starting model training..."
+                    _rebuild_status["progress"] = 30
+
             except Exception as e:
                 print(f"⚠ Failed to fetch training data from retraining-service: {e}")
                 print("⚠ Will use existing training_data_text.csv for rebuild")
+                with _rebuild_status_lock:
+                    _rebuild_status["message"] = "Using existing training data (fetch failed)"
+                    _rebuild_status["progress"] = 30
                 # Continue with existing CSV - don't fail the rebuild
 
             # Step 6: Retrain (this runs train.py and saves to models_hier/)
+            with _rebuild_status_lock:
+                _rebuild_status["message"] = "Training models (this may take several minutes)..."
+                _rebuild_status["progress"] = 40
+
             print("Starting model training...")
             subprocess.run(["python", "train.py"], check=True)
 
+            with _rebuild_status_lock:
+                _rebuild_status["message"] = "Model training complete, loading new model..."
+                _rebuild_status["progress"] = 80
+
             # Step 7: Load new model - use train.build_best_model so test monkeypatching works
             new_model = train.build_best_model(MODELS_DIR)
+
+            with _rebuild_status_lock:
+                _rebuild_status["message"] = "Swapping to new model..."
+                _rebuild_status["progress"] = 90
 
             # Step 8: Atomic swap
             with _model_swap_lock:
@@ -414,12 +479,57 @@ def rebuild() -> Any:
             elapsed = time.time() - t0
             model_version = getattr(new_model, "version", "unknown")
             print(f"✓ Rebuild complete in {elapsed:.2f}s - swapped to model version: {model_version}")
+
+            # Mark as completed
+            with _rebuild_status_lock:
+                _rebuild_status.update({
+                    "is_rebuilding": False,
+                    "status": "completed",
+                    "message": f"Rebuild completed successfully in {elapsed:.2f}s",
+                    "progress": 100,
+                    "completed_at": datetime.datetime.now().isoformat(),
+                    "duration_seconds": round(elapsed, 2)
+                })
+
         except requests.exceptions.RequestException as e:
-            print(f"✗ Failed to fetch training data from retraining-service: {e}")
+            error_msg = f"Failed to fetch training data from retraining-service: {e}"
+            print(f"✗ {error_msg}")
+            with _rebuild_status_lock:
+                _rebuild_status.update({
+                    "is_rebuilding": False,
+                    "status": "failed",
+                    "message": "Rebuild failed",
+                    "error": error_msg,
+                    "progress": 0,
+                    "completed_at": datetime.datetime.now().isoformat(),
+                    "duration_seconds": round(time.time() - t0, 2) if 't0' in locals() else None
+                })
         except ValueError as e:
-            print(f"✗ CSV validation failed: {e}")
+            error_msg = f"CSV validation failed: {e}"
+            print(f"✗ {error_msg}")
+            with _rebuild_status_lock:
+                _rebuild_status.update({
+                    "is_rebuilding": False,
+                    "status": "failed",
+                    "message": "Rebuild failed",
+                    "error": error_msg,
+                    "progress": 0,
+                    "completed_at": datetime.datetime.now().isoformat(),
+                    "duration_seconds": round(time.time() - t0, 2) if 't0' in locals() else None
+                })
         except Exception as e:
-            print(f"✗ Rebuild failed: {e}")
+            error_msg = f"Rebuild failed: {e}"
+            print(f"✗ {error_msg}")
+            with _rebuild_status_lock:
+                _rebuild_status.update({
+                    "is_rebuilding": False,
+                    "status": "failed",
+                    "message": "Rebuild failed",
+                    "error": str(e),
+                    "progress": 0,
+                    "completed_at": datetime.datetime.now().isoformat(),
+                    "duration_seconds": round(time.time() - t0, 2) if 't0' in locals() else None
+                })
         finally:
             _rebuilding.clear()
 

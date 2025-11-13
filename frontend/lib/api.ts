@@ -386,6 +386,37 @@ class APIClient {
     }
   }
 
+  async getRebuildStatus(): Promise<{
+    is_rebuilding: boolean;
+    status: 'idle' | 'in_progress' | 'completed' | 'failed';
+    message: string;
+    progress: number;
+    error: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+    duration_seconds: number | null;
+  }> {
+    const url = apiUrl("/ai/rebuild/status");
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        const msg = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status}: ${msg || response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to get rebuild status: ${errorMessage}.`);
+    }
+  }
+
   async triggerModelRetrain(): Promise<{ status: string }> {
     const url = apiUrl("/ai/rebuild");
     try {
