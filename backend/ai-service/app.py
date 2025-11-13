@@ -394,7 +394,6 @@ def rebuild() -> Any:
             # Step 1: Try to fetch CSV from retraining-service
             with _rebuild_status_lock:
                 _rebuild_status["message"] = "Fetching training data from retraining-service..."
-                _rebuild_status["progress"] = 10
 
             print("Fetching training data from retraining-service...")
             retraining_service_url = os.getenv("RETRAINING_SERVICE_URL", "http://retraining-service:5009")
@@ -425,8 +424,7 @@ def rebuild() -> Any:
                 print(f"✓ Fetched CSV with {len(lines) - 1} data rows")
 
                 with _rebuild_status_lock:
-                    _rebuild_status["message"] = f"Fetched {len(lines) - 1} training samples"
-                    _rebuild_status["progress"] = 20
+                    _rebuild_status["message"] = f"Fetched {len(lines) - 1} training samples, preparing data..."
 
                 # Step 4: Backup existing training data (optional safety)
                 training_csv_path = Path("./training_data_text.csv")
@@ -441,36 +439,28 @@ def rebuild() -> Any:
                     f.write(csv_content)
                 print(f"✓ Saved training data to {training_csv_path}")
 
-                with _rebuild_status_lock:
-                    _rebuild_status["message"] = "Training data saved, starting model training..."
-                    _rebuild_status["progress"] = 30
-
             except Exception as e:
                 print(f"⚠ Failed to fetch training data from retraining-service: {e}")
                 print("⚠ Will use existing training_data_text.csv for rebuild")
                 with _rebuild_status_lock:
-                    _rebuild_status["message"] = "Using existing training data (fetch failed)"
-                    _rebuild_status["progress"] = 30
+                    _rebuild_status["message"] = "Using existing training data (fetch failed), starting training..."
                 # Continue with existing CSV - don't fail the rebuild
 
             # Step 6: Retrain (this runs train.py and saves to models_hier/)
             with _rebuild_status_lock:
-                _rebuild_status["message"] = "Training models (this may take several minutes)..."
-                _rebuild_status["progress"] = 40
+                _rebuild_status["message"] = "Training models (this may take 1-2 minutes)..."
 
             print("Starting model training...")
             subprocess.run(["python", "train.py"], check=True)
 
             with _rebuild_status_lock:
                 _rebuild_status["message"] = "Model training complete, loading new model..."
-                _rebuild_status["progress"] = 80
 
             # Step 7: Load new model - use train.build_best_model so test monkeypatching works
             new_model = train.build_best_model(MODELS_DIR)
 
             with _rebuild_status_lock:
-                _rebuild_status["message"] = "Swapping to new model..."
-                _rebuild_status["progress"] = 90
+                _rebuild_status["message"] = "Activating new model..."
 
             # Step 8: Atomic swap
             with _model_swap_lock:

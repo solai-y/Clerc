@@ -141,11 +141,24 @@ export default function ModelRetrainPage() {
     validateTrainingData();
   }, []);
 
-  // Poll for retrain status
+  // Poll for retrain status with smooth progress simulation
   useEffect(() => {
     if (!retraining) return;
 
-    const pollInterval = setInterval(async () => {
+    let progressInterval: NodeJS.Timeout;
+    let pollInterval: NodeJS.Timeout;
+    const startTime = Date.now();
+    const TOTAL_DURATION_MS = 60000; // 60 seconds to reach 99%
+
+    // Smooth progress simulation: 0% -> 99% over 60 seconds
+    progressInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const simulatedProgress = Math.min(Math.floor((elapsed / TOTAL_DURATION_MS) * 99), 99);
+      setRetrainProgress(simulatedProgress);
+    }, 500); // Update every 500ms for smooth animation
+
+    // Poll backend for actual status
+    pollInterval = setInterval(async () => {
       const rebuildStatus = await checkRebuildStatus();
 
       if (!rebuildStatus) {
@@ -153,12 +166,14 @@ export default function ModelRetrainPage() {
         return;
       }
 
-      // Update progress and message from backend
-      setRetrainProgress(rebuildStatus.progress);
+      // Update message from backend (but not progress - we use simulated progress)
       setRetrainMessage(rebuildStatus.message);
 
       if (rebuildStatus.status === 'completed' && retrainStatus === 'in_progress') {
-        // Retraining completed successfully
+        // Retraining completed successfully - jump to 100%
+        clearInterval(progressInterval);
+        clearInterval(pollInterval);
+
         setRetraining(false);
         setRetrainStatus('completed');
         setRetrainProgress(100);
@@ -191,6 +206,9 @@ export default function ModelRetrainPage() {
         }, 1000);
       } else if (rebuildStatus.status === 'failed' && retrainStatus === 'in_progress') {
         // Retraining failed
+        clearInterval(progressInterval);
+        clearInterval(pollInterval);
+
         setRetraining(false);
         setRetrainStatus('failed');
         setRetrainProgress(0);
@@ -204,7 +222,10 @@ export default function ModelRetrainPage() {
       }
     }, 2000); // Poll every 2 seconds
 
-    return () => clearInterval(pollInterval);
+    return () => {
+      clearInterval(progressInterval);
+      clearInterval(pollInterval);
+    };
   }, [retraining, retrainStatus, validationBeforeRetrain, checkRebuildStatus, toast]);
 
   // Handle retrain button click
