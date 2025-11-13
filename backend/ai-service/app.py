@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 # Import train module (not specific function) so monkeypatching works in tests
 import train
 
+# Training configuration - must match train.py
+MIN_DOCS_PER_TAG = 10
+
 # Add parent directory to path to import shared utilities
 # Works both locally (when run from ai-service dir) and in Docker (when shared_utils is copied)
 parent_dir = Path(__file__).parent.parent
@@ -317,21 +320,20 @@ def validate_training_data() -> Any:
 
         logger.info(f"Tag counts - Primary: {len(primary_counts)}, Secondary: {len(secondary_counts)}, Tertiary: {len(tertiary_counts)}")
 
-        # Check if any tag has fewer than 10 documents
-        MIN_DOCS = 10
+        # Check if any tag has fewer than MIN_DOCS_PER_TAG documents
         invalid_tags = []
 
         for tag, count in primary_counts.items():
-            if count < MIN_DOCS:
-                invalid_tags.append({"level": "primary", "tag": tag, "count": count, "required": MIN_DOCS})
+            if count < MIN_DOCS_PER_TAG:
+                invalid_tags.append({"level": "primary", "tag": tag, "count": count, "required": MIN_DOCS_PER_TAG})
 
         for tag, count in secondary_counts.items():
-            if count < MIN_DOCS:
-                invalid_tags.append({"level": "secondary", "tag": tag, "count": count, "required": MIN_DOCS})
+            if count < MIN_DOCS_PER_TAG:
+                invalid_tags.append({"level": "secondary", "tag": tag, "count": count, "required": MIN_DOCS_PER_TAG})
 
         for tag, count in tertiary_counts.items():
-            if count < MIN_DOCS:
-                invalid_tags.append({"level": "tertiary", "tag": tag, "count": count, "required": MIN_DOCS})
+            if count < MIN_DOCS_PER_TAG:
+                invalid_tags.append({"level": "tertiary", "tag": tag, "count": count, "required": MIN_DOCS_PER_TAG})
 
         is_valid = len(invalid_tags) == 0
 
@@ -347,7 +349,7 @@ def validate_training_data() -> Any:
             "secondary_tags": secondary_counts,
             "tertiary_tags": tertiary_counts,
             "invalid_tags": invalid_tags,
-            "message": "Training data is valid" if is_valid else f"Found {len(invalid_tags)} tags with fewer than {MIN_DOCS} documents"
+            "message": "Training data is valid" if is_valid else f"Found {len(invalid_tags)} tags with fewer than {MIN_DOCS_PER_TAG} documents"
         }
     except HTTPException:
         # Re-raise HTTPException without wrapping

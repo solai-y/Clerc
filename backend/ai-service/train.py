@@ -21,6 +21,9 @@ from sklearn.metrics import accuracy_score, f1_score
 # =============================== INFERENCE CONFIG ==============================
 THRESHOLD: float = 0.30
 
+# =============================== TRAINING CONFIG ================================
+MIN_SAMPLES_PER_TAG: int = 10  # Minimum documents required per tag to train
+
 # =============================== DYNAMIC HIERARCHY FETCHING ====================
 def fetch_hierarchy_from_tag_service():
     import requests
@@ -161,8 +164,12 @@ if df_primary["primary"].nunique() >= 2:
     X = df_primary["text"].values
     y = df_primary["primary"].values
     counts = Counter(y)
-    if min(counts.values()) < 2:
-        print("Skipping primary model train_test_split due to classes with less than 2 samples.")
+
+    # Check if any tag has less than MIN_SAMPLES_PER_TAG
+    insufficient_tags = {tag: count for tag, count in counts.items() if count < MIN_SAMPLES_PER_TAG}
+    if insufficient_tags:
+        print(f"[WARN] PRIMARY has tags with <{MIN_SAMPLES_PER_TAG} samples: {insufficient_tags}")
+        print(f"[WARN] Skipping primary model training. Each tag needs at least {MIN_SAMPLES_PER_TAG} documents.")
         best_pipe_primary = None
     else:
         Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
@@ -193,8 +200,12 @@ for p in sorted(ALLOWED_PRIMARY):
         continue
 
     counts = Counter(sub["secondary"])
-    if min(counts.values()) < 2:
-        print(f"[WARN] SECONDARY for primary='{p}' has class(es) with less than 2 samples. Skipping.")
+
+    # Check if any tag has less than MIN_SAMPLES_PER_TAG
+    insufficient_tags = {tag: count for tag, count in counts.items() if count < MIN_SAMPLES_PER_TAG}
+    if insufficient_tags:
+        print(f"[WARN] SECONDARY for primary='{p}' has tags with <{MIN_SAMPLES_PER_TAG} samples: {insufficient_tags}")
+        print(f"[WARN] Skipping SECONDARY model for primary='{p}'. Each tag needs at least {MIN_SAMPLES_PER_TAG} documents.")
         continue
 
     Xp_tr, Xp_te, yp_tr, yp_te = train_test_split(
@@ -227,8 +238,12 @@ for p, s in sorted(valid_ps_pairs):
         continue
 
     counts = Counter(sub["tertiary"])
-    if min(counts.values()) < 2:
-        print(f"[WARN] TERTIARY for (primary='{p}', secondary='{s}') has class(es) with less than 2 samples. Skipping.")
+
+    # Check if any tag has less than MIN_SAMPLES_PER_TAG
+    insufficient_tags = {tag: count for tag, count in counts.items() if count < MIN_SAMPLES_PER_TAG}
+    if insufficient_tags:
+        print(f"[WARN] TERTIARY for (primary='{p}', secondary='{s}') has tags with <{MIN_SAMPLES_PER_TAG} samples: {insufficient_tags}")
+        print(f"[WARN] Skipping TERTIARY model for (primary='{p}', secondary='{s}'). Each tag needs at least {MIN_SAMPLES_PER_TAG} documents.")
         continue
 
     Xt_tr, Xt_te, yt_tr, yt_te = train_test_split(
