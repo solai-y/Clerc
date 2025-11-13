@@ -5,6 +5,7 @@ from typing import Tuple, Dict, List, Any
 import re
 import math
 import os
+import json
 from collections import Counter
 
 import joblib
@@ -152,6 +153,9 @@ models_dir.mkdir(exist_ok=True)
 
 results_hier = {"primary": {}, "secondary": {}, "tertiary": {}}
 
+# Store single-class defaults (when we can't train a model due to insufficient classes)
+single_class_defaults = {"secondary": {}, "tertiary": {}}
+
 # ---------------- PRIMARY ----------------
 if df_primary["primary"].nunique() >= 2:
     X = df_primary["text"].values
@@ -179,7 +183,13 @@ for p in sorted(ALLOWED_PRIMARY):
 
     sub = df_secondary[df_secondary["primary"] == p].copy()
     if sub["secondary"].nunique() < 2:
-        print(f"[WARN] SECONDARY for primary='{p}' has <2 classes. Skipping.")
+        # Store the single class as a default prediction
+        unique_classes = sub["secondary"].unique()
+        if len(unique_classes) == 1:
+            single_class_defaults["secondary"][p] = unique_classes[0]
+            print(f"[WARN] SECONDARY for primary='{p}' has <2 classes. Using default: '{unique_classes[0]}'")
+        else:
+            print(f"[WARN] SECONDARY for primary='{p}' has <2 classes. Skipping.")
         continue
 
     counts = Counter(sub["secondary"])
@@ -207,7 +217,13 @@ for p, s in sorted(valid_ps_pairs):
         continue
 
     if sub["tertiary"].nunique() < 2:
-        print(f"[WARN] TERTIARY for (primary='{p}', secondary='{s}') has <2 classes. Skipping.")
+        # Store the single class as a default prediction
+        unique_classes = sub["tertiary"].unique()
+        if len(unique_classes) == 1:
+            single_class_defaults["tertiary"][(p, s)] = unique_classes[0]
+            print(f"[WARN] TERTIARY for (primary='{p}', secondary='{s}') has <2 classes. Using default: '{unique_classes[0]}'")
+        else:
+            print(f"[WARN] TERTIARY for (primary='{p}', secondary='{s}') has <2 classes. Skipping.")
         continue
 
     counts = Counter(sub["tertiary"])
@@ -238,6 +254,20 @@ try:
 except Exception:
     _HAS_SHAP = False
 
+# =============================== Save Single-Class Defaults ====================
+single_class_path = models_dir / "single_class_defaults.json"
+
+# Convert tuple keys to strings for JSON serialization
+single_class_json = {
+    "secondary": single_class_defaults["secondary"],
+    "tertiary": {f"{p}|{s}": v for (p, s), v in single_class_defaults["tertiary"].items()}
+}
+
+with open(single_class_path, "w") as f:
+    json.dump(single_class_json, f, indent=2)
+
+print(f"Saved single-class defaults → {single_class_path.resolve()}")
+
 # =============================== Inference Wrapper =============================
 class HierarchicalBestModel:
     """
@@ -251,10 +281,11 @@ class HierarchicalBestModel:
 
     Supports dynamic hierarchy at prediction time by refetching from tag-service.
     """
-    def __init__(self, primary_model, secondary_models, tertiary_models, threshold: float = THRESHOLD):
+    def __init__(self, primary_model, secondary_models, tertiary_models, single_class_defaults=None, threshold: float = THRESHOLD):
         self.primary_model = primary_model
         self.secondary_models = secondary_models  # {primary: model}
         self.tertiary_models = tertiary_models    # {(primary, secondary): model}
+        self.single_class_defaults = single_class_defaults or {"secondary": {}, "tertiary": {}}
         self.threshold = float(threshold)
         self._shap_cache = {}
         self._hierarchy_cache = None  # Cache hierarchy for performance
@@ -454,6 +485,18 @@ class HierarchicalBestModel:
         for p_item in primary_results:
             p_label = p_item["label"]
             s_model = self.secondary_models.get(p_label)
+
+            # Check if there's a single-class default for this primary
+            if not s_model and p_label in self.single_class_defaults.get("secondary", {}):
+                default_label = self.single_class_defaults["secondary"][p_label]
+                secondary_results.append({
+                    "primary": p_label,
+                    "label": default_label,
+                    "confidence": 1.0,  # High confidence for single-class defaults
+                    "key_evidence": {"supporting": [], "opposing": []}
+                })
+                continue
+
             if not s_model:
                 continue
 
@@ -479,6 +522,19 @@ class HierarchicalBestModel:
             p_label = s_item["primary"]
             s_label = s_item["label"]
             t_model = self.tertiary_models.get((p_label, s_label))
+
+            # Check if there's a single-class default for this (primary, secondary)
+            if not t_model and (p_label, s_label) in self.single_class_defaults.get("tertiary", {}):
+                default_label = self.single_class_defaults["tertiary"][(p_label, s_label)]
+                tertiary_results.append({
+                    "primary": p_label,
+                    "secondary": s_label,
+                    "label": default_label,
+                    "confidence": 1.0,  # High confidence for single-class defaults
+                    "key_evidence": {"supporting": [], "opposing": []}
+                })
+                continue
+
             if not t_model:
                 continue
 
@@ -523,8 +579,26 @@ def build_best_model(models_dir: Path) -> HierarchicalBestModel:
             if (p in ALLOWED_PRIMARY) and (s in ALLOWED_SECONDARY.get(p, set())) and len(ALLOWED_TERTIARY.get((p, s), set())) > 0:
                 tertiary_models[(p, s)] = joblib.load(pth)
 
-    # Pass the threshold into the wrapper so it’s serialized with the model
-    return HierarchicalBestModel(primary_model, secondary_models, tertiary_models, threshold=THRESHOLD)
+    # Load single-class defaults if available
+    single_class_defaults_path = models_dir / "single_class_defaults.json"
+    single_class_defaults = {"secondary": {}, "tertiary": {}}
+    if single_class_defaults_path.exists():
+        with open(single_class_defaults_path, "r") as f:
+            loaded = json.load(f)
+            single_class_defaults["secondary"] = loaded.get("secondary", {})
+            # Convert string keys back to tuples for tertiary
+            single_class_defaults["tertiary"] = {
+                tuple(k.split("|")): v for k, v in loaded.get("tertiary", {}).items()
+            }
+
+    # Pass the threshold and single_class_defaults into the wrapper
+    return HierarchicalBestModel(
+        primary_model,
+        secondary_models,
+        tertiary_models,
+        single_class_defaults=single_class_defaults,
+        threshold=THRESHOLD
+    )
 
 # =============================== Persist wrapper ===============================
 best_model = build_best_model(models_dir)
