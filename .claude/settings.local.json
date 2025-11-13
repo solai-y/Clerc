@@ -41,9 +41,6 @@
       "Bash(dos2unix:*)",
       "Bash(pip install:*)",
       "Bash(sed:*)",
-      "Bash(\"C:\\Users\\I757760\\Downloads\\FYP\\Clerc-1\\.venv\\Scripts\\python.exe\" -m pytest tests/unit/test_tag_filtering.py -v)",
-      "Bash(\"C:\\Users\\I757760\\Downloads\\FYP\\Clerc-1\\.venv\\Scripts\\python.exe\" -m pytest tests/unit/test_tag_filtering.py::TestTagFilteringMinimal::test_ac2_or_logic_within_same_tier -v)",
-      "Bash(\"C:\\Users\\I757760\\Downloads\\FYP\\Clerc-1\\.venv\\Scripts\\python.exe\" -m pytest tests/unit/test_tag_filtering.py::TestTagFilteringMinimal::test_ac1_filter_endpoint_accepts_tag_parameters -v -s)",
       "Bash(awk:*)",
       "Bash(docker compose:*)",
       "Bash(pytest:*)",
@@ -63,6 +60,8 @@
       "Bash(do)",
       "Bash(git add:*)",
       "Bash(tee:*)",
+      "Bash(docker network prune:*)",
+      "Read(//tmp/**)"
       "Bash(git fetch:*)",
       "Bash(git stash:*)",
       "Bash(timeout 60 sh:*)"

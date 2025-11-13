@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 # Import train module (not specific function) so monkeypatching works in tests
 import train
 
+# Training configuration - must match train.py
+MIN_DOCS_PER_TAG = 10
+
 # Add parent directory to path to import shared utilities
 # Works both locally (when run from ai-service dir) and in Docker (when shared_utils is copied)
 parent_dir = Path(__file__).parent.parent
@@ -59,7 +62,38 @@ def _need_training() -> bool:
 
 def _train_sync():
     MODELS_DIR.mkdir(exist_ok=True)
-    print("No models detected; running training once at startup...")
+    print("No models detected; fetching latest data and training at startup...")
+
+    # Fetch latest CSV from retraining-service before training
+    try:
+        import requests
+        retraining_service_url = os.getenv("RETRAINING_SERVICE_URL", "http://retraining-service:5009")
+        csv_url = f"{retraining_service_url}/retraining/export-csv"
+
+        print(f"Fetching training data from {csv_url}...")
+        response = requests.get(csv_url, timeout=120)
+        response.raise_for_status()
+
+        csv_content = response.text
+        if not csv_content or len(csv_content.strip()) == 0:
+            raise ValueError("Received empty CSV from retraining-service")
+
+        lines = csv_content.strip().split('\n')
+        if len(lines) < 2:
+            raise ValueError(f"CSV has insufficient data: only {len(lines)} line(s)")
+
+        print(f"✓ Fetched CSV with {len(lines) - 1} data rows")
+
+        # Write CSV to training_data_text.csv
+        training_csv_path = Path("./training_data_text.csv")
+        with open(training_csv_path, 'w', encoding='utf-8') as f:
+            f.write(csv_content)
+        print(f"✓ Saved training data to {training_csv_path}")
+
+    except Exception as e:
+        print(f"⚠ Failed to fetch latest training data: {e}")
+        print("⚠ Will use existing training_data_text.csv if available")
+
     # Call the training script; raise if it fails
     subprocess.run(["python", "train.py"], check=True)
     print("Initial training complete.")
@@ -113,6 +147,19 @@ else:
 _model_swap_lock = threading.Lock()
 _rebuilding = threading.Event()  # True while rebuilding
 
+# Rebuild status tracking (detailed state for frontend)
+_rebuild_status = {
+    "is_rebuilding": False,
+    "status": "idle",  # idle, in_progress, completed, failed
+    "message": "",
+    "progress": 0,  # 0-100
+    "error": None,
+    "started_at": None,
+    "completed_at": None,
+    "duration_seconds": None
+}
+_rebuild_status_lock = threading.Lock()
+
 
 # ------------------- Routes -------------------
 @app.get("/e2e")
@@ -120,6 +167,16 @@ def health() -> Any:
     status = "ok" if best_model is not None else "model_unavailable"
     rebuilding = _rebuilding.is_set()
     return {"status": "AI Service is reachable", "model_status": status, "rebuilding": rebuilding}
+
+
+@app.get("/rebuild/status")
+def get_rebuild_status() -> Any:
+    """
+    Get detailed rebuild status including progress, success/failure, and error messages.
+    Frontend should poll this instead of /health for accurate rebuild feedback.
+    """
+    with _rebuild_status_lock:
+        return dict(_rebuild_status)
 
 
 @app.post("/predict")
@@ -263,21 +320,20 @@ def validate_training_data() -> Any:
 
         logger.info(f"Tag counts - Primary: {len(primary_counts)}, Secondary: {len(secondary_counts)}, Tertiary: {len(tertiary_counts)}")
 
-        # Check if any tag has fewer than 10 documents
-        MIN_DOCS = 10
+        # Check if any tag has fewer than MIN_DOCS_PER_TAG documents
         invalid_tags = []
 
         for tag, count in primary_counts.items():
-            if count < MIN_DOCS:
-                invalid_tags.append({"level": "primary", "tag": tag, "count": count, "required": MIN_DOCS})
+            if count < MIN_DOCS_PER_TAG:
+                invalid_tags.append({"level": "primary", "tag": tag, "count": count, "required": MIN_DOCS_PER_TAG})
 
         for tag, count in secondary_counts.items():
-            if count < MIN_DOCS:
-                invalid_tags.append({"level": "secondary", "tag": tag, "count": count, "required": MIN_DOCS})
+            if count < MIN_DOCS_PER_TAG:
+                invalid_tags.append({"level": "secondary", "tag": tag, "count": count, "required": MIN_DOCS_PER_TAG})
 
         for tag, count in tertiary_counts.items():
-            if count < MIN_DOCS:
-                invalid_tags.append({"level": "tertiary", "tag": tag, "count": count, "required": MIN_DOCS})
+            if count < MIN_DOCS_PER_TAG:
+                invalid_tags.append({"level": "tertiary", "tag": tag, "count": count, "required": MIN_DOCS_PER_TAG})
 
         is_valid = len(invalid_tags) == 0
 
@@ -293,7 +349,7 @@ def validate_training_data() -> Any:
             "secondary_tags": secondary_counts,
             "tertiary_tags": tertiary_counts,
             "invalid_tags": invalid_tags,
-            "message": "Training data is valid" if is_valid else f"Found {len(invalid_tags)} tags with fewer than {MIN_DOCS} documents"
+            "message": "Training data is valid" if is_valid else f"Found {len(invalid_tags)} tags with fewer than {MIN_DOCS_PER_TAG} documents"
         }
     except HTTPException:
         # Re-raise HTTPException without wrapping
@@ -310,6 +366,7 @@ def validate_training_data() -> Any:
 def rebuild() -> Any:
     """
     Trigger a rebuild of the model in the background.
+    Fetches latest training data from retraining-service, then trains.
     Requests keep using the old model until the swap is complete.
     """
     if _rebuilding.is_set():
@@ -317,21 +374,154 @@ def rebuild() -> Any:
 
     def _do_rebuild():
         global best_model
+        import datetime
+
+        # Initialize status
+        with _rebuild_status_lock:
+            _rebuild_status.update({
+                "is_rebuilding": True,
+                "status": "in_progress",
+                "message": "Starting rebuild...",
+                "progress": 0,
+                "error": None,
+                "started_at": datetime.datetime.now().isoformat(),
+                "completed_at": None,
+                "duration_seconds": None
+            })
+
         try:
             _rebuilding.set()
             t0 = time.time()
-            # retrain (this runs train.py and saves to models_hier/)
+
+            # Step 1: Try to fetch CSV from retraining-service
+            with _rebuild_status_lock:
+                _rebuild_status["message"] = "Fetching training data from retraining-service..."
+
+            print("Fetching training data from retraining-service...")
+            retraining_service_url = os.getenv("RETRAINING_SERVICE_URL", "http://retraining-service:5009")
+            csv_url = f"{retraining_service_url}/retraining/export-csv"
+
+            import requests
+
+            try:
+                response = requests.get(csv_url, timeout=60)
+                response.raise_for_status()
+
+                # Step 2: Validate CSV has data
+                csv_content = response.text
+                if not csv_content or len(csv_content.strip()) == 0:
+                    raise ValueError("Received empty CSV from retraining-service")
+
+                lines = csv_content.strip().split('\n')
+                if len(lines) < 2:
+                    raise ValueError(f"CSV has insufficient data: only {len(lines)} line(s)")
+
+                # Step 3: Validate CSV header
+                expected_columns = {'primary', 'secondary', 'tertiary', 'text'}
+                header = lines[0].split(',')
+                header_set = {col.strip() for col in header}
+                if not expected_columns.issubset(header_set):
+                    raise ValueError(f"CSV header missing required columns. Expected: {expected_columns}, Got: {header_set}")
+
+                print(f"✓ Fetched CSV with {len(lines) - 1} data rows")
+
+                with _rebuild_status_lock:
+                    _rebuild_status["message"] = f"Fetched {len(lines) - 1} training samples, preparing data..."
+
+                # Step 4: Backup existing training data (optional safety)
+                training_csv_path = Path("./training_data_text.csv")
+                if training_csv_path.exists():
+                    backup_path = Path("./training_data_text.csv.backup")
+                    import shutil
+                    shutil.copy2(training_csv_path, backup_path)
+                    print(f"✓ Backed up existing training data to {backup_path}")
+
+                # Step 5: Write new CSV
+                with open(training_csv_path, 'w', encoding='utf-8') as f:
+                    f.write(csv_content)
+                print(f"✓ Saved training data to {training_csv_path}")
+
+            except Exception as e:
+                print(f"⚠ Failed to fetch training data from retraining-service: {e}")
+                print("⚠ Will use existing training_data_text.csv for rebuild")
+                with _rebuild_status_lock:
+                    _rebuild_status["message"] = "Using existing training data (fetch failed), starting training..."
+                # Continue with existing CSV - don't fail the rebuild
+
+            # Step 6: Retrain (this runs train.py and saves to models_hier/)
+            with _rebuild_status_lock:
+                _rebuild_status["message"] = "Training models (this may take 1-2 minutes)..."
+
+            print("Starting model training...")
             subprocess.run(["python", "train.py"], check=True)
-            # load new model - use train.build_best_model so test monkeypatching works
+
+            with _rebuild_status_lock:
+                _rebuild_status["message"] = "Model training complete, loading new model..."
+
+            # Step 7: Load new model - use train.build_best_model so test monkeypatching works
             new_model = train.build_best_model(MODELS_DIR)
-            # atomic swap
+
+            with _rebuild_status_lock:
+                _rebuild_status["message"] = "Activating new model..."
+
+            # Step 8: Atomic swap
             with _model_swap_lock:
                 best_model = new_model
+
             elapsed = time.time() - t0
             model_version = getattr(new_model, "version", "unknown")
-            print(f"Rebuild complete in {elapsed:.2f}s - swapped to model version: {model_version}")
+            print(f"✓ Rebuild complete in {elapsed:.2f}s - swapped to model version: {model_version}")
+
+            # Mark as completed
+            with _rebuild_status_lock:
+                _rebuild_status.update({
+                    "is_rebuilding": False,
+                    "status": "completed",
+                    "message": f"Rebuild completed successfully in {elapsed:.2f}s",
+                    "progress": 100,
+                    "completed_at": datetime.datetime.now().isoformat(),
+                    "duration_seconds": round(elapsed, 2)
+                })
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to fetch training data from retraining-service: {e}"
+            print(f"✗ {error_msg}")
+            with _rebuild_status_lock:
+                _rebuild_status.update({
+                    "is_rebuilding": False,
+                    "status": "failed",
+                    "message": "Rebuild failed",
+                    "error": error_msg,
+                    "progress": 0,
+                    "completed_at": datetime.datetime.now().isoformat(),
+                    "duration_seconds": round(time.time() - t0, 2) if 't0' in locals() else None
+                })
+        except ValueError as e:
+            error_msg = f"CSV validation failed: {e}"
+            print(f"✗ {error_msg}")
+            with _rebuild_status_lock:
+                _rebuild_status.update({
+                    "is_rebuilding": False,
+                    "status": "failed",
+                    "message": "Rebuild failed",
+                    "error": error_msg,
+                    "progress": 0,
+                    "completed_at": datetime.datetime.now().isoformat(),
+                    "duration_seconds": round(time.time() - t0, 2) if 't0' in locals() else None
+                })
         except Exception as e:
-            print(f"Rebuild failed: {e}")
+            error_msg = f"Rebuild failed: {e}"
+            print(f"✗ {error_msg}")
+            with _rebuild_status_lock:
+                _rebuild_status.update({
+                    "is_rebuilding": False,
+                    "status": "failed",
+                    "message": "Rebuild failed",
+                    "error": str(e),
+                    "progress": 0,
+                    "completed_at": datetime.datetime.now().isoformat(),
+                    "duration_seconds": round(time.time() - t0, 2) if 't0' in locals() else None
+                })
         finally:
             _rebuilding.clear()
 
