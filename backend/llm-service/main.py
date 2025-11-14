@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from models import PredictionRequest, FullResponse
+from models import PredictionRequest, FullResponse  # FullResponse kept for compatibility
 from prediction_service import PredictionService
 from config import Config
 
@@ -62,11 +62,13 @@ async def lifespan(app: FastAPI):
     global prediction_service
     logger.info("Starting LLM Classification Service...")
     try:
+        # Construct once; tests can patch main.prediction_service to a mock
         prediction_service = PredictionService()
         logger.info("Service initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize service: {str(e)}")
-        raise
+        # Keep None so /predict returns 503 instead of crashing
+        prediction_service = None
     yield
     logger.info("Shutting down LLM Classification Service...")
 
@@ -176,6 +178,10 @@ async def health_check():
                 }
             },
         },
+        400: {
+            "description": "Bad Request",
+            "content": {"application/json": {"example": {"detail": "Text cannot be empty"}}},
+        },
         422: {
             "description": "Validation Error",
             "content": {
@@ -191,6 +197,10 @@ async def health_check():
         500: {
             "description": "Internal Error",
             "content": {"application/json": {"example": {"detail": "Classification failed: <reason>"}}},
+        },
+        503: {
+            "description": "Service Unavailable",
+            "content": {"application/json": {"example": {"detail": "Service not initialized"}}},
         },
     },
 )
@@ -224,7 +234,7 @@ async def predict_document(
         logger.info(f"Text length (raw): {len(request.text)} characters")
 
         # Validate request
-        if not request.text.strip():
+        if not request.text or not request.text.strip():
             raise HTTPException(status_code=400, detail="Text cannot be empty")
 
         if not request.predict:
@@ -242,14 +252,14 @@ async def predict_document(
         preprocessed_text = clean_text(request.text, max_words=5000)
         logger.info(f"Text length (preprocessed): {len(preprocessed_text)} characters")
 
-        # Make prediction (runtime behavior unchanged)
-        result: dict = PredictionService().predict(
+        # Use the module-level service (so tests can patch main.prediction_service)
+        result: dict = prediction_service.predict(
             text=preprocessed_text,
             predict_levels=request.predict,
-            context=request.context,
+            context=request.context or {},
         )
 
-        logger.info(f"Prediction completed in {result['elapsed_seconds']:.2f}s")
+        logger.info(f"Prediction completed in {result.get('elapsed_seconds', 0.0):.2f}s")
 
         # Return raw dict so it matches the example (no response_model filtering)
         return result
