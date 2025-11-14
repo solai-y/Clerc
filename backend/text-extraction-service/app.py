@@ -4,23 +4,27 @@ Text Extraction Service - Microservice for extracting text from PDF documents
 import logging
 import tempfile
 import os
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 
 import fitz  # PyMuPDF
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+# -----------------------------------------------------------------------------
 # Configure logging
+# -----------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# OCR dependencies
+# -----------------------------------------------------------------------------
+# OCR dependencies (unchanged)
+# -----------------------------------------------------------------------------
 try:
     import pytesseract
     from pdf2image import convert_from_bytes
@@ -31,12 +35,45 @@ except ImportError as e:
     OCR_AVAILABLE = False
     logger.warning(f"OCR dependencies not available: {e}. OCR fallback will be disabled.")
 
-app = FastAPI()
+# -----------------------------------------------------------------------------
+# FastAPI app (adds title/description/version only for nicer docs)
+# -----------------------------------------------------------------------------
+app = FastAPI(
+    title="text-extraction-service",
+    description="PDF text extraction",
+    version="1.0.0",
+)
 
-# Pydantic models
+# -----------------------------------------------------------------------------
+# Pydantic models (for OpenAPI only; do not alter runtime behavior)
+# -----------------------------------------------------------------------------
 class ExtractTextRequest(BaseModel):
-    pdf_url: str
+    pdf_url: str = Field(..., example="https://example.com/document.pdf")
 
+class HealthCapabilities(BaseModel):
+    pymupdf: bool = Field(..., example=True)
+    ocr_fallback: bool = Field(..., example=True)
+
+class HealthResponseModel(BaseModel):
+    status: str = Field(..., example="healthy")
+    service: str = Field(..., example="text-extraction")
+    ocr_available: bool = Field(..., example=True)
+    capabilities: HealthCapabilities
+
+class ExtractTextResponse(BaseModel):
+    success: bool = Field(..., example=True)
+    text: str = Field(..., example="Extracted text content...")
+    character_count: int = Field(..., example=1234)
+    extraction_method: str = Field(..., example="pymupdf")
+    ocr_used: bool = Field(..., example=False)
+
+class ErrorResponse(BaseModel):
+    success: bool = Field(False, example=False)
+    error: str = Field(..., example="Validation failed")
+
+# -----------------------------------------------------------------------------
+# Service (unchanged)
+# -----------------------------------------------------------------------------
 class TextExtractionService:
     """Service for extracting text from PDF documents"""
 
@@ -47,15 +84,6 @@ class TextExtractionService:
     def extract_text_from_url(self, pdf_url: str) -> Tuple[str, Dict[str, Any]]:
         """
         Extract text from PDF at given URL
-
-        Args:
-            pdf_url: URL to PDF file (e.g., S3 URL)
-
-        Returns:
-            Extracted text content
-
-        Raises:
-            Exception: If PDF processing fails
         """
         try:
             logger.info(f"Downloading PDF from URL: {pdf_url}")
@@ -80,12 +108,6 @@ class TextExtractionService:
     def _extract_text_from_bytes(self, pdf_bytes: bytes) -> Tuple[str, Dict[str, Any]]:
         """
         Extract text from PDF bytes using PyMuPDF with OCR fallback
-
-        Args:
-            pdf_bytes: PDF file as bytes
-
-        Returns:
-            Extracted text content
         """
         temp_file_path = None
         try:
@@ -132,15 +154,9 @@ class TextExtractionService:
     def _extract_with_pymupdf(self, pdf_path: str) -> str:
         """
         Extract text using PyMuPDF
-
-        Args:
-            pdf_path: Path to PDF file
-
-        Returns:
-            Extracted text content
         """
         doc = fitz.open(pdf_path)
-        text_parts = []
+        text_parts: List[str] = []
 
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
@@ -154,12 +170,6 @@ class TextExtractionService:
     def _extract_with_ocr(self, pdf_bytes: bytes) -> str:
         """
         Extract text using OCR (pdf2image + tesseract)
-
-        Args:
-            pdf_bytes: PDF file as bytes
-
-        Returns:
-            Extracted text content
         """
         if not OCR_AVAILABLE:
             raise Exception("OCR dependencies not available")
@@ -173,7 +183,7 @@ class TextExtractionService:
         if not images:
             raise Exception("No images could be extracted from PDF")
 
-        text_parts = []
+        text_parts: List[str] = []
         for page_num, image in enumerate(images, 1):
             try:
                 # Use Tesseract to extract text from image
@@ -191,10 +201,18 @@ class TextExtractionService:
 
         return "\n\n".join(text_parts)
 
-# Initialize service
+# Initialize service (unchanged)
 text_service = TextExtractionService()
 
-@app.get('/health')
+# -----------------------------------------------------------------------------
+# Routes (same behavior, now with explicit schemas for clean Swagger)
+# -----------------------------------------------------------------------------
+@app.get(
+    '/health',
+    response_model=HealthResponseModel,
+    summary="Health Check",
+    description="Health check endpoint",
+)
 def health_check():
     """Health check endpoint"""
     return {
@@ -207,22 +225,25 @@ def health_check():
         }
     }
 
-@app.post('/extract-text')
+@app.post(
+    '/extract-text',
+    response_model=ExtractTextResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+    summary="Extract Text",
+    description=(
+        "Extract text from a PDF accessible by URL.\n\n"
+        "Request: `{ \"pdf_url\": \"https://example.com/document.pdf\" }`\n"
+        "Response: `{ \"success\": true, \"text\": \"...\", \"character_count\": 1234, "
+        "\"extraction_method\": \"pymupdf|ocr\", \"ocr_used\": false }`"
+    ),
+)
 async def extract_text(request: ExtractTextRequest):
     """
     Extract text from PDF
-
-    Request body:
-    {
-        "pdf_url": "https://example.com/document.pdf"
-    }
-
-    Response:
-    {
-        "success": true,
-        "text": "Extracted text content...",
-        "character_count": 1234
-    }
     """
     try:
         # Extract text
@@ -246,7 +267,9 @@ async def extract_text(request: ExtractTextRequest):
             }
         )
 
-# Custom exception handlers
+# -----------------------------------------------------------------------------
+# Custom exception handlers (unchanged behavior; docs now show ErrorResponse)
+# -----------------------------------------------------------------------------
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Handle validation errors"""
@@ -299,6 +322,9 @@ async def internal_error_handler(request: Request, exc):
         }
     )
 
+# -----------------------------------------------------------------------------
+# Entrypoint (unchanged)
+# -----------------------------------------------------------------------------
 if __name__ == '__main__':
     import uvicorn
     port = int(os.environ.get('PORT', 5008))

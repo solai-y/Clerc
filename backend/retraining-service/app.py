@@ -5,11 +5,12 @@ Built with FastAPI
 import os
 import logging
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Literal
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -32,44 +33,104 @@ if not supabase_url or not supabase_key:
 
 supabase: Client = create_client(supabase_url, supabase_key)
 
-# Pydantic models
+# ---------------------------------------------------------------------
+# Pydantic models (with examples to improve API docs)
+# ---------------------------------------------------------------------
+
+class RootDoc(BaseModel):
+    service: Literal["Retraining Service"] = Field(
+        ..., description="Service name", example="Retraining Service"
+    )
+    status: Literal["healthy"] = Field(..., example="healthy")
+    version: str = Field(..., example="1.0.0")
+    description: str = Field(
+        ..., example="Stores document text and confirmed tags for model retraining"
+    )
+
+
+class HealthDoc(BaseModel):
+    status: Literal["healthy", "unhealthy"] = Field(..., example="healthy")
+    database: Literal["connected", "disconnected"] = Field(..., example="connected")
+    timestamp: str = Field(..., example=datetime.now().isoformat())
+
+
 class StoreTextRequest(BaseModel):
-    document_id: int = Field(..., description="Document ID from raw_documents table")
-    text: str = Field(..., description="Extracted document text")
+    document_id: int = Field(
+        ..., description="Document ID from raw_documents table", example=123
+    )
+    text: str = Field(
+        ..., description="Extracted document text",
+        example="[Page 1] Revenue increased 12% YoY ..."
+    )
+
 
 class TagInfo(BaseModel):
-    tag: str
-    level: str
-    source: Optional[str] = None
-    confidence: Optional[float] = None
+    tag: str = Field(..., example="Healthcare")
+    level: str = Field(
+        ...,
+        description="Hierarchy level for the tag",
+        example="primary"
+    )
+    source: Optional[str] = Field(
+        None, description="Where the tag came from (ai/llm/manual)", example="ai"
+    )
+    confidence: Optional[float] = Field(
+        None, description="Confidence score (0-1 or 0-100 based on your system)", example=0.92
+    )
+
 
 class ConfirmedTags(BaseModel):
-    tags: List[TagInfo]
+    tags: List[TagInfo] = Field(
+        ..., description="Flat list of confirmed tags with their levels",
+        example=[
+            {"tag": "Healthcare", "level": "primary", "source": "ai", "confidence": 0.91},
+            {"tag": "Hospitals", "level": "secondary", "source": "ai", "confidence": 0.88},
+            {"tag": "Earnings", "level": "tertiary", "source": "manual", "confidence": 0.99},
+        ]
+    )
+
 
 class UpdateTagsRequest(BaseModel):
-    document_id: int = Field(..., description="Document ID")
-    confirmed_tags: ConfirmedTags = Field(..., description="Confirmed tag hierarchies")
+    document_id: int = Field(..., description="Document ID", example=123)
+    confirmed_tags: ConfirmedTags = Field(
+        ..., description="Confirmed tag hierarchies"
+    )
+
 
 class TagHierarchyDetail(BaseModel):
-    id: Optional[int]
-    name: Optional[str]
+    id: Optional[int] = Field(None, example=42)
+    name: Optional[str] = Field(None, example="Healthcare")
+
 
 class RetrainingDataRow(BaseModel):
-    id: int
-    document_id: int
-    text_preview: str
-    text_length: int
+    id: int = Field(..., example=101)
+    document_id: int = Field(..., example=123)
+    text_preview: str = Field(..., example="Revenue increased 12% YoY ...")
+    text_length: int = Field(..., example=5231)
     primary_tags: List[TagHierarchyDetail]
     secondary_tags: List[TagHierarchyDetail]
     tertiary_tags: List[TagHierarchyDetail]
-    created_at: Optional[str]
-    updated_at: Optional[str]
+    created_at: Optional[str] = Field(None, example=datetime.now().isoformat())
+    updated_at: Optional[str] = Field(None, example=datetime.now().isoformat())
+
 
 class APIResponse(BaseModel):
-    status: str
-    message: str
-    data: Optional[Dict] = None
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    status: str = Field(..., example="success")
+    message: str = Field(..., example="Document text stored for retraining")
+    data: Optional[Dict] = Field(
+        None,
+        example={
+            "retraining_id": 101,
+            "document_id": 123,
+            "text_length": 5231,
+            "created_at": datetime.now().isoformat()
+        }
+    )
+    timestamp: str = Field(
+        default_factory=lambda: datetime.now().isoformat(),
+        example=datetime.now().isoformat()
+    )
+
 
 def get_tag_id_by_name(tag_name: str) -> Optional[int]:
     """Look up tag ID by tag name using Supabase"""
@@ -90,7 +151,7 @@ async def lifespan(app: FastAPI):
 
     # Test database connection
     try:
-        response = supabase.table('retraining_data').select("id").limit(1).execute()
+        supabase.table('retraining_data').select("id").limit(1).execute()
         logger.info("Database connection successful")
     except Exception as e:
         logger.error(f"Failed to connect to database: {str(e)}")
@@ -115,7 +176,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
+# ---------------------------------------------------------------------
+# Routes (unchanged behavior, improved docs)
+# ---------------------------------------------------------------------
+
+@app.get("/", response_model=RootDoc, summary="Root endpoint")
 async def root():
     """Root endpoint"""
     return {
@@ -125,11 +190,11 @@ async def root():
         'description': 'Stores document text and confirmed tags for model retraining'
     }
 
-@app.get("/health")
+@app.get("/health", response_model=HealthDoc, summary="Health Check")
 async def health_check():
     """Health check endpoint"""
     try:
-        response = supabase.table('retraining_data').select("id").limit(1).execute()
+        supabase.table('retraining_data').select("id").limit(1).execute()
         return {
             'status': 'healthy',
             'database': 'connected',
@@ -146,7 +211,12 @@ async def health_check():
             }
         )
 
-@app.post("/retraining/store-text", response_model=APIResponse)
+@app.post(
+    "/retraining/store-text",
+    response_model=APIResponse,
+    summary="Store Document Text",
+    description="Store document text for retraining (called after text extraction)"
+)
 async def store_document_text(request: StoreTextRequest):
     """
     Store document text for retraining (called after text extraction)
@@ -193,7 +263,12 @@ async def store_document_text(request: StoreTextRequest):
             )
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.post("/retraining/update-tags", response_model=APIResponse)
+@app.post(
+    "/retraining/update-tags",
+    response_model=APIResponse,
+    summary="Update Tags",
+    description="Update retraining data with confirmed tags (called after tag confirmation). Stores multiple tags per level as arrays."
+)
 async def update_tags(request: UpdateTagsRequest):
     """
     Update retraining data with confirmed tags (called after tag confirmation)
@@ -340,7 +415,12 @@ async def update_tags(request: UpdateTagsRequest):
         logger.error(f"Failed to update retraining tags: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.get("/retraining/data/{document_id}")
+@app.get(
+    "/retraining/data/{document_id}",
+    response_model=APIResponse,
+    summary="Get Retraining Data",
+    description="Get all retraining data rows for a specific document"
+)
 async def get_retraining_data(document_id: int):
     """Get all retraining data rows for a specific document"""
     try:
@@ -412,7 +492,12 @@ async def get_retraining_data(document_id: int):
         logger.error(f"Failed to get retraining data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.get("/retraining/stats")
+@app.get(
+    "/retraining/stats",
+    response_model=APIResponse,
+    summary="Get Stats",
+    description="Get statistics about retraining data"
+)
 async def get_stats():
     """Get statistics about retraining data"""
     try:
@@ -458,7 +543,22 @@ async def get_stats():
         logger.error(f"Failed to get stats: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.get("/retraining/export-csv")
+@app.get(
+    "/retraining/export-csv",
+    summary="Export Csv",
+    description="Export retraining data as CSV with hierarchical tag structure. Each row represents a valid hierarchy path (primary -> secondary -> tertiary). Uses pagination to avoid timeout on large datasets.",
+    responses={
+        200: {
+            "content": {
+                "text/csv": {
+                    "example": "primary,secondary,tertiary,text\nHealthcare,Hospitals,Earnings,Revenue increased 12% YoY ...\n"
+                }
+            },
+            "description": "CSV file"
+        },
+        404: {"description": "No retraining data found"}
+    }
+)
 async def export_csv():
     """
     Export retraining data as CSV with hierarchical tag structure.
@@ -466,7 +566,6 @@ async def export_csv():
     Uses pagination to avoid timeout on large datasets.
     """
     try:
-        from fastapi.responses import StreamingResponse
         import csv
         import io
         from typing import Set, Tuple
@@ -543,7 +642,6 @@ async def export_csv():
         csv_writer.writerow(['primary', 'secondary', 'tertiary', 'text'])
 
         for row in all_rows:
-            document_id = row.get('document_id', '')
             document_text = row.get('document_text', '')
             primary_ids = row.get('primary_tag_ids') or []
             secondary_ids = row.get('secondary_tag_ids') or []
@@ -576,12 +674,10 @@ async def export_csv():
 
             # 2. Process secondary tags that weren't traced from tertiary
             for secondary_id in secondary_ids:
-                # Check if this secondary was already used
                 already_used = any(combo[1] == secondary_id for combo in used_combinations)
                 if already_used:
                     continue
 
-                # Find its primary parent
                 primary_id = find_parent_in_list(secondary_id, primary_ids)
 
                 primary_name = tag_data[primary_id]['name'] if primary_id and primary_id in tag_data else None
@@ -594,7 +690,6 @@ async def export_csv():
 
             # 3. Process primary tags that weren't traced at all
             for primary_id in primary_ids:
-                # Check if this primary was already used
                 already_used = any(combo[0] == primary_id for combo in used_combinations)
                 if already_used:
                     continue
