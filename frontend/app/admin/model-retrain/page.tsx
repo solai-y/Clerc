@@ -83,14 +83,14 @@ export default function ModelRetrainPage() {
     };
   };
 
-  // Function to check model status
-  const checkModelStatus = useCallback(async () => {
+  // Function to check rebuild status
+  const checkRebuildStatus = useCallback(async () => {
     try {
-      const status = await apiClient.getModelStatus();
-      return status.rebuilding;
+      const status = await apiClient.getRebuildStatus();
+      return status;
     } catch (error) {
-      console.error('Failed to check model status:', error);
-      return false;
+      console.error('Failed to check rebuild status:', error);
+      return null;
     }
   }, []);
 
@@ -115,11 +115,21 @@ export default function ModelRetrainPage() {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      toast({
-        title: "Validation Error",
-        description: `Failed to validate training data: ${errorMessage}`,
-        variant: "destructive",
-      });
+
+      // Check if error is 502 Bad Gateway (AI service still loading)
+      if (errorMessage.includes("502") || errorMessage.includes("Bad Gateway")) {
+        toast({
+          title: "AI Service Loading",
+          description: "The AI service is still loading models on startup. This usually takes 2-3 minutes. Please wait and try again.",
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "Validation Error",
+          description: `Failed to validate training data: ${errorMessage}`,
+          variant: "destructive",
+        });
+      }
       setValidation(null);
     } finally {
       setValidating(false);
@@ -131,23 +141,49 @@ export default function ModelRetrainPage() {
     validateTrainingData();
   }, []);
 
-  // Poll for retrain status
+  // Poll for retrain status with smooth progress simulation
   useEffect(() => {
     if (!retraining) return;
 
-    const pollInterval = setInterval(async () => {
-      const isRebuilding = await checkModelStatus();
+    let progressInterval: NodeJS.Timeout;
+    let pollInterval: NodeJS.Timeout;
+    const startTime = Date.now();
+    const TOTAL_DURATION_MS = 60000; // 60 seconds to reach 99%
 
-      if (!isRebuilding && retrainStatus === 'in_progress') {
-        // Retraining completed
+    // Smooth progress simulation: 0% -> 99% over 60 seconds
+    progressInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const simulatedProgress = Math.min(Math.floor((elapsed / TOTAL_DURATION_MS) * 99), 99);
+      setRetrainProgress(simulatedProgress);
+    }, 500); // Update every 500ms for smooth animation
+
+    // Poll backend for actual status
+    pollInterval = setInterval(async () => {
+      const rebuildStatus = await checkRebuildStatus();
+
+      if (!rebuildStatus) {
+        // Failed to get status, keep polling
+        return;
+      }
+
+      // Update message from backend (but not progress - we use simulated progress)
+      setRetrainMessage(rebuildStatus.message);
+
+      if (rebuildStatus.status === 'completed' && retrainStatus === 'in_progress') {
+        // Retraining completed successfully - jump to 100%
+        clearInterval(progressInterval);
+        clearInterval(pollInterval);
+
         setRetraining(false);
         setRetrainStatus('completed');
         setRetrainProgress(100);
-        setRetrainMessage('Model retraining completed successfully!');
+        setRetrainMessage(rebuildStatus.message || 'Model retraining completed successfully!');
 
         toast({
           title: "Retraining Complete",
-          description: "The model has been successfully retrained and is now active.",
+          description: rebuildStatus.duration_seconds
+            ? `Model retrained successfully in ${rebuildStatus.duration_seconds}s`
+            : "The model has been successfully retrained and is now active.",
         });
 
         // Revalidate training data and compare tags
@@ -168,14 +204,29 @@ export default function ModelRetrainPage() {
             console.error('Failed to revalidate after retrain:', error);
           }
         }, 1000);
-      } else if (isRebuilding) {
-        // Still retraining - increment progress
-        setRetrainProgress((prev) => Math.min(prev + 5, 90));
+      } else if (rebuildStatus.status === 'failed' && retrainStatus === 'in_progress') {
+        // Retraining failed
+        clearInterval(progressInterval);
+        clearInterval(pollInterval);
+
+        setRetraining(false);
+        setRetrainStatus('failed');
+        setRetrainProgress(0);
+        setRetrainMessage(rebuildStatus.error || 'Model retraining failed');
+
+        toast({
+          title: "Retraining Failed",
+          description: rebuildStatus.error || "An error occurred during model retraining.",
+          variant: "destructive",
+        });
       }
     }, 2000); // Poll every 2 seconds
 
-    return () => clearInterval(pollInterval);
-  }, [retraining, retrainStatus, validationBeforeRetrain, checkModelStatus, toast]);
+    return () => {
+      clearInterval(progressInterval);
+      clearInterval(pollInterval);
+    };
+  }, [retraining, retrainStatus, validationBeforeRetrain, checkRebuildStatus, toast]);
 
   // Handle retrain button click
   const handleRetrainClick = () => {
@@ -197,7 +248,7 @@ export default function ModelRetrainPage() {
     setLoading(true);
     setRetraining(true);
     setRetrainStatus('in_progress');
-    setRetrainProgress(10);
+    setRetrainProgress(0);
     setRetrainMessage('Initializing model retraining...');
 
     // Save current validation state to compare later
@@ -210,11 +261,10 @@ export default function ModelRetrainPage() {
 
       toast({
         title: "Retraining Started",
-        description: "Model retraining has been initiated. This may take several minutes.",
+        description: "Model retraining has been initiated. Polling for real-time progress...",
       });
 
-      setRetrainMessage('Model retraining in progress...');
-      setRetrainProgress(20);
+      setRetrainMessage('Waiting for rebuild status...');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       setRetraining(false);
@@ -394,6 +444,35 @@ export default function ModelRetrainPage() {
             </Alert>
           )}
 
+          {/* Training Statistics */}
+          {validation && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Training Data Statistics</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <p className="text-lg font-semibold">Total Documents: {validation.total_documents}</p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600 mb-1">Primary Tags</p>
+                    <p className="text-xl font-bold">{Object.keys(validation.primary_tags).length}</p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600 mb-1">Secondary Tags</p>
+                    <p className="text-xl font-bold">{Object.keys(validation.secondary_tags).length}</p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600 mb-1">Tertiary Tags</p>
+                    <p className="text-xl font-bold">{Object.keys(validation.tertiary_tags).length}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Excluded Tags Warning */}
           {validation && !validation.valid && validation.invalid_tags.length > 0 && (
             <Card className="border-orange-200 bg-orange-50">
@@ -420,35 +499,6 @@ export default function ModelRetrainPage() {
                 <p className="text-sm text-orange-700 mt-4">
                   <strong>Note:</strong> These tags will not be available in the retrained model. Add more training documents for these tags to include them in future retraining.
                 </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Training Statistics */}
-          {validation && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Training Data Statistics</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <p className="text-lg font-semibold">Total Documents: {validation.total_documents}</p>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Primary Tags</p>
-                    <p className="text-xl font-bold">{Object.keys(validation.primary_tags).length}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Secondary Tags</p>
-                    <p className="text-xl font-bold">{Object.keys(validation.secondary_tags).length}</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Tertiary Tags</p>
-                    <p className="text-xl font-bold">{Object.keys(validation.tertiary_tags).length}</p>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           )}

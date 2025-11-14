@@ -30,6 +30,7 @@ SERVICES = {
     "llm-service": "http://llm-service:5005",
     "prediction-service": "http://prediction-service:5006",
     "text-extraction-service": "http://text-extraction-service:5008",
+    "retraining-service": "http://retraining-service:5009",
 }
 
 def custom_openapi():

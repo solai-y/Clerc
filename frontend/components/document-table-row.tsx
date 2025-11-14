@@ -13,17 +13,6 @@ interface DocumentTableRowProps {
 }
 
 export function DocumentTableRow({ document, onViewDetails }: DocumentTableRowProps) {
-  console.log('🏷️ [Document Row] Rendering document tags:', {
-    documentId: document.id,
-    documentName: document.name,
-    tags: document.tags,
-    primaryTags: document.primaryTags,
-    secondaryTags: document.secondaryTags,
-    tertiaryTags: document.tertiaryTags,
-    userAddedTags: document.userAddedTags,
-    hasHierarchicalTags: !!(document.primaryTags?.length || document.secondaryTags?.length || document.tertiaryTags?.length)
-  });
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",

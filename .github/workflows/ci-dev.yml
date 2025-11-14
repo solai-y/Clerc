@@ -201,6 +201,12 @@ jobs:
               docker ps --filter network=${COMPOSE_PROJECT_NAME}_default -q | xargs -r docker rm -f || true
               docker network rm ${COMPOSE_PROJECT_NAME}_default || true
 
+              # Remove ai-service container to fix ContainerConfig error
+              docker rm -f backend_ai-service_1 || true
+
+              # Prune dangling images to free up space
+              docker image prune -f || true
+
               # Bring services up
               docker-compose up -d --build --remove-orphans
             "

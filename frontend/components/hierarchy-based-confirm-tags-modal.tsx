@@ -469,6 +469,24 @@ export function HierarchyBasedConfirmTagsModal({
 
       await onConfirm(document.id, confirmedTagsData, timingMs)
 
+      // Update retraining service with confirmed tags (async, non-blocking)
+      try {
+        const retrainingResponse = await fetch('/api/retraining/update-tags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            document_id: parseInt(document.id),
+            confirmed_tags: confirmedTagsData.confirmed_tags
+          })
+        })
+
+        if (!retrainingResponse.ok) {
+          console.warn("⚠️ Retraining tag update failed (non-critical):", await retrainingResponse.text())
+        }
+      } catch (retrainingError) {
+        console.warn("⚠️ Retraining tag update error (non-critical):", retrainingError)
+      }
+
       toast({
         title: "Success!",
         description: `Document classification updated with ${confirmedTags.length} tags`,

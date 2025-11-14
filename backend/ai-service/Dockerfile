@@ -23,8 +23,8 @@ COPY shared_utils /app/shared_utils
 # Copy the project files
 COPY ai-service /app
 
-# Build-time training — bakes models into the image
-RUN python train.py
+# Note: Training happens at runtime via ensure_models_ready() in app.py
+# This allows fetching latest data from retraining-service and tag-service
 
 # Expose the API port
 EXPOSE 5004

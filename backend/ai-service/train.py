@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import Tuple, Dict, List, Any
 import re
 import math
+import os
+import json
+from collections import Counter
 
 import joblib
 import numpy as np
@@ -16,15 +19,47 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import accuracy_score, f1_score
 
 # =============================== INFERENCE CONFIG ==============================
-# Global threshold for including labels per layer at inference time.
-# For each layer, include ALL labels with confidence >= THRESHOLD.
-# If none pass, include the single top-1 label for that layer.
-# TODO: the threshold needs to be fetched dynamically
-THRESHOLD: float = 0.30 
+THRESHOLD: float = 0.30
 
-# =============================== HIERARCHY (enforced) ==========================
-# TODO: replace with a call to your tags table; keep the same structure
-HIERARCHY = {
+# =============================== TRAINING CONFIG ================================
+MIN_SAMPLES_PER_TAG: int = 10  # Minimum documents required per tag to train
+
+# =============================== DYNAMIC HIERARCHY FETCHING ====================
+def fetch_hierarchy_from_tag_service():
+    import requests
+
+    tag_service_url = os.getenv("TAG_SERVICE_URL", "http://tag-service:5007")
+
+    try:
+        print(f"Fetching tag hierarchy from: {tag_service_url}/tags")
+        response = requests.get(f"{tag_service_url}/tags", timeout=10)
+        response.raise_for_status()
+
+        hierarchy_flat = response.json()
+
+        if not isinstance(hierarchy_flat, dict):
+            raise ValueError("Tag hierarchy must be a dictionary")
+
+        primary_count = len(hierarchy_flat)
+        secondary_count = sum(len(secondaries) for secondaries in hierarchy_flat.values())
+        tertiary_count = sum(
+            len(tertiaries)
+            for secondaries in hierarchy_flat.values()
+            for tertiaries in secondaries.values()
+            if isinstance(tertiaries, list)
+        )
+
+        print(f"✓ Fetched hierarchy: {primary_count} primary, {secondary_count} secondary, {tertiary_count} tertiary tags")
+
+        return {"primary": hierarchy_flat}
+
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Network error connecting to tag service: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Failed to fetch tag hierarchy: {str(e)}")
+
+# =============================== HIERARCHY (with dynamic fetching) =============
+FALLBACK_HIERARCHY = {
     "primary": {
         "Disclosure": {
             "Annual_Reports": [],
@@ -45,15 +80,26 @@ HIERARCHY = {
     }
 }
 
-# Build allowed sets/maps
-ALLOWED_PRIMARY = set(HIERARCHY["primary"].keys())
-ALLOWED_SECONDARY: Dict[str, set] = {
-    p: set(sec_dict.keys()) for p, sec_dict in HIERARCHY["primary"].items()
-}
-ALLOWED_TERTIARY: Dict[Tuple[str, str], set] = {}
-for p, sec_dict in HIERARCHY["primary"].items():
-    for s, ter_list in sec_dict.items():
-        ALLOWED_TERTIARY[(p, s)] = set(ter_list or [])
+def build_allowed_sets(hierarchy: Dict) -> Tuple[set, Dict[str, set], Dict[Tuple[str, str], set]]:
+    allowed_primary = set(hierarchy["primary"].keys())
+    allowed_secondary: Dict[str, set] = {
+        p: set(sec_dict.keys()) for p, sec_dict in hierarchy["primary"].items()
+    }
+    allowed_tertiary: Dict[Tuple[str, str], set] = {}
+    for p, sec_dict in hierarchy["primary"].items():
+        for s, ter_list in sec_dict.items():
+            allowed_tertiary[(p, s)] = set(ter_list or [])
+    return allowed_primary, allowed_secondary, allowed_tertiary
+
+try:
+    HIERARCHY = fetch_hierarchy_from_tag_service()
+    print("✓ Using dynamic hierarchy from tag-service")
+except Exception as e:
+    print(f"⚠ Failed to fetch dynamic hierarchy: {e}")
+    print("⚠ Using fallback hierarchy")
+    HIERARCHY = FALLBACK_HIERARCHY
+
+ALLOWED_PRIMARY, ALLOWED_SECONDARY, ALLOWED_TERTIARY = build_allowed_sets(HIERARCHY)
 
 # =============================== Pipeline =====================================
 def make_pipeline():
@@ -83,17 +129,14 @@ df = df.dropna(subset=["text"]).reset_index(drop=True)
 assert {"text", "primary", "secondary", "tertiary"}.issubset(df.columns), \
     "df must have columns: text, primary, secondary, tertiary"
 
-# Primary filter
 df_primary = df[df["primary"].isin(ALLOWED_PRIMARY)].copy()
 
-# Secondary filter
 def _is_allowed_secondary(row) -> bool:
     p, s = row["primary"], row["secondary"]
     return p in ALLOWED_SECONDARY and s in ALLOWED_SECONDARY.get(p, set())
 
 df_secondary = df_primary[df_primary.apply(_is_allowed_secondary, axis=1)].copy()
 
-# Tertiary filter — only keep rows for (p,s) that define a non-empty tertiary set and contain valid tertiary
 def _is_allowed_tertiary(row) -> bool:
     p, s, t = row["primary"], row["secondary"], row["tertiary"]
     allowed_set = ALLOWED_TERTIARY.get((p, s), set())
@@ -101,7 +144,6 @@ def _is_allowed_tertiary(row) -> bool:
 
 df_tertiary = df_secondary[df_secondary.apply(_is_allowed_tertiary, axis=1)].copy()
 
-# Visibility
 print("\n=== HIERARCHY ENFORCEMENT SUMMARY ===")
 print(f"Rows total:              {len(df)}")
 print(f"Rows after PRIMARY filt: {len(df_primary)}")
@@ -114,15 +156,27 @@ models_dir.mkdir(exist_ok=True)
 
 results_hier = {"primary": {}, "secondary": {}, "tertiary": {}}
 
+# Store single-class defaults (when we can't train a model due to insufficient classes)
+single_class_defaults = {"secondary": {}, "tertiary": {}}
+
 # ---------------- PRIMARY ----------------
 if df_primary["primary"].nunique() >= 2:
     X = df_primary["text"].values
     y = df_primary["primary"].values
-    Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-    _, best_pipe_primary, _ = _train_simple(Xtr, ytr, "primary")
-    results_hier["primary"] = _evaluate_and_report(best_pipe_primary, Xte, yte, "PRIMARY")
-    joblib.dump(best_pipe_primary, models_dir / "primary.joblib")
-    print(f"Saved PRIMARY model → {(models_dir / 'primary.joblib').resolve()}")
+    counts = Counter(y)
+
+    # Check if any tag has less than MIN_SAMPLES_PER_TAG
+    insufficient_tags = {tag: count for tag, count in counts.items() if count < MIN_SAMPLES_PER_TAG}
+    if insufficient_tags:
+        print(f"[WARN] PRIMARY has tags with <{MIN_SAMPLES_PER_TAG} samples: {insufficient_tags}")
+        print(f"[WARN] Skipping primary model training. Each tag needs at least {MIN_SAMPLES_PER_TAG} documents.")
+        best_pipe_primary = None
+    else:
+        Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+        _, best_pipe_primary, _ = _train_simple(Xtr, ytr, "primary")
+        results_hier["primary"] = _evaluate_and_report(best_pipe_primary, Xte, yte, "PRIMARY")
+        joblib.dump(best_pipe_primary, models_dir / "primary.joblib")
+        print(f"Saved PRIMARY model → {(models_dir / 'primary.joblib').resolve()}")
 else:
     unique_p = list(df_primary["primary"].unique())
     print(f"[WARN] PRIMARY has <2 classes ({unique_p}). Skipping primary model.")
@@ -136,7 +190,22 @@ for p in sorted(ALLOWED_PRIMARY):
 
     sub = df_secondary[df_secondary["primary"] == p].copy()
     if sub["secondary"].nunique() < 2:
-        print(f"[WARN] SECONDARY for primary='{p}' has <2 classes. Skipping.")
+        # Store the single class as a default prediction
+        unique_classes = sub["secondary"].unique()
+        if len(unique_classes) == 1:
+            single_class_defaults["secondary"][p] = unique_classes[0]
+            print(f"[WARN] SECONDARY for primary='{p}' has <2 classes. Using default: '{unique_classes[0]}'")
+        else:
+            print(f"[WARN] SECONDARY for primary='{p}' has <2 classes. Skipping.")
+        continue
+
+    counts = Counter(sub["secondary"])
+
+    # Check if any tag has less than MIN_SAMPLES_PER_TAG
+    insufficient_tags = {tag: count for tag, count in counts.items() if count < MIN_SAMPLES_PER_TAG}
+    if insufficient_tags:
+        print(f"[WARN] SECONDARY for primary='{p}' has tags with <{MIN_SAMPLES_PER_TAG} samples: {insufficient_tags}")
+        print(f"[WARN] Skipping SECONDARY model for primary='{p}'. Each tag needs at least {MIN_SAMPLES_PER_TAG} documents.")
         continue
 
     Xp_tr, Xp_te, yp_tr, yp_te = train_test_split(
@@ -159,7 +228,22 @@ for p, s in sorted(valid_ps_pairs):
         continue
 
     if sub["tertiary"].nunique() < 2:
-        print(f"[WARN] TERTIARY for (primary='{p}', secondary='{s}') has <2 classes. Skipping.")
+        # Store the single class as a default prediction
+        unique_classes = sub["tertiary"].unique()
+        if len(unique_classes) == 1:
+            single_class_defaults["tertiary"][(p, s)] = unique_classes[0]
+            print(f"[WARN] TERTIARY for (primary='{p}', secondary='{s}') has <2 classes. Using default: '{unique_classes[0]}'")
+        else:
+            print(f"[WARN] TERTIARY for (primary='{p}', secondary='{s}') has <2 classes. Skipping.")
+        continue
+
+    counts = Counter(sub["tertiary"])
+
+    # Check if any tag has less than MIN_SAMPLES_PER_TAG
+    insufficient_tags = {tag: count for tag, count in counts.items() if count < MIN_SAMPLES_PER_TAG}
+    if insufficient_tags:
+        print(f"[WARN] TERTIARY for (primary='{p}', secondary='{s}') has tags with <{MIN_SAMPLES_PER_TAG} samples: {insufficient_tags}")
+        print(f"[WARN] Skipping TERTIARY model for (primary='{p}', secondary='{s}'). Each tag needs at least {MIN_SAMPLES_PER_TAG} documents.")
         continue
 
     Xt_tr, Xt_te, yt_tr, yt_te = train_test_split(
@@ -185,6 +269,20 @@ try:
 except Exception:
     _HAS_SHAP = False
 
+# =============================== Save Single-Class Defaults ====================
+single_class_path = models_dir / "single_class_defaults.json"
+
+# Convert tuple keys to strings for JSON serialization
+single_class_json = {
+    "secondary": single_class_defaults["secondary"],
+    "tertiary": {f"{p}|{s}": v for (p, s), v in single_class_defaults["tertiary"].items()}
+}
+
+with open(single_class_path, "w") as f:
+    json.dump(single_class_json, f, indent=2)
+
+print(f"Saved single-class defaults → {single_class_path.resolve()}")
+
 # =============================== Inference Wrapper =============================
 class HierarchicalBestModel:
     """
@@ -195,13 +293,43 @@ class HierarchicalBestModel:
       - select all classes with confidence >= self.threshold
       - if none pass threshold, keep the single top-1
       - expand to next layer for ALL selected parents
+
+    Supports dynamic hierarchy at prediction time by refetching from tag-service.
     """
-    def __init__(self, primary_model, secondary_models, tertiary_models, threshold: float = THRESHOLD):
+    def __init__(self, primary_model, secondary_models, tertiary_models, single_class_defaults=None, threshold: float = THRESHOLD):
         self.primary_model = primary_model
         self.secondary_models = secondary_models  # {primary: model}
         self.tertiary_models = tertiary_models    # {(primary, secondary): model}
+        self.single_class_defaults = single_class_defaults or {"secondary": {}, "tertiary": {}}
         self.threshold = float(threshold)
         self._shap_cache = {}
+        self._hierarchy_cache = None  # Cache hierarchy for performance
+        self._hierarchy_cache_time = 0  # Timestamp of last fetch
+
+    def _get_current_hierarchy(self):
+        """
+        Get current hierarchy from tag-service with caching (60 second TTL).
+        Falls back to module-level HIERARCHY if tag-service is unavailable.
+        """
+        import time
+        CACHE_TTL = 60  # seconds
+
+        now = time.time()
+        if self._hierarchy_cache is not None and (now - self._hierarchy_cache_time) < CACHE_TTL:
+            return self._hierarchy_cache
+
+        try:
+            hierarchy = fetch_hierarchy_from_tag_service()
+            self._hierarchy_cache = hierarchy
+            self._hierarchy_cache_time = now
+            return hierarchy
+        except Exception as e:
+            # Fallback to module-level HIERARCHY if fetch fails
+            if self._hierarchy_cache is not None:
+                # Use stale cache if available
+                return self._hierarchy_cache
+            # Otherwise use module-level fallback
+            return HIERARCHY
 
     # ---------- scoring helpers ----------
     @staticmethod
@@ -341,6 +469,10 @@ class HierarchicalBestModel:
           "tertiary":  [ {primary, secondary, label, confidence, key_evidence}, ... ]
         }
         """
+        # Fetch current hierarchy dynamically
+        current_hierarchy = self._get_current_hierarchy()
+        allowed_primary, allowed_secondary, allowed_tertiary = build_allowed_sets(current_hierarchy)
+
         out: Dict[str, Any] = {"threshold": self.threshold, "primary": [], "secondary": [], "tertiary": []}
 
         # PRIMARY
@@ -348,6 +480,8 @@ class HierarchicalBestModel:
             return out  # nothing trained; return empty lists
 
         prim_scores = self._scores_confidences(self.primary_model, text)
+        # Filter to only allowed primary tags from current hierarchy
+        prim_scores = [item for item in prim_scores if item["label"] in allowed_primary]
         prim_selected = self._select_by_threshold(prim_scores)
 
         # attach SHAP for each selected primary
@@ -366,10 +500,25 @@ class HierarchicalBestModel:
         for p_item in primary_results:
             p_label = p_item["label"]
             s_model = self.secondary_models.get(p_label)
+
+            # Check if there's a single-class default for this primary
+            if not s_model and p_label in self.single_class_defaults.get("secondary", {}):
+                default_label = self.single_class_defaults["secondary"][p_label]
+                secondary_results.append({
+                    "primary": p_label,
+                    "label": default_label,
+                    "confidence": 1.0,  # High confidence for single-class defaults
+                    "key_evidence": {"supporting": [], "opposing": []}
+                })
+                continue
+
             if not s_model:
                 continue
 
             sec_scores = self._scores_confidences(s_model, text)
+            # Filter to only allowed secondary tags for this primary
+            allowed_sec = allowed_secondary.get(p_label, set())
+            sec_scores = [item for item in sec_scores if item["label"] in allowed_sec]
             sec_selected = self._select_by_threshold(sec_scores)
 
             for s_item in sec_selected:
@@ -388,10 +537,26 @@ class HierarchicalBestModel:
             p_label = s_item["primary"]
             s_label = s_item["label"]
             t_model = self.tertiary_models.get((p_label, s_label))
+
+            # Check if there's a single-class default for this (primary, secondary)
+            if not t_model and (p_label, s_label) in self.single_class_defaults.get("tertiary", {}):
+                default_label = self.single_class_defaults["tertiary"][(p_label, s_label)]
+                tertiary_results.append({
+                    "primary": p_label,
+                    "secondary": s_label,
+                    "label": default_label,
+                    "confidence": 1.0,  # High confidence for single-class defaults
+                    "key_evidence": {"supporting": [], "opposing": []}
+                })
+                continue
+
             if not t_model:
                 continue
 
             ter_scores = self._scores_confidences(t_model, text)
+            # Filter to only allowed tertiary tags for this (primary, secondary)
+            allowed_ter = allowed_tertiary.get((p_label, s_label), set())
+            ter_scores = [item for item in ter_scores if item["label"] in allowed_ter]
             ter_selected = self._select_by_threshold(ter_scores)
 
             for t_item in ter_selected:
@@ -429,8 +594,26 @@ def build_best_model(models_dir: Path) -> HierarchicalBestModel:
             if (p in ALLOWED_PRIMARY) and (s in ALLOWED_SECONDARY.get(p, set())) and len(ALLOWED_TERTIARY.get((p, s), set())) > 0:
                 tertiary_models[(p, s)] = joblib.load(pth)
 
-    # Pass the threshold into the wrapper so it’s serialized with the model
-    return HierarchicalBestModel(primary_model, secondary_models, tertiary_models, threshold=THRESHOLD)
+    # Load single-class defaults if available
+    single_class_defaults_path = models_dir / "single_class_defaults.json"
+    single_class_defaults = {"secondary": {}, "tertiary": {}}
+    if single_class_defaults_path.exists():
+        with open(single_class_defaults_path, "r") as f:
+            loaded = json.load(f)
+            single_class_defaults["secondary"] = loaded.get("secondary", {})
+            # Convert string keys back to tuples for tertiary
+            single_class_defaults["tertiary"] = {
+                tuple(k.split("|")): v for k, v in loaded.get("tertiary", {}).items()
+            }
+
+    # Pass the threshold and single_class_defaults into the wrapper
+    return HierarchicalBestModel(
+        primary_model,
+        secondary_models,
+        tertiary_models,
+        single_class_defaults=single_class_defaults,
+        threshold=THRESHOLD
+    )
 
 # =============================== Persist wrapper ===============================
 best_model = build_best_model(models_dir)

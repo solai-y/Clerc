@@ -158,7 +158,14 @@ export default function HomePage() {
         console.log('[page] 🏷️ Available tags loaded from hierarchy:', tagLists)
         setAvailableTags(tagLists)
       } catch (err) {
-        console.error('[page] ❌ Failed to fetch tag hierarchy:', err)
+        const errorMessage = err instanceof Error ? err.message : String(err)
+
+        // Check if error is 502 Bad Gateway (services still starting up)
+        if (errorMessage.includes("502") || errorMessage.includes("Bad Gateway")) {
+          console.log('[page] ⏳ Tag service is still starting up. Tags will load when service is ready.')
+        } else {
+          console.error('[page] ❌ Failed to fetch tag hierarchy:', err)
+        }
       }
     }
 
@@ -398,6 +405,25 @@ export default function HomePage() {
           onConfirm={async (documentId: string, confirmedTagsData: any) => {
             const documentIdNum = parseInt(documentId)
             await apiClient.updateDocumentTags(documentIdNum, { confirmed_tags: confirmedTagsData })
+
+            // Update retraining service with confirmed tags (async, non-blocking)
+            try {
+              const retrainingResponse = await fetch('/api/retraining/update-tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  document_id: documentIdNum,
+                  confirmed_tags: confirmedTagsData.confirmed_tags
+                })
+              })
+
+              if (!retrainingResponse.ok) {
+                console.warn("⚠️ Retraining tag update failed (non-critical):", await retrainingResponse.text())
+              }
+            } catch (retrainingError) {
+              console.warn("⚠️ Retraining tag update error (non-critical):", retrainingError)
+            }
+
             setCurrentPage(1)
             setSearchTerm("")
             setDetailsDocument(null)

@@ -26,8 +26,16 @@ services:
       dockerfile: ./ai-service/Dockerfile
     ports:
       - "5004:5004"
+    depends_on:
+      - retraining-service
+      - tag-service
     env_file:
       - .env
+    environment:
+      - RETRAINING_SERVICE_URL=http://retraining-service:5009
+      - TAG_SERVICE_URL=http://tag-service:5007
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
 
   llm-service:
     build:
@@ -85,6 +93,16 @@ services:
     environment:
       - PORT=5008
 
+  retraining-service:
+    build: ./retraining-service
+    ports:
+      - "5009:5009"
+    env_file:
+      - .env
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+
   api-gateway:
     build: ./api-gateway
     ports:
@@ -97,6 +115,7 @@ services:
       - llm-service
       - prediction-service
       - text-extraction-service
+      - retraining-service
     env_file:
       - .env
 
@@ -115,3 +134,4 @@ services:
       - prediction-service
       - tag-service
       - text-extraction-service
+      - retraining-service

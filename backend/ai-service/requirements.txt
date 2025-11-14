@@ -7,4 +7,6 @@ numpy
 scikit-learn
 shap
 httpx  # Required for FastAPI TestClient
+requests  # Required for fetching CSV from retraining-service
 pytest>=8.2.0
+supabase>=2.0.0  # For validation endpoint database queries
