@@ -1,12 +1,14 @@
 """
 Unified API Gateway - Aggregates documentation from all microservices
 """
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.utils import get_openapi
-import httpx
 from copy import deepcopy
 import re  # NEW: used in ref safety pass
+
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import Response
+import httpx
 
 app = FastAPI(
     title="Clerc API Documentation",
@@ -209,11 +211,57 @@ def custom_openapi():
 # keep your assignment
 app.openapi = custom_openapi
 
+
 @app.get("/health")
 async def health():
     """Health check endpoint"""
     return {"status": "healthy", "service": "api-gateway"}
 
+
+# ------------- PROXY ROUTE: forwards /{service}/... to underlying service -----
+@app.api_route("/{service}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+async def proxy(service: str, path: str, request: Request):
+    """
+    Generic proxy that forwards requests like:
+        /ai-service/e2e  ->  http://ai-service:5004/e2e
+    while keeping method, query params, headers and body.
+    """
+    if service not in SERVICES:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    target_base = SERVICES[service]
+    target_url = f"{target_base}/{path}"
+
+    # Forward request
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        body = await request.body()
+        # Strip host header so httpx sets it correctly for the target
+        headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+
+        resp = await client.request(
+            request.method,
+            target_url,
+            params=request.query_params,
+            content=body,
+            headers=headers,
+        )
+
+    # Build response back to caller
+    excluded_headers = {"content-encoding", "transfer-encoding", "connection"}
+    response_headers = {
+        k: v for k, v in resp.headers.items() if k.lower() not in excluded_headers
+    }
+
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        headers=response_headers,
+        media_type=resp.headers.get("content-type"),
+    )
+# -----------------------------------------------------------------------------
+
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
