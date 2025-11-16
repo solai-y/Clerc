@@ -6,9 +6,8 @@ import { AuthProvider } from '@/contexts/auth-context'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.dev',
+  title: 'Clerc | Document AI',
+  description: 'AI-powered document classification and management',
 }
 
 export default function RootLayout({
