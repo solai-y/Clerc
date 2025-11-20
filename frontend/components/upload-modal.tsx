@@ -242,11 +242,23 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
       console.log("🤖 Processing with Prediction Service...")
 
       // Extract text from file using S3 URL
-      const documentText = await extractTextFromFile(file, s3Link || "")
+      const rawText = await extractTextFromFile(file, s3Link || "")
+
+      // Sanitize text: Remove NULL bytes and control characters that PostgreSQL can't handle
+      // PostgreSQL text fields cannot store \u0000 (NULL bytes) and certain control characters
+      const documentText = rawText
+        .replace(/\u0000/g, '') // Remove NULL bytes
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '') // Remove control chars except \n, \r, \t
 
       // Step 3.5: Store text in retraining service (async, non-blocking)
+      const storeTextStartTime = Date.now()
       try {
-        console.log("💾 Storing text in retraining service...")
+        console.log("💾 [RETRAINING DEBUG] Starting store-text call...")
+        console.log("💾 [RETRAINING DEBUG] Document ID:", documentId)
+        console.log("💾 [RETRAINING DEBUG] Text length:", documentText?.length || 0)
+        console.log("💾 [RETRAINING DEBUG] Text is empty:", !documentText || documentText.trim().length === 0)
+        console.log("💾 [RETRAINING DEBUG] Timestamp:", new Date().toISOString())
+
         const retrainingResponse = await fetch('/api/retraining/store-text', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -256,14 +268,60 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
           })
         })
 
+        const responseTime = Date.now() - storeTextStartTime
+        console.log("💾 [RETRAINING DEBUG] Response received after", responseTime, "ms")
+        console.log("💾 [RETRAINING DEBUG] Response status:", retrainingResponse.status)
+        console.log("💾 [RETRAINING DEBUG] Response ok:", retrainingResponse.ok)
+        console.log("💾 [RETRAINING DEBUG] Response headers:", {
+          contentType: retrainingResponse.headers.get('content-type'),
+          contentLength: retrainingResponse.headers.get('content-length')
+        })
+
         if (retrainingResponse.ok) {
           const retrainingResult = await retrainingResponse.json()
-          console.log("✅ Retraining text stored:", retrainingResult)
+          console.log("✅ [RETRAINING DEBUG] Text stored successfully:", retrainingResult)
+          console.log("✅ [RETRAINING DEBUG] Total time:", Date.now() - storeTextStartTime, "ms")
         } else {
-          console.warn("⚠️ Retraining text storage failed (non-critical):", await retrainingResponse.text())
+          const errorText = await retrainingResponse.text()
+          console.error("❌ [RETRAINING ERROR] Store-text failed!")
+          console.error("❌ [RETRAINING ERROR] HTTP Status:", retrainingResponse.status, retrainingResponse.statusText)
+          console.error("❌ [RETRAINING ERROR] Error response:", errorText)
+          console.error("❌ [RETRAINING ERROR] Document ID:", documentId)
+          console.error("❌ [RETRAINING ERROR] Text length:", documentText?.length || 0)
+          console.error("❌ [RETRAINING ERROR] Response time:", responseTime, "ms")
+
+          // Categorize the error
+          if (retrainingResponse.status === 400) {
+            console.error("❌ [RETRAINING ERROR] CATEGORY: Bad Request - Likely empty/invalid text or document")
+          } else if (retrainingResponse.status === 404) {
+            console.error("❌ [RETRAINING ERROR] CATEGORY: Not Found - Document doesn't exist in raw_documents")
+          } else if (retrainingResponse.status === 408 || retrainingResponse.status === 504) {
+            console.error("❌ [RETRAINING ERROR] CATEGORY: Timeout - Network or server timeout")
+          } else if (retrainingResponse.status === 500) {
+            console.error("❌ [RETRAINING ERROR] CATEGORY: Server Error - Database or internal error")
+          } else if (retrainingResponse.status === 503) {
+            console.error("❌ [RETRAINING ERROR] CATEGORY: Service Unavailable - Retraining service down")
+          }
         }
       } catch (retrainingError) {
-        console.warn("⚠️ Retraining text storage error (non-critical):", retrainingError)
+        const errorTime = Date.now() - storeTextStartTime
+        console.error("❌ [RETRAINING ERROR] Exception during store-text call!")
+        console.error("❌ [RETRAINING ERROR] Error type:", retrainingError instanceof TypeError ? 'Network/Fetch Error' : 'Other Error')
+        console.error("❌ [RETRAINING ERROR] Error message:", retrainingError instanceof Error ? retrainingError.message : String(retrainingError))
+        console.error("❌ [RETRAINING ERROR] Error stack:", retrainingError instanceof Error ? retrainingError.stack : 'N/A')
+        console.error("❌ [RETRAINING ERROR] Document ID:", documentId)
+        console.error("❌ [RETRAINING ERROR] Text length:", documentText?.length || 0)
+        console.error("❌ [RETRAINING ERROR] Time before error:", errorTime, "ms")
+        console.error("❌ [RETRAINING ERROR] Timestamp:", new Date().toISOString())
+
+        // Categorize exception type
+        if (retrainingError instanceof TypeError) {
+          console.error("❌ [RETRAINING ERROR] CATEGORY: Network Error - Failed to fetch (service unavailable or network issue)")
+        } else if (retrainingError instanceof Error && retrainingError.message.includes('timeout')) {
+          console.error("❌ [RETRAINING ERROR] CATEGORY: Timeout - Request timed out")
+        } else {
+          console.error("❌ [RETRAINING ERROR] CATEGORY: Unknown Error")
+        }
       }
 
       // Call prediction service (will use database thresholds)
@@ -487,25 +545,73 @@ function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalProps) {
         })
 
         // Update retraining service with confirmed tags (async, non-blocking)
+        const updateTagsStartTime = Date.now()
         try {
-          console.log("💾 Updating retraining service with confirmed tags...")
+          const tagsToSend = confirmedTagsData.confirmed_tags || confirmedTagsData
+          console.log("🏷️ [RETRAINING DEBUG] Starting update-tags call (from upload)...")
+          console.log("🏷️ [RETRAINING DEBUG] Document ID:", documentId)
+          console.log("🏷️ [RETRAINING DEBUG] Number of tags:", tagsToSend?.tags?.length || 0)
+          console.log("🏷️ [RETRAINING DEBUG] Tags:", tagsToSend?.tags?.map(t => `${t.tag} (${t.level})`).join(', '))
+          console.log("🏷️ [RETRAINING DEBUG] Timestamp:", new Date().toISOString())
+
           const retrainingResponse = await fetch('/api/retraining/update-tags', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               document_id: parseInt(documentId),
-              confirmed_tags: confirmedTagsData.confirmed_tags || confirmedTagsData
+              confirmed_tags: tagsToSend
             })
           })
 
+          const responseTime = Date.now() - updateTagsStartTime
+          console.log("🏷️ [RETRAINING DEBUG] Response received after", responseTime, "ms")
+          console.log("🏷️ [RETRAINING DEBUG] Response status:", retrainingResponse.status)
+          console.log("🏷️ [RETRAINING DEBUG] Response ok:", retrainingResponse.ok)
+
           if (retrainingResponse.ok) {
             const retrainingResult = await retrainingResponse.json()
-            console.log("✅ Retraining tags updated:", retrainingResult)
+            console.log("✅ [RETRAINING DEBUG] Tags updated successfully:", retrainingResult)
+            console.log("✅ [RETRAINING DEBUG] Total time:", Date.now() - updateTagsStartTime, "ms")
           } else {
-            console.warn("⚠️ Retraining tag update failed (non-critical):", await retrainingResponse.text())
+            const errorText = await retrainingResponse.text()
+            console.error("❌ [RETRAINING ERROR] Update-tags failed (from upload)!")
+            console.error("❌ [RETRAINING ERROR] HTTP Status:", retrainingResponse.status, retrainingResponse.statusText)
+            console.error("❌ [RETRAINING ERROR] Error response:", errorText)
+            console.error("❌ [RETRAINING ERROR] Document ID:", documentId)
+            console.error("❌ [RETRAINING ERROR] Response time:", responseTime, "ms")
+
+            // Categorize the error
+            if (retrainingResponse.status === 400) {
+              console.error("❌ [RETRAINING ERROR] CATEGORY: Bad Request - Invalid tags or data format")
+            } else if (retrainingResponse.status === 404) {
+              console.error("❌ [RETRAINING ERROR] CATEGORY: Not Found - Document text not stored (store-text failed)")
+              console.error("❌ [RETRAINING ERROR] ACTION REQUIRED: Check store-text logs above for document", documentId)
+            } else if (retrainingResponse.status === 408 || retrainingResponse.status === 504) {
+              console.error("❌ [RETRAINING ERROR] CATEGORY: Timeout - Network or server timeout")
+            } else if (retrainingResponse.status === 500) {
+              console.error("❌ [RETRAINING ERROR] CATEGORY: Server Error - Database or internal error")
+            } else if (retrainingResponse.status === 503) {
+              console.error("❌ [RETRAINING ERROR] CATEGORY: Service Unavailable - Retraining service down")
+            }
           }
         } catch (retrainingError) {
-          console.warn("⚠️ Retraining tag update error (non-critical):", retrainingError)
+          const errorTime = Date.now() - updateTagsStartTime
+          console.error("❌ [RETRAINING ERROR] Exception during update-tags call (from upload)!")
+          console.error("❌ [RETRAINING ERROR] Error type:", retrainingError instanceof TypeError ? 'Network/Fetch Error' : 'Other Error')
+          console.error("❌ [RETRAINING ERROR] Error message:", retrainingError instanceof Error ? retrainingError.message : String(retrainingError))
+          console.error("❌ [RETRAINING ERROR] Error stack:", retrainingError instanceof Error ? retrainingError.stack : 'N/A')
+          console.error("❌ [RETRAINING ERROR] Document ID:", documentId)
+          console.error("❌ [RETRAINING ERROR] Time before error:", errorTime, "ms")
+          console.error("❌ [RETRAINING ERROR] Timestamp:", new Date().toISOString())
+
+          // Categorize exception type
+          if (retrainingError instanceof TypeError) {
+            console.error("❌ [RETRAINING ERROR] CATEGORY: Network Error - Failed to fetch (service unavailable or network issue)")
+          } else if (retrainingError instanceof Error && retrainingError.message.includes('timeout')) {
+            console.error("❌ [RETRAINING ERROR] CATEGORY: Timeout - Request timed out")
+          } else {
+            console.error("❌ [RETRAINING ERROR] CATEGORY: Unknown Error")
+          }
         }
       } catch (error) {
         console.error('Failed to update tags in backend:', error)

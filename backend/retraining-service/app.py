@@ -221,19 +221,63 @@ async def store_document_text(request: StoreTextRequest):
     """
     Store document text for retraining (called after text extraction)
     """
+    import time
+    start_time = time.time()
+
     try:
+        logger.info(f"[STORE-TEXT] === Starting store-text request ===")
+        logger.info(f"[STORE-TEXT] Document ID: {request.document_id}")
+        logger.info(f"[STORE-TEXT] Text length: {len(request.text) if request.text else 0}")
+        logger.info(f"[STORE-TEXT] Text is empty: {not request.text or len(request.text.strip()) == 0}")
+        logger.info(f"[STORE-TEXT] Text preview (first 100 chars): {request.text[:100] if request.text else 'N/A'}")
+
         if not request.text:
+            logger.error(f"[STORE-TEXT] ERROR CATEGORY: Empty/Invalid Text - text field is empty")
+            logger.error(f"[STORE-TEXT] Document ID: {request.document_id}")
             raise HTTPException(status_code=400, detail="text is required")
 
+        if len(request.text.strip()) == 0:
+            logger.error(f"[STORE-TEXT] ERROR CATEGORY: Empty/Invalid Text - text is whitespace only")
+            logger.error(f"[STORE-TEXT] Document ID: {request.document_id}")
+            raise HTTPException(status_code=400, detail="text cannot be empty or whitespace only")
+
+        # Sanitize text: Remove NULL bytes and control characters that PostgreSQL can't handle
+        # PostgreSQL error 22P05 occurs when trying to store \u0000 (NULL byte) in text fields
+        original_length = len(request.text)
+        sanitized_text = request.text.replace('\u0000', '').replace('\x00', '')
+        # Remove other problematic control characters (keep newline, carriage return, tab)
+        sanitized_text = ''.join(
+            char for char in sanitized_text
+            if ord(char) >= 32 or char in '\n\r\t'
+        )
+
+        removed_chars = original_length - len(sanitized_text)
+        if removed_chars > 0:
+            logger.warning(f"[STORE-TEXT] Sanitized text: removed {removed_chars} problematic characters (NULL bytes/control chars)")
+
+        if len(sanitized_text.strip()) == 0:
+            logger.error(f"[STORE-TEXT] ERROR CATEGORY: Empty/Invalid Text - text became empty after sanitization")
+            logger.error(f"[STORE-TEXT] Document ID: {request.document_id}")
+            logger.error(f"[STORE-TEXT] Original length: {original_length}, Removed: {removed_chars}")
+            raise HTTPException(status_code=400, detail="text cannot be empty after sanitization")
+
+        logger.info(f"[STORE-TEXT] Attempting database insert...")
         # Insert initial row with document_id and text, tags will be null
         response = supabase.table('retraining_data').insert({
             'document_id': request.document_id,
-            'document_text': request.text
+            'document_text': sanitized_text
         }).execute()
+
+        db_time = time.time() - start_time
+        logger.info(f"[STORE-TEXT] Database query completed in {db_time:.3f}s")
 
         if response.data and len(response.data) > 0:
             result = response.data[0]
-            logger.info(f"Stored retraining text for document {request.document_id}, row ID: {result['id']}")
+            total_time = time.time() - start_time
+            logger.info(f"[STORE-TEXT] ✅ SUCCESS - Stored retraining text for document {request.document_id}")
+            logger.info(f"[STORE-TEXT] Row ID: {result['id']}")
+            logger.info(f"[STORE-TEXT] Text length (sanitized): {len(sanitized_text)}")
+            logger.info(f"[STORE-TEXT] Total time: {total_time:.3f}s")
 
             return APIResponse(
                 status="success",
@@ -241,27 +285,57 @@ async def store_document_text(request: StoreTextRequest):
                 data={
                     'retraining_id': result['id'],
                     'document_id': result['document_id'],
-                    'text_length': len(request.text),
+                    'text_length': len(sanitized_text),
                     'created_at': result.get('created_at')
                 }
             )
         else:
-            logger.error("Failed to store document text - no data returned")
+            logger.error(f"[STORE-TEXT] ERROR CATEGORY: Database Error - No data returned from insert")
+            logger.error(f"[STORE-TEXT] Document ID: {request.document_id}")
+            logger.error(f"[STORE-TEXT] Response: {response}")
             raise HTTPException(
                 status_code=500,
-                detail='Failed to store document text'
+                detail='Failed to store document text - no data returned from database'
             )
 
     except HTTPException:
+        error_time = time.time() - start_time
+        logger.error(f"[STORE-TEXT] HTTPException raised after {error_time:.3f}s")
         raise
     except Exception as e:
-        logger.error(f"Failed to store document text: {str(e)}")
-        if "foreign key" in str(e).lower() or "violates" in str(e).lower():
+        error_time = time.time() - start_time
+        logger.error(f"[STORE-TEXT] ❌ EXCEPTION after {error_time:.3f}s")
+        logger.error(f"[STORE-TEXT] Exception type: {type(e).__name__}")
+        logger.error(f"[STORE-TEXT] Exception message: {str(e)}")
+        logger.error(f"[STORE-TEXT] Document ID: {request.document_id}")
+        logger.error(f"[STORE-TEXT] Text length: {len(request.text) if request.text else 0}")
+
+        error_str = str(e).lower()
+        if "foreign key" in error_str or "violates foreign key constraint" in error_str:
+            logger.error(f"[STORE-TEXT] ERROR CATEGORY: Database Integrity - Foreign key violation")
+            logger.error(f"[STORE-TEXT] CAUSE: Document {request.document_id} does not exist in raw_documents table")
+            logger.error(f"[STORE-TEXT] ACTION REQUIRED: Verify document was created in raw_documents before calling store-text")
             raise HTTPException(
                 status_code=400,
-                detail='Database integrity error - Document may not exist in raw_documents'
+                detail=f'Database integrity error - Document ID {request.document_id} may not exist in raw_documents table'
             )
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        elif "timeout" in error_str or "timed out" in error_str:
+            logger.error(f"[STORE-TEXT] ERROR CATEGORY: Database Timeout")
+            logger.error(f"[STORE-TEXT] Time elapsed: {error_time:.3f}s")
+            raise HTTPException(
+                status_code=504,
+                detail='Database timeout - operation took too long'
+            )
+        elif "connection" in error_str or "network" in error_str:
+            logger.error(f"[STORE-TEXT] ERROR CATEGORY: Database Connection Error")
+            raise HTTPException(
+                status_code=503,
+                detail='Database connection error - service temporarily unavailable'
+            )
+        else:
+            logger.error(f"[STORE-TEXT] ERROR CATEGORY: Unknown Error")
+            logger.error(f"[STORE-TEXT] Full exception details:", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.post(
     "/retraining/update-tags",
@@ -275,27 +349,42 @@ async def update_tags(request: UpdateTagsRequest):
 
     Stores multiple tags per level as arrays - no hierarchy building required.
     """
+    import time
+    start_time = time.time()
+
     try:
-        logger.info(f"Received update-tags request for document_id: {request.document_id}")
-        logger.info(f"Confirmed tags: {[{'tag': t.tag, 'level': t.level} for t in request.confirmed_tags.tags]}")
+        logger.info(f"[UPDATE-TAGS] === Starting update-tags request ===")
+        logger.info(f"[UPDATE-TAGS] Document ID: {request.document_id}")
+        logger.info(f"[UPDATE-TAGS] Number of tags: {len(request.confirmed_tags.tags) if request.confirmed_tags.tags else 0}")
+        logger.info(f"[UPDATE-TAGS] Tags: {[{'tag': t.tag, 'level': t.level} for t in request.confirmed_tags.tags]}")
 
         if not request.confirmed_tags.tags:
+            logger.error(f"[UPDATE-TAGS] ERROR CATEGORY: Invalid Request - No tags provided")
+            logger.error(f"[UPDATE-TAGS] Document ID: {request.document_id}")
             raise HTTPException(status_code=400, detail="confirmed_tags.tags array is required")
 
         # First, get the document text from existing rows
-        logger.info(f"Querying retraining_data for document_id: {request.document_id}")
+        logger.info(f"[UPDATE-TAGS] Querying retraining_data for document {request.document_id}...")
+        query_start = time.time()
         response = supabase.table('retraining_data').select('document_text').eq('document_id', request.document_id).limit(1).execute()
-        logger.info(f"Query result: found {len(response.data) if response.data else 0} rows")
+        query_time = time.time() - query_start
+        logger.info(f"[UPDATE-TAGS] Query completed in {query_time:.3f}s")
+        logger.info(f"[UPDATE-TAGS] Found {len(response.data) if response.data else 0} rows")
 
         if not response.data or len(response.data) == 0:
-            logger.warning(f"No existing retraining data found for document {request.document_id}, will create new entry")
+            logger.error(f"[UPDATE-TAGS] ❌ ERROR CATEGORY: Document Not Found in Retraining Table")
+            logger.error(f"[UPDATE-TAGS] Document ID: {request.document_id}")
+            logger.error(f"[UPDATE-TAGS] CAUSE: /store-text was never called successfully for this document")
+            logger.error(f"[UPDATE-TAGS] ACTION REQUIRED: Check store-text logs for document {request.document_id}")
+            logger.error(f"[UPDATE-TAGS] Time elapsed: {time.time() - start_time:.3f}s")
             raise HTTPException(
                 status_code=404,
                 detail=f'Document text not found for document_id {request.document_id} - Must call /store-text before updating tags'
             )
 
         document_text = response.data[0]['document_text']
-        logger.info(f"Found existing retraining data for document {request.document_id}, text length: {len(document_text)}")
+        logger.info(f"[UPDATE-TAGS] ✅ Found existing text for document {request.document_id}")
+        logger.info(f"[UPDATE-TAGS] Text length: {len(document_text) if document_text else 0}")
 
         # Group tags by level
         tags_list = request.confirmed_tags.tags
@@ -391,8 +480,13 @@ async def update_tags(request: UpdateTagsRequest):
             raise HTTPException(status_code=500, detail='Failed to insert retraining data')
 
         result = insert_response.data[0]
-        logger.info(f"Successfully inserted retraining row for document {request.document_id}")
-        logger.info(f"Tags stored - Primary: {len(primary_tag_ids)}, Secondary: {len(secondary_tag_ids)}, Tertiary: {len(tertiary_tag_ids)}")
+        total_time = time.time() - start_time
+        logger.info(f"[UPDATE-TAGS] ✅ SUCCESS - Updated retraining data for document {request.document_id}")
+        logger.info(f"[UPDATE-TAGS] Row ID: {result['id']}")
+        logger.info(f"[UPDATE-TAGS] Primary tags: {len(primary_tag_ids)}")
+        logger.info(f"[UPDATE-TAGS] Secondary tags: {len(secondary_tag_ids)}")
+        logger.info(f"[UPDATE-TAGS] Tertiary tags: {len(tertiary_tag_ids)}")
+        logger.info(f"[UPDATE-TAGS] Total time: {total_time:.3f}s")
 
         return APIResponse(
             status="success",
@@ -410,10 +504,27 @@ async def update_tags(request: UpdateTagsRequest):
         )
 
     except HTTPException:
+        error_time = time.time() - start_time
+        logger.error(f"[UPDATE-TAGS] HTTPException raised after {error_time:.3f}s")
         raise
     except Exception as e:
-        logger.error(f"Failed to update retraining tags: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        error_time = time.time() - start_time
+        logger.error(f"[UPDATE-TAGS] ❌ EXCEPTION after {error_time:.3f}s")
+        logger.error(f"[UPDATE-TAGS] Exception type: {type(e).__name__}")
+        logger.error(f"[UPDATE-TAGS] Exception message: {str(e)}")
+        logger.error(f"[UPDATE-TAGS] Document ID: {request.document_id}")
+        logger.error(f"[UPDATE-TAGS] Full exception details:", exc_info=True)
+
+        error_str = str(e).lower()
+        if "timeout" in error_str or "timed out" in error_str:
+            logger.error(f"[UPDATE-TAGS] ERROR CATEGORY: Database Timeout")
+            raise HTTPException(status_code=504, detail='Database timeout - operation took too long')
+        elif "connection" in error_str or "network" in error_str:
+            logger.error(f"[UPDATE-TAGS] ERROR CATEGORY: Database Connection Error")
+            raise HTTPException(status_code=503, detail='Database connection error - service temporarily unavailable')
+        else:
+            logger.error(f"[UPDATE-TAGS] ERROR CATEGORY: Unknown Error")
+            raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get(
     "/retraining/data/{document_id}",
