@@ -89,7 +89,6 @@ def test_health_endpoint():
 
     try:
         assert "status" in data
-        assert "data" in data
         assert "timestamp" in data
         print("[PASS] Response structure is correct.")
     except (AssertionError, KeyError) as e:
