@@ -89,9 +89,16 @@ def test_health_endpoint():
 
     try:
         assert "status" in data
-        assert "data" in data
         assert "timestamp" in data
-        print("[PASS] Response structure is correct.")
+        # When healthy (200), response has "data" field
+        # When unhealthy (503), response has "error_code" and "message" fields
+        if response.status_code == 200:
+            assert "data" in data
+            print("[PASS] Response structure is correct (healthy).")
+        else:
+            assert "error_code" in data
+            assert "message" in data
+            print("[PASS] Response structure is correct (unhealthy).")
     except (AssertionError, KeyError) as e:
         print(f"[FAIL] Response structure check failed: {e}")
         raise
