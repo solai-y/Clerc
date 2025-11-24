@@ -397,6 +397,7 @@ class APIClient {
     duration_seconds: number | null;
   }> {
     const url = apiUrl("/ai/rebuild/status");
+    console.log('[API] getRebuildStatus - URL:', url);
     try {
       const response = await fetch(url, {
         method: "GET",
@@ -404,15 +405,25 @@ class APIClient {
         cache: "no-store",
       });
 
+      console.log('[API] getRebuildStatus - Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        url: response.url,
+      });
+
       if (!response.ok) {
         const msg = await response.text().catch(() => "");
+        console.error('[API] getRebuildStatus - Error response body:', msg);
         throw new Error(`HTTP ${response.status}: ${msg || response.statusText}`);
       }
 
       const data = await response.json();
+      console.log('[API] getRebuildStatus - Parsed data:', data);
       return data;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error('[API] getRebuildStatus - Caught error:', errorMessage);
       throw new Error(`Failed to get rebuild status: ${errorMessage}.`);
     }
   }
