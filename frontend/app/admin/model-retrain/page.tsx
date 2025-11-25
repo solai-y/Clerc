@@ -169,7 +169,7 @@ export default function ModelRetrainPage() {
       // Update message from backend (but not progress - we use simulated progress)
       setRetrainMessage(rebuildStatus.message);
 
-      if (rebuildStatus.status === 'completed' && retrainStatus === 'in_progress') {
+      if (rebuildStatus.status === 'completed') {
         // Retraining completed successfully - jump to 100%
         clearInterval(progressInterval);
         clearInterval(pollInterval);
@@ -204,7 +204,7 @@ export default function ModelRetrainPage() {
             console.error('Failed to revalidate after retrain:', error);
           }
         }, 1000);
-      } else if (rebuildStatus.status === 'failed' && retrainStatus === 'in_progress') {
+      } else if (rebuildStatus.status === 'failed') {
         // Retraining failed
         clearInterval(progressInterval);
         clearInterval(pollInterval);
@@ -226,7 +226,9 @@ export default function ModelRetrainPage() {
       clearInterval(progressInterval);
       clearInterval(pollInterval);
     };
-  }, [retraining, retrainStatus, validationBeforeRetrain, checkRebuildStatus, toast]);
+    // Only re-run when retraining state changes to avoid creating multiple polling intervals
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retraining]);
 
   // Handle retrain button click
   const handleRetrainClick = () => {
