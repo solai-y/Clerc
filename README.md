@@ -1,156 +1,240 @@
-Clerc.
-======
+# Clerc
+
+**AI-Powered Document Tagging and Classification System**
+
+Automatically classify, tag, and manage documents using advanced AI models with a modern Next.js frontend and microservices backend.
+
+## Overview
+
+Clerc is an intelligent document tagging system that leverages AI and LLM technology to automatically classify and tag documents. It features a microservice-based architecture with a Next.js frontend, supporting robust document management, automated tagging, and model retraining workflows.
+
+## Features
+
+- **AI-Powered Classification**: Automatic document tagging using machine learning models
+- **LLM Integration**: Claude AI integration for intelligent document analysis
+- **Document Management**: Upload, view, and manage documents with S3 storage
+- **Tag Hierarchy**: Hierarchical tag structure for complex classification
+- **Model Retraining**: Continuous model improvement with retraining capabilities
+- **Metrics & Analytics**: Track document processing and tagging metrics
+- **Modern UI**: Intuitive Next.js frontend with real-time updates
+- **Microservices Architecture**: Scalable backend with Docker support
+- **CI/CD Pipeline**: Automated testing and deployment with GitHub Actions
+
+## Architecture
+
+```
+Clerc/
+├── frontend/                    # Next.js application
+├── backend/
+│   ├── ai-service/             # AI model prediction service
+│   ├── api-gateway/            # API gateway and routing
+│   ├── company-service/        # Company management service
+│   ├── document-service/       # Document CRUD operations
+│   ├── llm-service/            # Claude LLM integration
+│   ├── prediction-service/     # Prediction orchestration
+│   ├── retraining-service/     # Model retraining workflows
+│   ├── s3-service/             # AWS S3 file storage
+│   ├── tag-service/            # Tag management and hierarchy
+│   ├── text-extraction-service/ # PDF text extraction
+│   └── nginx/                  # Reverse proxy and load balancing
+├── docs/                       # Documentation
+├── tests/                      # Test files
+└── .github/workflows/          # CI/CD pipelines
+```
+
+### Technology Stack
+
+- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS
+- **Backend**: Python Flask microservices, Docker
+- **AI/ML**: Custom ML models, AWS Bedrock (Claude)
+- **Database**: Supabase (PostgreSQL)
+- **Storage**: AWS S3
+- **Infrastructure**: Docker Compose, Nginx
+- **CI/CD**: GitHub Actions
+
+## Getting Started
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Node.js 18+ and npm
+- AWS account (for S3 and Bedrock)
+- Supabase project
+
+### Quick Start
 
-Document Tagging System\
-Classify, view, and edit tags of documents with a modern frontend and robust backend.
+#### 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-org/Clerc.git
+cd Clerc
+```
+
+#### 2. Set Up Backend
+
+```bash
+cd backend
+cp .env.example .env
+# Edit .env with your configuration (Supabase, AWS credentials)
+docker compose up --build
+```
 
-Overview
---------
+Backend services will be available at:
+- API Gateway: `http://localhost:8000`
+- Individual services: ports 5001-5009
+- Nginx: `http://localhost:80`
+
+#### 3. Set Up Frontend
 
-Clerc. is a document tagging system designed to help users classify, view, and edit tags associated with documents. It features a modern frontend and a microservice-based backend, supporting robust document management and tagging workflows.
+```bash
+cd frontend
+cp .env.example .env
+# Edit .env with your configuration
+npm install
+npm run dev
+```
 
-Features
---------
+Frontend will be available at: `http://localhost:3000`
 
--   Tagging and classification of documents
+## Development
 
--   View and edit tags in an intuitive UI
+### Environment Variables
 
--   Microservices architecture with Docker support
+Secrets and API keys are managed via `.env` files (not committed to git).
 
--   CI/CD pipeline using GitHub Actions
+**Backend** (`backend/.env`):
+- `SUPABASE_URL`: Your Supabase project URL
+- `SUPABASE_KEY`: Supabase anonymous key
+- `AWS_ACCESS_KEY_ID`: AWS credentials for S3
+- `AWS_SECRET_ACCESS_KEY`: AWS secret key
+- `AWS_ACCESS_KEY_ID2`: AWS credentials for Bedrock
+- `AWS_SECRET_ACCESS_KEY2`: Bedrock secret key
+- `CLAUDE_MODEL_ID`: Claude model identifier
 
--   Integration with Supabase for data storage
+**Frontend** (`frontend/.env`):
+- `BACKEND_ORIGIN`: Backend URL for server-side requests
+- `NEXT_PUBLIC_SUPABASE_URL`: Supabase URL (public)
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase key (public)
 
-Architecture
-------------
+See `.env.example` files for full configuration options.
 
-text
+### Microservices
 
-`Clerc. ├── frontend/                # React or similar frontend app ├── backend/ │   ├── company-service/     # Microservice for company data │   └── categories-service/  # Microservice for category/tag data ├── .github/workflows/       # CI/CD pipeline definitions └── README.md `
+Each backend service has its own directory, dependencies, and tests:
 
--   Frontend: Modern JavaScript framework (e.g., React)
+| Service | Port | Description |
+|---------|------|-------------|
+| company-service | 5001 | Company data management |
+| document-service | 5002 | Document CRUD operations |
+| s3-service | 5003 | S3 file storage operations |
+| ai-service | 5004 | AI model predictions |
+| llm-service | 5005 | Claude LLM integration |
+| prediction-service | 5006 | Prediction orchestration |
+| tag-service | 5007 | Tag management |
+| text-extraction-service | 5008 | PDF text extraction |
+| retraining-service | 5009 | Model retraining |
+| nginx | 8000 | API routing |
 
--   Backend: Python Flask microservices, containerized with Docker
+## Testing
 
--   Database: Supabase (PostgreSQL)
+### Backend Tests
 
--   CI/CD: Automated with GitHub Actions
+Each microservice contains unit and integration tests using `pytest`:
 
-Getting Started
----------------
+```bash
+# Run tests for a specific service
+cd backend/document-service
+pytest tests/
 
-Frontend
---------
+# Run with coverage
+pytest --cov=. tests/
 
-1.  Navigate to the frontend directory:
+# Run integration tests (ensure containers are running)
+pytest tests/integration/
+```
 
-    bash
+### Frontend Tests
 
-    `cd frontend `
+```bash
+cd frontend
+npm test
+```
 
-2.  Install dependencies:
+### End-to-End Tests
 
-    bash
+```bash
+# Ensure all services are running
+cd backend
+docker compose up -d
 
-    `npm  install  `
+# Run E2E tests
+pytest tests/e2e/
+```
 
-3.  Start the development server:
+## CI/CD
 
-    bash
+GitHub Actions are used for continuous integration and deployment:
 
-    `npm run dev `
+- **CI (dev)**: On PRs to `dev` branch
+  - Builds Docker images
+  - Runs backend and frontend tests
+  - Validates code quality
 
-4.  Open [http://localhost:3000](http://localhost:3000/) in your browser.
+- **CI/CD (main)**: On PRs and merges to `main` branch
+  - Runs full test suite
+  - Deploys to EC2 instance via rsync
+  - Updates production environment
 
-Backend
--------
+### Required GitHub Secrets
 
-1.  Navigate to the backend directory:
+- `EC2_HOST`: EC2 instance IP/hostname
+- `EC2_SSH_KEY`: SSH private key for EC2
+- `EC2_USER`: SSH username
 
-    bash
+## Documentation
 
-    `cd backend `
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Detailed deployment guide
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
+- [docs/API.md](docs/API.md) - API documentation
+- [docs/](docs/) - Additional technical documentation
 
-2.  Build and start all backend services with Docker Compose:
+## Contributing
 
-    bash
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on:
 
-    `docker compose up --build `
+- Development workflow
+- Coding standards
+- Testing requirements
+- Pull request process
 
-    This will spin up all microservices defined in your `docker-compose.yml`.
+### Quick Contribution Guide
 
-3.  Each service will be available on its respective port (e.g., `company-service` on 5001, `categories-service` on 5002).
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Make your changes and add tests
+4. Commit: `git commit -am 'Add: your feature'`
+5. Push: `git push origin feature/your-feature`
+6. Open a Pull Request
 
-Development
------------
+## License
 
--   Environment Variables:\
-    Secrets and API keys are managed via `.env` files (not committed to git). For local development, copy `.env.example` to `.env` and fill in your values.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
--   Microservices:\
-    Each backend service has its own directory, dependencies, and tests.
+## Support
 
-Testing
--------
+For issues, questions, or feature requests:
+- Open an issue on GitHub
+- Check [DEPLOYMENT.md](DEPLOYMENT.md) for troubleshooting
+- Review the [documentation](docs/)
 
--   Backend:\
-    Each microservice contains a `tests/` folder with integration and unit tests using `pytest`. To run these tests the folowing commands can be used to run the test locally, ensure that the docker containers are running before doing so
+## Acknowledgements
 
-    bash
+- [Supabase](https://supabase.com/) - Database and authentication
+- [AWS](https://aws.amazon.com/) - S3 storage and Bedrock AI
+- [Anthropic](https://www.anthropic.com/) - Claude AI models
+- [Flask](https://flask.palletsprojects.com/) - Backend framework
+- [Next.js](https://nextjs.org/) - Frontend framework
 
-    ` pytest -s ./tests/e2e/test_e2e.py `
+---
 
-
-CI/CD
------
-
--   GitHub Actions are used for continuous integration.
-
--   On each push or PR to `dev` or `main`, the pipeline:
-
-    -   Builds Docker images for backend services
-
-    -   Runs backend and frontend tests
-
-    -   Blocks merging if tests fail or if PR is not from the correct source branch
-
--   Branch protection rules are recommended for `main` and `dev` to require passing CI and code review before merging.
-
-- The CD is done for the backend by redeploying the contents of the backend folder to the EC2 instance using resync
-
-- The secrets for the CI CD pipeline such as the EC2 IP and the Private Key are loading into the Github Secrets
-
-Contributing
-------------
-
-1.  Fork the repo and create your feature branch:
-
-    bash
-
-    `git checkout -b feature/YourFeature `
-
-2.  Commit your changes:
-
-    bash
-
-    `git commit -am 'Add new feature'  `
-
-3.  Push to the branch:
-
-    bash
-
-    `git push origin feature/YourFeature `
-
-4.  Open a pull request
-
-Acknowledgements
-----------------
-
--   [Supabase](https://supabase.com/)
-
--   [Flask](https://flask.palletsprojects.com/)
-
--   [React](https://react.dev/) (or your frontend framework)
-
-For more details, see the code and comments in each service directory.
+Built with ❤️ for intelligent document management

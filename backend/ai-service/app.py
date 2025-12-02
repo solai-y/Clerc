@@ -327,10 +327,31 @@ def validate_training_data() -> Any:
         tags_response = supabase.table("tags").select("id,tag_name,parent_id").execute()
         tags_map = {tag["id"]: {"name": tag["tag_name"], "parent_id": tag["parent_id"]} for tag in tags_response.data}
 
+        # Initialize counts with all tags set to 0
+        # This ensures tags with 0 documents are included in validation
         primary_counts = defaultdict(int)
         secondary_counts = defaultdict(int)
         tertiary_counts = defaultdict(int)
 
+        # Pre-populate all tags with 0 count based on their hierarchy level
+        for tag_id, tag_info in tags_map.items():
+            tag_name = tag_info['name']
+            parent_id = tag_info['parent_id']
+
+            if parent_id is None:
+                # Primary tag (no parent)
+                primary_counts[tag_name] = 0
+            else:
+                # Check if parent has a parent to determine if secondary or tertiary
+                parent_info = tags_map.get(parent_id)
+                if parent_info and parent_info['parent_id'] is None:
+                    # Parent is primary, so this is secondary
+                    secondary_counts[tag_name] = 0
+                else:
+                    # Parent is secondary, so this is tertiary
+                    tertiary_counts[tag_name] = 0
+
+        # Count documents per tag
         for doc in documents:
             if doc.get("primary_tag_ids"):
                 for tag_id in doc["primary_tag_ids"]:
