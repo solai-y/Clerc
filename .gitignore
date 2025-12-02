@@ -6,6 +6,9 @@ Clerc.pem
 *.pem
 backend/ai-service/models_hier/
 
+# Claude Code
+.claude/settings.local.json
+
 # macOS
 .DS_Store
 
