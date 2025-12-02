@@ -133,8 +133,7 @@ Each backend service has its own directory, dependencies, and tests:
 | tag-service | 5007 | Tag management |
 | text-extraction-service | 5008 | PDF text extraction |
 | retraining-service | 5009 | Model retraining |
-| api-gateway | 8000 | API routing |
-| nginx | 80 | Reverse proxy |
+| nginx | 8000 | API routing |
 
 ## Testing
 
