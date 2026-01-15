@@ -86,10 +86,17 @@ export default function ModelRetrainPage() {
   // Function to check rebuild status
   const checkRebuildStatus = useCallback(async () => {
     try {
+      console.log('[REBUILD STATUS] Fetching from API...');
       const status = await apiClient.getRebuildStatus();
+      console.log('[REBUILD STATUS] Raw API response:', status);
       return status;
     } catch (error) {
-      console.error('Failed to check rebuild status:', error);
+      console.error('[REBUILD STATUS] Failed to check rebuild status:', error);
+      console.error('[REBUILD STATUS] Error details:', {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       return null;
     }
   }, []);
@@ -159,12 +166,23 @@ export default function ModelRetrainPage() {
 
     // Poll backend for actual status
     pollInterval = setInterval(async () => {
+      console.log('[REBUILD POLL] Checking rebuild status...');
       const rebuildStatus = await checkRebuildStatus();
 
       if (!rebuildStatus) {
+        console.log('[REBUILD POLL] Failed to get status (null response)');
         // Failed to get status, keep polling
         return;
       }
+
+      console.log('[REBUILD POLL] Status received:', {
+        status: rebuildStatus.status,
+        is_rebuilding: rebuildStatus.is_rebuilding,
+        message: rebuildStatus.message,
+        progress: rebuildStatus.progress,
+        error: rebuildStatus.error,
+        duration_seconds: rebuildStatus.duration_seconds,
+      });
 
       // Update message from backend (but not progress - we use simulated progress)
       setRetrainMessage(rebuildStatus.message);
